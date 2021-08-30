@@ -57,6 +57,8 @@ let app quit_ui =
   procs_pane#set procs_ui;
   layout_hor#add ~expand:false procs_pane;
 
+  layout_hor#add ~expand:false (new LTerm_widget.vline);
+
   let term_pane = new Pane_ui.t in
   term_pane#set_title_utf8 "Output";
   term_pane#set term_ui;

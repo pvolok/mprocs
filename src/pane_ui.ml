@@ -43,7 +43,7 @@ class t =
         | Some child -> child#size_request
         | None -> { rows = 0; cols = 0 }
       in
-      { rows = child_size.rows + 2; cols = child_size.cols + 2 }
+      { rows = child_size.rows + 1; cols = child_size.cols }
 
     method private compute_allocation =
       match child with
@@ -56,7 +56,7 @@ class t =
               row1;
               col1;
               row2 = max row1 (rect.row2 - 1);
-              col2 = max col1 (rect.col2 - 1);
+              col2 = max col1 rect.col2;
             }
       | None -> ()
 
@@ -84,23 +84,16 @@ class t =
         Buffer.add_char buf ' ';
         Buffer.add_string buf (Zed_string.to_utf8 title);
         Buffer.add_string buf
-          (String.make (cx_size.cols - Buffer.length buf - 1) ' ');
+          (String.make (cx_size.cols - Buffer.length buf) ' ');
         let str = Buffer.contents buf in
         LTerm_draw.draw_string cx 0 0 ~style (Zed_string.of_utf8 str)
       in
-      LTerm_draw.draw_vline cx 0 (cx_size.cols - 1) cx_size.rows
-        ~style:!Theme.cur.split LTerm_draw.Blank;
 
       match child with
       | Some child ->
           let child_cx =
             LTerm_draw.sub cx
-              {
-                row1 = 1;
-                col1 = 0;
-                row2 = cx_size.rows - 1;
-                col2 = cx_size.cols - 1;
-              }
+              { row1 = 1; col1 = 0; row2 = cx_size.rows; col2 = cx_size.cols }
           in
           child#draw child_cx focused_w
       | None -> ()
