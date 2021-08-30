@@ -30,11 +30,21 @@ else
     endif
 endif
 
+ifeq ($(OSNAME),windows)
+	BIN_EXT=.exe
+else
+	BIN_EXT=
+endif
+
+DIST=dist
+OUT=$(DIST)/$(PLAT)
+BIN_NAME=mprocs$(BIN_EXT)
+
 build:
 	rm -rf dist
 	dune build --profile=release bin/mprocs.exe
-	mkdir -p dist
-	strip -o dist/mprocs _build/default/bin/mprocs.exe
-	chmod +w dist/mprocs
-	upx --best --overlay=strip dist/mprocs
-	zip dist/mprocs-$(PLAT) dist/mprocs
+	mkdir -p $(OUT)
+	strip -o $(OUT)/$(BIN_NAME) _build/default/bin/mprocs.exe
+	chmod +w $(OUT)/$(BIN_NAME)
+	upx --best --overlay=strip $(OUT)/$(BIN_NAME)
+	zip $(DIST)/mprocs-$(PLAT).zip $(OUT)/*
