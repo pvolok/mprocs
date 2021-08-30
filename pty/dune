@@ -1,0 +1,19 @@
+(library
+ (name pty)
+ (libraries lwt lwt.unix)
+ (preprocess
+  (pps lwt_ppx))
+ (flags
+  (:include flags.sexp))
+ (c_library_flags
+  (:include c_library_flags.sexp))
+ (foreign_stubs
+  (language c)
+  (names pty conpty)))
+
+(rule
+ (targets c_library_flags.sexp flags.sexp)
+ (deps
+  (:discover config/discover.exe))
+ (action
+  (run %{discover})))

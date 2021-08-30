@@ -1,0 +1,18 @@
+(library
+ (name mprocs)
+ (libraries
+  cmdliner
+  core_kernel
+  incremental
+  incr_map
+  lambda-term
+  logs
+  lwt
+  lwt.unix
+  vterm
+  pty
+  stdio
+  yojson)
+ (inline_tests)
+ (preprocess
+  (pps logs-ppx lwt_ppx ppx_deriving.show ppx_inline_test ppx_jane)))

@@ -1,0 +1,7 @@
+profile=conventional
+
+module-item-spacing=preserve
+sequence-blank-line=preserve-one
+
+type-decl=sparse
+wrap-comments=true

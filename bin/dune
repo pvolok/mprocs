@@ -1,0 +1,3 @@
+(executable
+ (name mprocs)
+ (libraries mprocs))

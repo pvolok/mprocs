@@ -1,0 +1,1 @@
+let () = Mprocs.Cli.run ()
