@@ -27,30 +27,3 @@ let run_pty () =
     LTerm.leave_raw_mode term mode
   in
   run () |> Lwt_main.run
-
-let run_ptyfork () =
-  (*let cmd = "/bin/echo" in*)
-  let cmd = "/Users/pvolok/root/_build/default/bin/tde" in
-  let pty = Pty.create (cmd, [| "tde"; "pty" |]) ~rows:20 ~cols:80 in
-  let fd = Pty.get_fd pty |> Lwt_unix.of_unix_file_descr in
-  let ic = Lwt_io.of_fd ~mode:Lwt_io.input fd in
-  let run () =
-    let rec loop () =
-      try%lwt
-        let%lwt ch = Lwt_io.read_char ic in
-        print_char ch;
-        loop ()
-      with End_of_file -> Lwt.return ()
-    in
-    Lwt.on_success (Lwt_unix.sleep 1.0) (fun () ->
-        Pty.resize ~rows:20 ~columns:30 pty);
-    Lwt.on_success (Lwt_unix.sleep 2.0) (fun () ->
-        Pty.resize ~rows:20 ~columns:40 pty);
-    Lwt.on_success (Lwt_unix.sleep 3.0) (fun () ->
-        Pty.resize ~rows:20 ~columns:40 pty);
-    Lwt.on_success (Lwt_unix.sleep 5.0) (fun () ->
-        Lwt_unix.write_string fd "q" 0 1 |> (ignore : int Lwt.t -> unit));
-    loop ()
-  in
-  Lwt_main.run (run ());
-  ()

@@ -8,7 +8,12 @@ val create :
   cols:int ->
   t
 
-val resize : rows:int -> columns:int -> t -> unit
-
-val get_fd : t -> Unix.file_descr
+val get_fd_stdin : t -> Unix.file_descr
+val get_fd_stdout : t -> Unix.file_descr
 val get_pid : t -> int
+
+val wait : t -> Unix.process_status Lwt.t
+
+val kill : t -> unit
+
+val resize : rows:int -> columns:int -> t -> unit

@@ -5,31 +5,16 @@ module Internal = struct
     = "ocaml_pty_ioctl_set_size"
 end
 
-module Conpty = struct
-  type pty
-  type pty_handle = {
-    pid : int;
-    fd : Unix.file_descr;
-    fd_in : Unix.file_descr;
-    fd_out : Unix.file_descr;
-    pty : pty;
-  }
+module Conpty = Conpty
 
-  external create_process : string -> string -> pty_handle
-    = "conpty_create_process"
+type t =
+  | Unix of Unix.file_descr * int
+  | Win of Conpty.t
 
-  external process_wait_job : Unix.file_descr -> int Lwt_unix.job
-    = "conpty_process_wait_job"
-
-  let wait_proc pty = Lwt_unix.run_job (process_wait_job pty.fd)
-end
-
-type t = Unix.file_descr * int
-
-let create ?env ?cwd (prog, args) ~rows ~cols =
+let create_unix ?env ?cwd (prog, args) ~rows ~cols =
   let child = Internal.forkpty rows cols in
   match child with
-  | Some pty -> pty
+  | Some (fd, pid) -> Unix (fd, pid)
   | None -> (
       try
         (match cwd with None -> () | Some dir -> Sys.chdir dir);
@@ -39,9 +24,37 @@ let create ?env ?cwd (prog, args) ~rows ~cols =
       with _ -> (* Do not run at_exit hooks *)
                 Unix._exit 127)
 
-let get_fd (fd, _) = fd
-let get_pid (_, pid) = pid
+let create ?env ?cwd cmd ~rows ~cols =
+  if Sys.win32 then Win (Conpty.create_process ?env ?cwd cmd ~rows ~cols)
+  else create_unix ?env ?cwd cmd ~rows ~cols
 
-let resize ~rows ~columns ((master, _) : t) =
-  let (_ret : int) = Internal.ioctl_set_size master columns rows in
-  ()
+let get_fd_stdin = function
+  | Unix (fd, _) -> fd
+  | Win handle -> handle.Conpty.stdin
+
+let get_fd_stdout = function
+  | Unix (fd, _) -> fd
+  | Win handle -> handle.Conpty.stdout
+
+let get_pid = function Unix (_, pid) -> pid | Win conpty -> conpty.Conpty.pid
+
+let wait = function
+  | Unix (fd, pid) -> Lwt_unix.waitpid [] pid |> Lwt.map (fun (_, x) -> x)
+  | Win handle ->
+      Conpty.wait_proc handle |> Lwt.map (fun code -> Unix.WEXITED code)
+
+let kill = function
+  | Unix (fd, pid) as pty ->
+      let kill_timer = Lwt_unix.sleep 5. in
+      Lwt.on_success kill_timer (fun () -> Unix.kill pid Sys.sigkill);
+
+      Lwt.on_termination (wait pty) (fun _ -> Lwt.cancel kill_timer);
+
+      Unix.kill pid Sys.sigterm
+  | Win conpty -> Conpty.kill conpty
+
+let resize ~rows ~columns = function
+  | Unix (fd, _) ->
+      let (_ret : int) = Internal.ioctl_set_size fd columns rows in
+      ()
+  | Win conpty -> Conpty.resize conpty rows columns

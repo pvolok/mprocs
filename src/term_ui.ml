@@ -101,7 +101,9 @@ class t =
           | Some (Vterm pt) ->
               Proc_term.send_key pt key;
               true)
-      | _ -> false)
+      | _ -> false);
+
+    Lwt.on_success (Lwt_unix.sleep 0.2) (fun () -> self#update_size_after_start)
 
     val mutable current_callbacks = []
 
@@ -194,11 +196,23 @@ class t =
             done
           done
 
+    method private update_size_after_start =
+      (* Conpty ignores resizes if sent to fast after creating the process. See:
+         https://github.com/microsoft/terminal/issues/10400 *)
+      if Sys.win32 && !State.ui_running then
+        match cur_kind with
+        | Some (Vterm pt) ->
+            let size = LTerm_geom.size_of_rect self#allocation in
+            Proc_term.resize ~rows:size.rows ~cols:size.cols pt;
+            Vterm.setSize ~size:{ rows = size.rows; cols = size.cols } pt.vterm
+        | _ -> ()
+
     val mutable scheduled = false
 
     method private render () =
-      scheduled <- false;
-      self#queue_draw
+      if !State.ui_running then (
+        scheduled <- false;
+        self#queue_draw)
 
     method private schedule () =
       (*[%log debug "SCHEDULE"];*)

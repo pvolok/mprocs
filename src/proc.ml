@@ -42,7 +42,7 @@ let create_pt_ ~cmd ~state_var =
   (kind, state_var)
 
 let create_kind_ ~cmd ~state_var =
-  let is_tty = (not Sys.win32) && cmd.Cmd.tty in
+  let is_tty = cmd.Cmd.tty in
   if is_tty then create_pt_ ~cmd ~state_var else create_ps_ ~cmd ~state_var
 
 let create ~cmd ~name () =

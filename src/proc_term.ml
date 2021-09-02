@@ -30,10 +30,10 @@ let run (cmd : Cmd.t) =
     | Args (name, args) -> (name, args)
     | Shell cmd -> Lwt_process.shell cmd
   in
-  let prog =
-    if String.equal prog "" && Array.length args > 0 then args.(0) else prog
-  in
 
+  (*let prog =*)
+  (*if String.equal prog "" && Array.length args > 0 then args.(0) else prog*)
+  (*in*)
   let vterm = Vterm.make ~rows:default_rows ~cols:default_cols in
 
   let pty =
@@ -41,12 +41,10 @@ let run (cmd : Cmd.t) =
   in
 
   let pid = Pty.get_pid pty in
-  let fd = Pty.get_fd pty |> Lwt_unix.of_unix_file_descr in
-  let input = Lwt_io.of_fd ~mode:Lwt_io.input fd in
-  let output = Lwt_io.of_fd ~mode:Lwt_io.output fd in
+  let input = Lwt_io.of_unix_fd ~mode:Lwt_io.input (Pty.get_fd_stdout pty) in
+  let output = Lwt_io.of_unix_fd ~mode:Lwt_io.output (Pty.get_fd_stdin pty) in
 
-  if Sys.win32 then [%log warn "Lwt_unix is about to be used on Windows."];
-  let stopped = Lwt_unix.waitpid [] pid |> Lwt.map Tuple2.get2 in
+  let stopped = Pty.wait pty in
 
   let (_ : unit Lwt.t) =
     Lwt_io.read_chars input
@@ -148,18 +146,6 @@ let send_key pt (key : LTerm_key.t) =
   | exception ex ->
       [%log warn "Proc_term.send_key error: %s" (Exn.to_string ex)]
 
-let stop pt =
-  let term_timer = Lwt_unix.sleep 5.0 in
-  Lwt.on_success term_timer (fun () -> Caml_unix.kill pt.pid Sys.sigterm);
-  let kill_timer = Lwt_unix.sleep 10. in
-  Lwt.on_success kill_timer (fun () -> Caml_unix.kill pt.pid Sys.sigkill);
-
-  Lwt.on_termination pt.stopped (fun _ ->
-      Lwt.cancel term_timer;
-      Lwt.cancel kill_timer);
-
-  Vterm.Keyboard.input pt.vterm
-    (Vterm.Unicode (Uchar.of_char 'c'))
-    Vterm.Control
+let stop pt = Pty.kill pt.pty
 
 let stopped pt = pt.stopped

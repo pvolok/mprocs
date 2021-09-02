@@ -13,8 +13,11 @@
 
 #ifdef _WIN32
 
+#ifndef UNICODE
 #define UNICODE
+#endif
 
+// Resize doesn't work without this.
 #define _WIN32_WINNT 0x600
 
 #include <winsock2.h>
@@ -39,6 +42,12 @@ typedef HRESULT(__stdcall *PFNRESIZEPSEUDOCONSOLE)(HPCON hpc, COORD newSize);
 typedef void(__stdcall *PFNCLOSEPSEUDOCONSOLE)(HPCON hpc);
 
 #endif
+
+static value val_of_hpcon(HPCON hpc) {
+  return caml_copy_nativeint((intnat)hpc);
+}
+
+static HPCON hpcon_of_val(value v) { return (HPCON)Nativeint_val(v); }
 
 /*
  * Create process.
@@ -80,12 +89,13 @@ HRESULT prepare_startup_info(HPCON hpc, STARTUPINFOEX *psi) {
 
 #define RES_PID 0
 #define RES_HANDLE 1
-#define RES_FD_IN 2
-#define RES_FD_OUT 3
-#define RES_PTY 4
+#define RES_STDIN 2
+#define RES_STDOUT 3
+#define RES_HPC 4
 #define RES_LEN 5
 
-HRESULT _conpty_create_process(LPTSTR cmdline, LPTSTR cwd, value result) {
+HRESULT _conpty_create_process(LPCTSTR prog, LPTSTR cmdline, LPVOID env,
+                               LPTSTR cwd, COORD size, value result) {
   HRESULT hr = S_OK;
 
   /*
@@ -94,35 +104,38 @@ HRESULT _conpty_create_process(LPTSTR cmdline, LPTSTR cwd, value result) {
 
   // Close these after CreateProcess of child application with pseudoconsole
   // object.
-  // TODO: Close these
-  HANDLE inputReadSide, outputWriteSide;
+  HANDLE stdinCons, stdoutCons;
 
   // Hold onto these and use them for communication with the child through the
   // pseudoconsole.
-  HANDLE outputReadSide, inputWriteSide;
+  HANDLE stdoutOur, stdinOur;
 
-  if (!CreatePipe(&inputReadSide, &inputWriteSide, NULL, 0)) {
+  if (!CreatePipe(&stdinCons, &stdinOur, NULL, 0)) {
     return HRESULT_FROM_WIN32(GetLastError());
   }
 
-  if (!CreatePipe(&outputReadSide, &outputWriteSide, NULL, 0)) {
+  if (!CreatePipe(&stdoutOur, &stdoutCons, NULL, 0)) {
     return HRESULT_FROM_WIN32(GetLastError());
   }
 
   HPCON hpc;
-  COORD size = {40, 40};
-  hr = CreatePseudoConsole(size, inputReadSide, outputWriteSide, 0, &hpc);
+  hr = CreatePseudoConsole(size, stdinCons, stdoutCons, 0, &hpc);
   if (FAILED(hr)) {
     return hr;
   }
 
-  Store_field(result, RES_FD_IN, win_alloc_handle(inputWriteSide));
-  Store_field(result, RES_FD_OUT, win_alloc_handle(outputReadSide));
-  Store_field(result, RES_PTY, caml_copy_nativeint((intnat)hpc));
+  Store_field(result, RES_STDIN, win_alloc_handle(stdinOur));
+  Store_field(result, RES_STDOUT, win_alloc_handle(stdoutOur));
+  Store_field(result, RES_HPC, caml_copy_nativeint((intnat)hpc));
 
   /*
    * Start.
    */
+
+  DWORD dwCreationFlags = EXTENDED_STARTUPINFO_PRESENT;
+  if (env == NULL) {
+    dwCreationFlags |= CREATE_UNICODE_ENVIRONMENT;
+  }
 
   STARTUPINFOEX si;
   hr = prepare_startup_info(hpc, &si);
@@ -132,37 +145,57 @@ HRESULT _conpty_create_process(LPTSTR cmdline, LPTSTR cwd, value result) {
 
   PROCESS_INFORMATION pi = {0};
 
-  printf("b4\n");
-  if (!CreateProcess(NULL, cmdline, NULL, NULL, FALSE,
-                     EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
-                     NULL, cwd, &si.StartupInfo, &pi)) {
+  if (!CreateProcessW(prog, cmdline, NULL, NULL, FALSE, dwCreationFlags, env,
+                      cwd, &si.StartupInfo, &pi)) {
     return HRESULT_FROM_WIN32(GetLastError());
   }
-  printf("after\n");
 
-  Store_field(result, RES_PID, Val_int(1337));
+  CloseHandle(pi.hThread);
+
+  CloseHandle(stdinCons);
+  CloseHandle(stdoutCons);
+
+  Store_field(result, RES_PID, Val_int(pi.dwProcessId));
   Store_field(result, RES_HANDLE, win_alloc_handle(pi.hProcess));
 
   return S_OK;
 }
 
-CAMLprim value conpty_create_process(value vCmdline, value vCwd) {
-  CAMLparam2(vCmdline, vCwd);
-  CAMLlocal1(result);
+#define os_str_opt_val(opt)                                                    \
+  (Is_block(opt) ? caml_stat_strdup_to_os(String_val(Field(opt, 0))) : NULL)
 
-  LPTSTR cmdline = caml_stat_strdup_to_os(String_val(vCmdline));
-  LPTSTR cwd = caml_stat_strdup_to_os(String_val(vCwd));
+CAMLprim value conpty_create_process(value vProg, value vCmdline, value vEnv,
+                                     value vCwd, value vSize) {
+  CAMLparam5(vProg, vCmdline, vEnv, vCwd, vSize);
+  CAMLlocal1(result);
 
   result = caml_alloc_tuple(RES_LEN);
 
-  HRESULT hr = _conpty_create_process(cmdline, cwd, result);
+  LPTSTR prog = os_str_opt_val(vProg);
+  LPTSTR cmdline = caml_stat_strdup_to_os(String_val(vCmdline));
+  LPTSTR cwd = os_str_opt_val(vCwd);
 
-  // free memory
+  LPVOID env = NULL;
+  if (Is_some(vEnv)) {
+    env = String_val(Some_val(vEnv));
+  }
+
+  COORD size;
+  size.Y = Int_val(Field(vSize, 0)); // rows
+  size.X = Int_val(Field(vSize, 1)); // cols
+
+  HRESULT hr = _conpty_create_process(prog /* prog */, cmdline, env /* env */,
+                                      cwd, size, result);
+
+  if (prog)
+    caml_stat_free(prog);
   caml_stat_free(cmdline);
-  caml_stat_free(cwd);
+  if (cwd)
+    caml_stat_free(cwd);
 
   if (FAILED(hr)) {
-    // raise error
+    win32_maperr(GetLastError());
+    uerror("conpty_create_process", Nothing);
   }
 
   CAMLreturn(result);
@@ -199,6 +232,35 @@ CAMLprim value conpty_process_wait_job(value handle) {
   LWT_UNIX_INIT_JOB(job, wait, 0);
   job->handle = Handle_val(handle);
   return lwt_unix_alloc_job(&(job->job));
+}
+
+/*
+ * Kill
+ */
+
+CAMLprim value conpty_kill(value vConpty) {
+  CAMLparam1(vConpty);
+
+  HPCON hpc = hpcon_of_val(Field(vConpty, RES_HPC));
+  ClosePseudoConsole(hpc);
+
+  CAMLreturn(0);
+}
+
+/*
+ * Resize
+ */
+
+CAMLprim value conpty_resize(value vConpty, value vRows, value vCols) {
+  CAMLparam2(vRows, vCols);
+
+  HPCON hpc = hpcon_of_val(Field(vConpty, RES_HPC));
+  COORD size;
+  size.X = Int_val(vCols);
+  size.Y = Int_val(vRows);
+  ResizePseudoConsole(hpc, size);
+
+  CAMLreturn(0);
 }
 
 #else // _WIN32

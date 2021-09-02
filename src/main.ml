@@ -106,7 +106,9 @@ let app quit_ui =
         (Array.to_list procs)
     in
     let all_finished = Lwt.bind all_finished (fun _ -> Lwt.pause ()) in
-    Lwt.on_success all_finished (fun _ -> quit_ui ())
+    Lwt.on_success all_finished (fun _ ->
+        State.ui_running := false;
+        quit_ui ())
   in
 
   let current_event = ref None in

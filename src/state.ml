@@ -2,6 +2,8 @@ open Core_kernel
 open Inc.Let_syntax
 let ( let+ ) = Inc.Let_syntax.( >>| )
 
+let ui_running = ref true
+
 let focus_var : LTerm_widget.t option Inc.Var.t = Inc.Var.create None
 let focus = Inc.Var.watch focus_var
 
