@@ -273,4 +273,12 @@ CAMLprim value conpty_process_wait_job(value handle) {
   caml_failwith("Not implemented: conpty_process_wait_job.");
 }
 
+CAMLprim value conpty_kill(value vConpty) {
+  caml_failwith("Not implemented: conpty_kill.");
+}
+
+CAMLprim value conpty_resize(value vConpty, value vRows, value vCols) {
+  caml_failwith("Not implemented: conpty_resize.");
+}
+
 #endif // _WIN32
