@@ -4,43 +4,6 @@ open Nottui
 
 open Lwd_infix
 
-let frame wfocused f vsize =
-  let body = f (Lwd.map vsize ~f:(fun (w, h) -> (w - 2, h - 2))) in
-  let body = Lwd.map body ~f:(Ui.shift_area (-1) (-1)) in
-
-  let title = I.string "Frame" |> I.pad ~l:1 in
-
-  let uchr code = I.uchar (Uchar.of_int code) 1 1 in
-  let frame =
-    let$ w, h = vsize and$ focused = wfocused in
-    let border =
-      I.tabulate w h (fun x y ->
-          match (x, y) with
-          (* top left *)
-          | 0, 0 -> uchr 0x256d
-          (* top right *)
-          | _, 0 when x = w - 1 -> uchr 0x256e
-          (* top *)
-          | _, 0 -> uchr 0x2500
-          (* bottom left *)
-          | 0, _ when y = h - 1 -> uchr 0x2570
-          (* bottom right *)
-          | _, _ when y = h - 1 && x = w - 1 -> uchr 0x256f
-          (* bottom *)
-          | _, _ when y = h - 1 -> uchr 0x2500
-          (* left *)
-          | 0, _ -> uchr 0x2502
-          (* right *)
-          | _, _ when x = w - 1 -> uchr 0x2502
-          (* content *)
-          | _, _ -> I.void 1 1)
-    in
-    let border = if focused then I.attr A.(fg green) border else border in
-    Ui.atom I.(title </> border)
-  in
-
-  Lwd_utils.pack Ui.pack_z [ frame; body ]
-
 let help _ = I.string "<C-a: Output>" |> Ui.atom |> Lwd.return
 
 module Layout = struct
@@ -196,15 +159,15 @@ let ui procs_ui term_ui =
             hor size
               [
                 ( Fixed 30,
-                  frame
+                  Ui_frame.make ~title:"Processes"
                     (Lwd.map State.focus' ~f:(State.equal_focus `Procs))
                     procs_ui );
                 ( Fill,
-                  frame
+                  Ui_frame.make ~title:"Output"
                     (Lwd.map State.focus' ~f:(State.equal_focus `Output))
                     term_ui );
               ] );
-        (Fixed 3, frame (Lwd.return false) help);
+        (Fixed 3, Ui_frame.make ~title:"Help" (Lwd.return false) help);
       ])
 
 let run () =
