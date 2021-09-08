@@ -1,6 +1,4 @@
-module Caml_unix = Unix
-
-open Core_kernel
+open Stdlib.StdLabels
 
 type t = {
   pid : int;
@@ -21,8 +19,8 @@ let default_cols = 50
 
 let string_of_row (row : Vterm.ScreenCell.t array) =
   row
-  |> Array.map ~f:(fun cell -> cell.char |> Uchar.to_char_exn)
-  |> Array.to_list |> String.of_char_list
+  |> Array.map ~f:(fun cell -> cell.Vterm.ScreenCell.char |> Uchar.to_char)
+  |> Array.to_seq |> String.of_seq
 
 let run (cmd : Cmd.t) =
   let prog, args =

@@ -1,6 +1,4 @@
-module Caml_unix = Unix
-
-open Core_kernel
+module SMap = Map.Make (String)
 
 type proc = {
   name : string;
@@ -12,31 +10,31 @@ type t = proc list [@@deriving show]
 let parse str =
   let json = Yojson.Safe.from_string str in
   Yojson.Safe.Util.to_assoc json
-  |> List.map ~f:(fun (k, v) ->
-         let opts = String.Map.of_alist_exn (Yojson.Safe.Util.to_assoc v) in
+  |> List.map (fun (k, v) ->
+         let opts = Yojson.Safe.Util.to_assoc v |> List.to_seq |> SMap.of_seq in
          let cmd =
-           let shell = Map.find opts "shell" in
+           let shell = SMap.find_opt "shell" opts in
            let command =
              match shell with
              | Some cmd -> Cmd.Shell (cmd |> Yojson.Safe.Util.to_string)
              | None ->
-                 let cmd =
-                   Map.find_exn opts "cmd" |> Yojson.Safe.Util.to_string
-                 in
+                 let cmd = SMap.find "cmd" opts |> Yojson.Safe.Util.to_string in
                  let args =
-                   Map.find_exn opts "args" |> Yojson.Safe.Util.to_list
-                   |> Array.of_list_map ~f:Yojson.Safe.Util.to_string
+                   SMap.find "args" opts |> Yojson.Safe.Util.to_list
+                   |> Array.of_list
+                   |> Array.map Yojson.Safe.Util.to_string
                  in
                  Args (cmd, args)
            in
            let tty =
-             Map.find opts "tty"
-             |> Option.value_map ~default:true ~f:Yojson.Safe.Util.to_bool
+             SMap.find_opt "tty" opts
+             |> Option.map Yojson.Safe.Util.to_bool
+             |> Option.value ~default:true
            in
            {
              Cmd.command;
-             env = Some (Caml_unix.environment ());
-             cwd = Some (Caml_unix.getcwd ());
+             env = Some (Unix.environment ());
+             cwd = Some (Unix.getcwd ());
              tty;
            }
          in

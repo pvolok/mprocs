@@ -1,10 +1,6 @@
-module Caml_unix = Unix
-
-open Core_kernel
-
 type t = {
   process : Lwt_process.process_full;
-  buffer : string Deque.t;
+  buffer : string CCDeque.t;
   last_line : Buffer.t;
   on_update : unit Listeners.t;
 }
@@ -16,7 +12,7 @@ let run (cmd : Cmd.t) =
     | Shell command -> Lwt_process.shell command
   in
   let process = Lwt_process.open_process_full command in
-  let buffer = Deque.create () in
+  let buffer = CCDeque.create () in
   let last_line = Buffer.create 80 in
   let on_update = Listeners.create () in
 
@@ -33,7 +29,7 @@ let run (cmd : Cmd.t) =
     match c with
     | '\r' -> ()
     | '\n' ->
-        Deque.enqueue_front buffer (Buffer.contents last_line);
+        CCDeque.push_front buffer (Buffer.contents last_line);
         Buffer.clear last_line;
         notify_update ()
     | c ->
@@ -49,21 +45,28 @@ let run (cmd : Cmd.t) =
 
   { process; buffer; last_line; on_update }
 
-let line t n =
-  if n = 0 then Buffer.contents t.last_line
+let peek_lines t n =
+  if n = 0 then []
   else
-    let zero = Deque.front_index t.buffer |> Option.value ~default:0 in
-    let index = zero + n - 1 in
-    Deque.get_opt t.buffer index |> Option.value ~default:"~"
+    let lines = [ Buffer.contents t.last_line ] in
+    let rec add_loop acc buf n =
+      if n = 0 then acc
+      else
+        match buf with
+        | [] -> acc
+        | line :: rest -> add_loop (line :: acc) rest (n - 1)
+    in
+    let lines = add_loop lines (CCDeque.to_rev_list t.buffer) (n - 1) in
+    lines
 
-let lines_count t = Deque.length t.buffer + 1
+let lines_count t = CCDeque.length t.buffer + 1
 
 let send_key ps (key : Nottui.Ui.key) =
   let main, _mods = key in
   let send str = Lwt_io.write ps.process#stdin str |> Lwt.ignore_result in
   match main with
   | `ASCII c ->
-      let str = Char.to_string c in
+      let str = Printf.sprintf "%c" c in
       send str
   | `Uchar uc ->
       let buf = Buffer.create 4 in

@@ -1,5 +1,4 @@
-module Caml_unix = Unix
-open Core_kernel
+open StdLabels
 open Notty
 open Nottui
 
@@ -11,7 +10,7 @@ let frame wfocused f vsize =
 
   let title = I.string "Frame" |> I.pad ~l:1 in
 
-  let uchr code = I.uchar (Uchar.of_scalar_exn code) 1 1 in
+  let uchr code = I.uchar (Uchar.of_int code) 1 1 in
   let frame =
     let$ w, h = vsize and$ focused = wfocused in
     let border =
@@ -51,7 +50,7 @@ module Layout = struct
 
   let calc_layout len parts =
     let for_fixed, fill_count =
-      List.fold parts ~init:(0, 0)
+      List.fold_left parts ~init:(0, 0)
         ~f:(fun (for_fixed, fill_count) (constr, _) ->
           match constr with
           | Fixed n -> (for_fixed + n, fill_count)
@@ -59,7 +58,7 @@ module Layout = struct
     in
     let per_fill = (len - for_fixed) / fill_count in
     let _, acc =
-      List.fold parts ~init:(len, []) ~f:(fun (len, acc) (constr, ui) ->
+      List.fold_left parts ~init:(len, []) ~f:(fun (len, acc) (constr, ui) ->
           let part_len = match constr with Fixed n -> n | Fill -> per_fill in
           (len - part_len, (part_len, ui) :: acc))
     in
@@ -68,7 +67,8 @@ module Layout = struct
   let hor (wsize : (int * int) Lwd.t) parts =
     let wsizes =
       let$ w, h = wsize in
-      calc_layout w parts |> Array.of_list_map ~f:(fun (l, _) -> (l, h))
+      calc_layout w parts |> Array.of_list
+      |> Array.map ~f:(fun (l, _) -> (l, h))
     in
     let parts =
       List.mapi parts ~f:(fun i (_, part) ->
@@ -79,7 +79,8 @@ module Layout = struct
   let vert (wsize : (int * int) Lwd.t) parts =
     let wsizes =
       let$ w, h = wsize in
-      calc_layout h parts |> Array.of_list_map ~f:(fun (l, _) -> (w, l))
+      calc_layout h parts |> Array.of_list
+      |> Array.map ~f:(fun (l, _) -> (w, l))
     in
     let parts =
       List.mapi parts ~f:(fun i (_, part) ->
@@ -93,22 +94,21 @@ let procs (cols, rows) =
       let uchar =
         match (row, col) with
         (* top left *)
-        | 0, 0 -> Uchar.of_scalar_exn 0x256d
+        | 0, 0 -> Uchar.of_int 0x256d
         (* top right *)
-        | 0, _ when col = cols - 1 -> Uchar.of_scalar_exn 0x256e
+        | 0, _ when col = cols - 1 -> Uchar.of_int 0x256e
         (* top *)
-        | 0, _ -> Uchar.of_scalar_exn 0x2500
+        | 0, _ -> Uchar.of_int 0x2500
         (* bottom left *)
-        | _, 0 when row = rows - 1 -> Uchar.of_scalar_exn 0x2570
+        | _, 0 when row = rows - 1 -> Uchar.of_int 0x2570
         (* bottom right *)
-        | _, _ when row = rows - 1 && col = cols - 1 ->
-            Uchar.of_scalar_exn 0x256f
+        | _, _ when row = rows - 1 && col = cols - 1 -> Uchar.of_int 0x256f
         (* bottom *)
-        | _, _ when row = rows - 1 -> Uchar.of_scalar_exn 0x2500
+        | _, _ when row = rows - 1 -> Uchar.of_int 0x2500
         (* left *)
-        | _, 0 -> Uchar.of_scalar_exn 0x2502
+        | _, 0 -> Uchar.of_int 0x2502
         (* right *)
-        | _, _ when col = cols - 1 -> Uchar.of_scalar_exn 0x2502
+        | _, _ when col = cols - 1 -> Uchar.of_int 0x2502
         (* content *)
         | _, _ -> Uchar.of_char '.'
       in
@@ -119,12 +119,9 @@ let render_term vt (w, h) =
   let ret =
     I.tabulate w h (fun x y ->
         let cell = Vterm.Screen.getCell ~row:y ~col:x vt in
-        if
-          Uchar.is_char cell.char
-          && Char.is_print (Uchar.to_char_exn cell.char)
-          && Uchar.to_scalar cell.char <> 0
-        then I.uchar cell.char 1 1
-        else if Uchar.to_scalar cell.char = 0 then I.char ' ' 1 1
+        if Uchar.is_char cell.char && Uchar.to_int cell.char <> 0 then
+          I.uchar cell.char 1 1
+        else if Uchar.to_int cell.char = 0 then I.char ' ' 1 1
         else I.char '~' 1 1)
   in
   ret
@@ -214,17 +211,19 @@ let run () =
   let quit, quit_u = Lwt.wait () in
 
   let () =
-    let decl = In_channel.read_all "mprocs.json" |> Decl.parse in
+    let decl = Stdio.In_channel.read_all "mprocs.json" |> Decl.parse in
     let procs =
-      Array.of_list_map decl ~f:(fun { cmd; name } -> Proc.create ~cmd ~name ())
+      Array.of_list decl
+      |> Array.map ~f:(fun { Decl.cmd; name } -> Proc.create ~cmd ~name ())
     in
+
     Lwd.set State.procs_var procs
   in
 
   let on_resize ~w ~h =
     [%log debug "Term resize: %d %d" w h];
     Array.iter (Lwd.peek State.procs_var) ~f:(fun proc ->
-        match Lwd.peek proc.kind_var with
+        match Lwd.peek proc.Proc.kind_var with
         | Simple _ -> ()
         | Vterm pt ->
             let cur = Vterm.getSize pt.vterm in

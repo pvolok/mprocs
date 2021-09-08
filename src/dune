@@ -2,7 +2,7 @@
  (name mprocs)
  (libraries
   cmdliner
-  core_kernel
+  containers-data
   logs
   lwt
   lwt.unix
