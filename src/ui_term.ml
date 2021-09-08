@@ -70,6 +70,26 @@ let render_term vt (w, h) =
   in
   ret
 
+let render_simple ps (w, h) =
+  let lines = Proc_simple.peek_lines ps h in
+  let lines =
+    List.map
+      (fun line ->
+        let line =
+          String.to_seq line
+          |> Seq.map (fun c ->
+                 match c with '\t' -> " " | _ -> Printf.sprintf "%c" c)
+          |> List.of_seq |> String.concat ""
+        in
+        let line =
+          if String.length line > w then String.sub line 0 w else line
+        in
+        let img = line |> I.strf ~w "%s" in
+        img)
+      lines
+  in
+  I.vcat lines
+
 let make ~on_resize size' =
   let tick_var = Lwd.var 0 in
   let tick' = Lwd.get tick_var in
@@ -92,7 +112,14 @@ let make ~on_resize size' =
         (match proc with
         | Some proc -> (
             match Lwd.peek proc.kind_var with
-            | Simple _ -> ()
+            | Simple ps ->
+                let dispose = Dispose.empty in
+
+                let dispose =
+                  Listeners.addl ps.Proc_simple.on_update schedule dispose
+                in
+
+                cur_dispose := dispose
             | Vterm pt ->
                 let dispose = Dispose.empty in
 
@@ -117,11 +144,18 @@ let make ~on_resize size' =
 
   let$ w, h = size' and$ proc = proc' and$ tick = tick' in
   [%log debug "Term frame %d (%dx%d)" tick w h];
+
   on_resize w h;
+
   (match proc with
   | Some proc -> (
       match Lwd.peek proc.kind_var with
-      | Simple _ -> I.char '?' w h
+      | Simple ps -> (
+          try render_simple ps (w, h)
+          with ex ->
+            let error = Printexc.to_string ex in
+            [%log err "%s" error];
+            I.string error)
       | Vterm pt -> render_term pt.Proc_term.vterm (w, h))
   | None -> I.void w h)
   |> Ui.atom

@@ -29,7 +29,7 @@ let run (cmd : Cmd.t) =
     match c with
     | '\r' -> ()
     | '\n' ->
-        CCDeque.push_front buffer (Buffer.contents last_line);
+        CCDeque.push_back buffer (Buffer.contents last_line);
         Buffer.clear last_line;
         notify_update ()
     | c ->
