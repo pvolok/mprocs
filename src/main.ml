@@ -78,73 +78,6 @@ let procs (cols, rows) =
       I.uchar uchar 1 1)
   |> Ui.atom
 
-let render_term vt (w, h) =
-  let ret =
-    I.tabulate w h (fun x y ->
-        let cell = Vterm.Screen.getCell ~row:y ~col:x vt in
-        if Uchar.is_char cell.char && Uchar.to_int cell.char <> 0 then
-          I.uchar cell.char 1 1
-        else if Uchar.to_int cell.char = 0 then I.char ' ' 1 1
-        else I.char '~' 1 1)
-  in
-  ret
-
-let term ~on_resize size' =
-  let vtick = Lwd.var 0 in
-  let tick = Lwd.get vtick in
-
-  let scheduled = ref false in
-  let schedule () =
-    if not !scheduled then (
-      scheduled := true;
-      Lwt.on_success (Lwt.pause ()) (fun () ->
-          scheduled := false;
-          vtick $= Lwd.peek vtick + 1))
-  in
-
-  let cur_dispose = ref Dispose.empty in
-  let proc' =
-    Lwd.map State.current' ~f:(fun proc ->
-        Dispose.dispose !cur_dispose;
-        cur_dispose := Dispose.empty;
-
-        (match proc with
-        | Some proc -> (
-            match Lwd.peek proc.kind_var with
-            | Simple _ -> ()
-            | Vterm pt ->
-                let dispose = Dispose.empty in
-
-                let dispose =
-                  Listeners.addl pt.Proc_term.on_damage
-                    (fun _rect -> schedule ())
-                    dispose
-                in
-
-                cur_dispose := dispose)
-        | None -> ());
-        proc)
-  in
-
-  let last_size = ref (0, 0) in
-  let on_resize w h =
-    let w0, h0 = !last_size in
-    if w0 <> w || h0 <> h then (
-      last_size := (w, h);
-      on_resize ~w ~h)
-  in
-
-  let$ w, h = size' and$ proc = proc' and$ frame_id = tick in
-  [%log debug "Term frame %d (%dx%d)" frame_id w h];
-  on_resize w h;
-  (match proc with
-  | Some proc -> (
-      match Lwd.peek proc.kind_var with
-      | Simple _ -> I.char '?' w h
-      | Vterm pt -> render_term pt.Proc_term.vterm (w, h))
-  | None -> I.void w h)
-  |> Ui.atom
-
 let vwinsize =
   Lwd.var (Notty_lwt.winsize Lwt_unix.stdout |> Option.value ~default:(11, 11))
 
@@ -195,7 +128,7 @@ let run () =
               Vterm.setSize ~size:{ rows = h; cols = w } pt.vterm))
   in
   let procs_ui = W_procs.make in
-  let term_ui = term ~on_resize in
+  let term_ui = Ui_term.make ~on_resize in
   let ui =
     Lwd.map (ui procs_ui term_ui)
       ~f:
