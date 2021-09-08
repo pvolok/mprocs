@@ -160,6 +160,11 @@ let run () =
                  in
                  Lwd.set State.selected_var next;
                  `Handled
+             | `Key key, `Output ->
+                 (match State.get_current_proc () with
+                 | Some proc -> Proc.send_key proc key
+                 | None -> ());
+                 `Handled
              | _ -> `Unhandled))
   in
   let rec resize_loop () =

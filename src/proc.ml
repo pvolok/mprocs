@@ -85,3 +85,8 @@ let stop proc =
       | Vterm pt -> Proc_term.stop pt)
 
 let kind' proc = Lwd.get proc.kind_var
+
+let send_key t (key : Nottui.Ui.key) =
+  match Lwd.peek t.kind_var with
+  | Simple ps -> Proc_simple.send_key ps key
+  | Vterm pt -> Proc_term.send_key pt key

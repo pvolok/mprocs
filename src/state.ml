@@ -17,3 +17,8 @@ let selected' = Lwd.get selected_var
 let current' =
   Lwd.map2 procs' selected' ~f:(fun procs i ->
       if i >= 0 && i < Array.length procs then Some procs.(i) else None)
+let get_current_proc () =
+  let procs = Lwd.peek procs_var in
+  let selected = Lwd.peek selected_var in
+  if selected >= 0 && selected < Array.length procs then Some procs.(selected)
+  else None
