@@ -58,16 +58,21 @@ let line t n =
 
 let lines_count t = Deque.length t.buffer + 1
 
-let send_key ps (key : LTerm_key.t) =
+let send_key ps (key : Nottui.Ui.key) =
+  let main, _mods = key in
   let send str = Lwt_io.write ps.process#stdin str |> Lwt.ignore_result in
-  match key.code with
-  | Char ch ->
-      let str = CamomileLibrary.UTF8.init 1 (Fn.const ch) in
+  match main with
+  | `ASCII c ->
+      let str = Char.to_string c in
       send str
-  | Enter -> send "\n"
-  | Tab -> send "\t"
-  | Backspace -> send "\x7f"
-  | Escape -> send "\x1b"
+  | `Uchar uc ->
+      let buf = Buffer.create 4 in
+      Stdlib.Buffer.add_utf_8_uchar buf uc;
+      send (Buffer.contents buf)
+  | `Enter -> send "\n"
+  | `Tab -> send "\t"
+  | `Backspace -> send "\x7f"
+  | `Escape -> send "\x1b"
   | _ -> ()
 
 let stop ps =

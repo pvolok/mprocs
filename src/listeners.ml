@@ -18,4 +18,8 @@ let add t f =
 
 let rem t (Id id) = Hashtbl.remove t id
 
+let addl t f dispose =
+  let id = add t f in
+  Dispose.add dispose (fun () -> rem t id)
+
 let call t arg = Hashtbl.iter t ~f:(fun f -> f arg)

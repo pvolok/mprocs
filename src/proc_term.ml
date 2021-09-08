@@ -112,39 +112,36 @@ let run (cmd : Cmd.t) =
 
 let resize ~rows ~cols pt = Pty.resize ~rows ~columns:cols pt.pty
 
-let send_key pt (key : LTerm_key.t) =
+let send_key pt (key : Nottui.Ui.key) =
+  let main, mods = key in
   let modifier =
-    if key.control then Vterm.Control
-    else if key.meta then Vterm.Alt
-    else if key.shift then Vterm.Shift
-    else Vterm.None
+    match mods with
+    | [] -> Vterm.None
+    | `Ctrl :: _ -> Vterm.Control
+    | `Meta :: _ -> Vterm.Alt
+    | `Shift :: _ -> Vterm.Shift
   in
 
   let send key mod_ = Vterm.Keyboard.input pt.vterm key mod_ in
 
-  match LTerm_key.code key with
-  | Char c ->
-      let uchar = c |> CamomileLibrary.UChar.uint_code |> Uchar.of_scalar_exn in
-      send (Unicode uchar) modifier
-  | Backspace -> send Vterm.Backspace modifier
-  | Escape -> send Vterm.Escape modifier
-  | Enter -> send Vterm.Enter modifier
-  | Tab -> send Vterm.Tab modifier
-  | Up -> send Vterm.Up modifier
-  | Down -> send Vterm.Down modifier
-  | Left -> send Vterm.Left modifier
-  | Right -> send Vterm.Right modifier
-  | Insert -> send Vterm.Insert modifier
-  | Delete -> send Vterm.Delete modifier
-  | Home -> send Vterm.Home modifier
-  | End -> send Vterm.End modifier
-  | Next_page -> send Vterm.PageDown modifier
-  | Prev_page -> send Vterm.PageUp modifier
-  | _ ->
-      [%log warn "Proc_term.send_key ignored key: %s" (LTerm_key.to_string key)]
-  (* To handle Uchar.of_scalar_exn *)
-  | exception ex ->
-      [%log warn "Proc_term.send_key error: %s" (Exn.to_string ex)]
+  match main with
+  | `ASCII c -> send (Unicode (Uchar.of_char c)) modifier
+  | `Uchar uc -> send (Unicode uc) modifier
+  | `Backspace -> send Vterm.Backspace modifier
+  | `Escape -> send Vterm.Escape modifier
+  | `Enter -> send Vterm.Enter modifier
+  | `Tab -> send Vterm.Tab modifier
+  | `Arrow `Up -> send Vterm.Up modifier
+  | `Arrow `Down -> send Vterm.Down modifier
+  | `Arrow `Left -> send Vterm.Left modifier
+  | `Arrow `Right -> send Vterm.Right modifier
+  | `Insert -> send Vterm.Insert modifier
+  | `Delete -> send Vterm.Delete modifier
+  | `Home -> send Vterm.Home modifier
+  | `End -> send Vterm.End modifier
+  | `Page `Down -> send Vterm.PageDown modifier
+  | `Page `Up -> send Vterm.PageUp modifier
+  | _ -> [%log warn "Proc_term.send_key ignored key: %s" (Keymap.to_string key)]
 
 let stop pt = Pty.kill pt.pty
 
