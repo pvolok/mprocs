@@ -65,8 +65,10 @@ let cell_to_image (cell : Vterm.ScreenCell.t) =
 let render_term vt (w, h) =
   let ret =
     I.tabulate w h (fun x y ->
-        let cell = Vterm.Screen.getCell ~row:y ~col:x vt in
-        cell_to_image cell)
+        try
+          let cell = Vterm.Screen.getCell ~row:y ~col:x vt in
+          cell_to_image cell
+        with ex -> I.char ' ' 1 1)
   in
   ret
 
@@ -104,14 +106,14 @@ let make ~on_resize size' =
   in
 
   let cur_dispose = ref Dispose.empty in
-  let proc' =
-    Lwd.map State.current' ~f:(fun proc ->
+  let kind' =
+    Lwd.map State.kind' ~f:(fun kind ->
         Dispose.dispose !cur_dispose;
         cur_dispose := Dispose.empty;
 
-        (match proc with
-        | Some proc -> (
-            match Lwd.peek proc.kind_var with
+        (match kind with
+        | Some kind -> (
+            match kind with
             | Simple ps ->
                 let dispose = Dispose.empty in
 
@@ -131,7 +133,7 @@ let make ~on_resize size' =
 
                 cur_dispose := dispose)
         | None -> ());
-        proc)
+        kind)
   in
 
   let last_size = ref (0, 0) in
@@ -142,20 +144,20 @@ let make ~on_resize size' =
       on_resize ~w ~h)
   in
 
-  let$ w, h = size' and$ proc = proc' and$ tick = tick' in
+  let$ w, h = size' and$ kind = kind' and$ tick = tick' in
   [%log debug "Term frame %d (%dx%d)" tick w h];
 
   on_resize w h;
 
-  (match proc with
-  | Some proc -> (
-      match Lwd.peek proc.kind_var with
-      | Simple ps -> (
-          try render_simple ps (w, h)
-          with ex ->
-            let error = Printexc.to_string ex in
-            [%log err "%s" error];
-            I.string error)
-      | Vterm pt -> render_term pt.Proc_term.vterm (w, h))
-  | None -> I.void w h)
+  (try
+     match kind with
+     | Some kind -> (
+         match kind with
+         | Simple ps -> render_simple ps (w, h)
+         | Vterm pt -> render_term pt.Proc_term.vterm (w, h))
+     | None -> I.void w h
+   with ex ->
+     let error = Printexc.to_string ex in
+     [%log err "%s" error];
+     I.string error)
   |> Ui.atom

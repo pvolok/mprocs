@@ -106,18 +106,10 @@ let ui procs_ui term_ui =
 let run () =
   let quit, quit_u = Lwt.wait () in
 
-  let () =
-    let decl = Stdio.In_channel.read_all "mprocs.json" |> Decl.parse in
-    let procs =
-      Array.of_list decl
-      |> Array.map ~f:(fun { Decl.cmd; name } -> Proc.create ~cmd ~name ())
-    in
-
-    Lwd.set State.procs_var procs
-  in
-
+  let latest_term_size = ref (0, 0) in
   let on_resize ~w ~h =
     [%log debug "Term resize: %d %d" w h];
+    latest_term_size := (w, h);
     Array.iter (Lwd.peek State.procs_var) ~f:(fun proc ->
         match Lwd.peek proc.Proc.kind_var with
         | Simple _ -> ()
@@ -127,6 +119,7 @@ let run () =
               Proc_term.resize ~rows:h ~cols:w pt;
               Vterm.setSize ~size:{ rows = h; cols = w } pt.vterm))
   in
+
   let procs_ui = W_procs.make in
   let term_ui = Ui_term.make ~on_resize in
   let ui =
@@ -144,7 +137,7 @@ let run () =
                  [%log info "Quit keybinding pressed. Quitting."];
                  Lwt.wakeup_later quit_u ();
                  `Handled
-             | `Key (`ASCII 'j', []), `Procs ->
+             | `Key ((`ASCII 'j' | `Arrow `Down), []), `Procs ->
                  let next = Lwd.peek State.selected_var + 1 in
                  let next =
                    if next >= Array.length (Lwd.peek State.procs_var) then 0
@@ -152,13 +145,23 @@ let run () =
                  in
                  Lwd.set State.selected_var next;
                  `Handled
-             | `Key (`ASCII 'k', []), `Procs ->
+             | `Key ((`ASCII 'k' | `Arrow `Up), []), `Procs ->
                  let next = Lwd.peek State.selected_var - 1 in
                  let next =
                    if next < 0 then Array.length (Lwd.peek State.procs_var) - 1
                    else next
                  in
                  Lwd.set State.selected_var next;
+                 `Handled
+             | `Key (`ASCII 's', []), `Procs ->
+                 (match State.get_current_proc () with
+                 | Some proc -> Proc.start proc
+                 | None -> ());
+                 `Handled
+             | `Key (`ASCII 'x', []), `Procs ->
+                 (match State.get_current_proc () with
+                 | Some proc -> Proc.stop proc
+                 | None -> ());
                  `Handled
              | `Key key, `Output ->
                  (match State.get_current_proc () with
@@ -179,4 +182,20 @@ let run () =
   resize_loop ();
 
   let running = Nottui_lwt.run ~quit ui in
+
+  let start_processes () =
+    let w, h = !latest_term_size in
+    [%log debug "Init term size: %dx%d" w h];
+    let decl = Stdio.In_channel.read_all "mprocs.json" |> Decl.parse in
+    let procs =
+      Array.of_list decl
+      |> Array.map ~f:(fun { Decl.cmd; name } ->
+             Proc.create ~cmd ~size:!latest_term_size ~name ())
+    in
+
+    Lwd.set State.procs_var procs
+  in
+  (* Lwd ignores update if happens syncronously after the first render. *)
+  Lwt.on_success (Lwt.pause ()) start_processes;
+
   Lwt_main.run running

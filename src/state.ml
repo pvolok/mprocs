@@ -1,3 +1,5 @@
+open Lwd_infix
+
 let ui_running = ref true
 
 type focus =
@@ -22,3 +24,9 @@ let get_current_proc () =
   let selected = Lwd.peek selected_var in
   if selected >= 0 && selected < Array.length procs then Some procs.(selected)
   else None
+
+let kind' =
+  let$* current = current' in
+  match current with
+  | None -> Lwd.return None
+  | Some proc -> proc.Proc.kind_var |> Lwd.get |> Lwd.map ~f:Option.some

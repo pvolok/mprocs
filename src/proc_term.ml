@@ -14,15 +14,13 @@ type t = {
   on_term_prop : Vterm.TermProp.t Listeners.t;
 }
 
-let default_rows = 20
-let default_cols = 50
-
 let string_of_row (row : Vterm.ScreenCell.t array) =
   row
   |> Array.map ~f:(fun cell -> cell.Vterm.ScreenCell.char |> Uchar.to_char)
   |> Array.to_seq |> String.of_seq
 
-let run (cmd : Cmd.t) =
+let run (cmd : Cmd.t) ~size =
+  let w, h = size in
   let prog, args =
     match cmd.command with
     | Args (name, args) -> (name, args)
@@ -32,11 +30,9 @@ let run (cmd : Cmd.t) =
   (*let prog =*)
   (*if String.equal prog "" && Array.length args > 0 then args.(0) else prog*)
   (*in*)
-  let vterm = Vterm.make ~rows:default_rows ~cols:default_cols in
+  let vterm = Vterm.make ~rows:h ~cols:w in
 
-  let pty =
-    Pty.create ?env:cmd.env (prog, args) ~rows:default_rows ~cols:default_cols
-  in
+  let pty = Pty.create ?env:cmd.env (prog, args) ~rows:h ~cols:w in
 
   let pid = Pty.get_pid pty in
   let input = Lwt_io.of_unix_fd ~mode:Lwt_io.input (Pty.get_fd_stdout pty) in
