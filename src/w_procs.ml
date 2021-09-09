@@ -27,14 +27,12 @@ let make size' =
             (Proc.name procs.(i))
         in
         let left_max_len = w - 2 - String.length right_str |> max 0 in
-        let left_str =
-          if String.length left_str > left_max_len then
-            String.sub left_str 0 left_max_len
-          else left_str
-        in
+        let left_str = Util.trim left_max_len left_str in
 
         let space =
-          String.make (w - String.length left_str - String.length right_str) ' '
+          String.make
+            (max 0 (w - String.length left_str - String.length right_str))
+            ' '
         in
 
         I.hcat

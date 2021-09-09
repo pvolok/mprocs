@@ -23,6 +23,7 @@ module Layout = struct
     let _, acc =
       List.fold_left parts ~init:(len, []) ~f:(fun (len, acc) (constr, ui) ->
           let part_len = match constr with Fixed n -> n | Fill -> per_fill in
+          let part_len = min len part_len in
           (len - part_len, (part_len, ui) :: acc))
     in
     List.rev acc

@@ -145,6 +145,8 @@ let make ~on_resize size' =
   in
 
   let$ w, h = size' and$ kind = kind' and$ tick = tick' in
+  (* Having segfault if sending resize with 0 *)
+  let w = max 1 w and h = max 1 h in
   [%log debug "Term frame %d (%dx%d)" tick w h];
 
   on_resize w h;

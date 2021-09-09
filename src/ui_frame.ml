@@ -4,7 +4,9 @@ open Nottui
 open Lwd_infix
 
 let make ?title focused' f size' =
-  let body = f (Lwd.map size' ~f:(fun (w, h) -> (w - 2, h - 2))) in
+  let body =
+    f (Lwd.map size' ~f:(fun (w, h) -> (max 0 (w - 2), max 0 (h - 2))))
+  in
   let body = Lwd.map body ~f:(Ui.shift_area (-1) (-1)) in
 
   let title =
