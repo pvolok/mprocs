@@ -61,21 +61,17 @@ let peek_lines t n =
 
 let lines_count t = CCDeque.length t.buffer + 1
 
-let send_key ps (key : Nottui.Ui.key) =
-  let main, _mods = key in
+let send_key ps (key : Tui.Event.key_event) =
   let send str = Lwt_io.write ps.process#stdin str |> Lwt.ignore_result in
-  match main with
-  | `ASCII c ->
-      let str = Printf.sprintf "%c" c in
-      send str
-  | `Uchar uc ->
+  match key.code with
+  | Char code ->
       let buf = Buffer.create 4 in
-      Stdlib.Buffer.add_utf_8_uchar buf uc;
+      Stdlib.Buffer.add_utf_8_uchar buf (Uchar.of_int code);
       send (Buffer.contents buf)
-  | `Enter -> send "\n"
-  | `Tab -> send "\t"
-  | `Backspace -> send "\x7f"
-  | `Escape -> send "\x1b"
+  | Enter -> send "\n"
+  | Tab -> send "\t"
+  | Backspace -> send "\x7f"
+  | Esc -> send "\x1b"
   | _ -> ()
 
 let stop ps =

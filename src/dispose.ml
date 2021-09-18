@@ -1,7 +1,10 @@
-type t = T of (unit -> unit) list
+type t = T of (unit -> unit) list ref
 
-let empty = T []
+let create () = T (ref [])
 
-let add (T lst) f = T (f :: lst)
+let add (T lst) f = lst := f :: !lst
 
-let dispose (T lst) = List.iter (fun f -> f ()) lst
+let dispose (T lst) =
+  let prev = !lst in
+  lst := [];
+  List.iter (fun f -> f ()) prev

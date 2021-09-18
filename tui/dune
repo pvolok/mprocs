@@ -1,0 +1,41 @@
+; forbid dune from building things in `target/` and `vendor/`
+
+(data_only_dirs "target" "vendor")
+
+; creates the rust library if any rust file changes
+
+(rule
+ (targets libtui.a dlltui.so)
+ (deps
+  cargo-config.toml
+  Cargo.lock
+  Cargo.toml
+  (glob_files *.rs)
+  (source_tree vendor))
+ (action
+  (progn
+   ; this is to circumvent a dumb limitation of dune
+   ; which prevents us from copying any .folder to _build
+   (run mkdir -p .cargo)
+   (run cp cargo-config.toml .cargo/config.toml)
+   ; cargo build
+   (run cargo build --offline)
+   ; extract the produced static library
+   ; the .so fluff is here to remove errors that we sometimes get from dune
+   (run
+    sh
+    -c
+    "mv target/debug/libtui.so ./dlltui.so 2> /dev/null || mv target/debug/libtui.dylib ./dlltui.so 2> /dev/null || touch dlltui.so")
+   (run cp target/debug/libtui.a .))))
+
+; the FFI OCaml lib
+
+(library
+ (name tui)
+ (foreign_stubs
+  (language c)
+  (names lwt))
+ (foreign_archives tui)
+ (libraries lwt.unix)
+ (preprocess
+  (pps ppx_deriving.show)))

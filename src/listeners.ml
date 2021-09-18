@@ -14,6 +14,16 @@ let add t f =
   Hashtbl.add t id f;
   Id id
 
+let add_once t f =
+  let id =
+    last_id := !last_id + 1;
+    !last_id
+  in
+  Hashtbl.add t id (fun v ->
+      Hashtbl.remove t id;
+      f v);
+  Id id
+
 let rem t (Id id) = Hashtbl.remove t id
 
 let addl t f dispose =

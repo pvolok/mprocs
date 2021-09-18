@@ -1,53 +1,64 @@
-let key ?(control = false) ?(meta = false) ?(shift = false) c : Nottui.Ui.key =
-  let mods = if control then [ `Ctrl ] else [] in
-  let mods = if meta then `Meta :: mods else mods in
-  let mods = if shift then `Shift :: mods else mods in
-  (`ASCII c, mods)
+type t =
+  | Quit
+  | Select_next
+  | Select_prev
+  | Kill_proc
+  | Start_proc
+  | Focus_term
+  | Focus_procs
 
-let to_string (key : Nottui.Ui.key) =
-  let main, mods = key in
+let procs = Hashtbl.create 8
+let term = Hashtbl.create 8
+
+module Ev = Tui.Event
+
+let bind map ?(ctrl = false) ?(shift = false) ?(alt = false) code act =
+  let mods = { Ev.control = ctrl; shift; alt } in
+  Hashtbl.replace map { Ev.code; modifiers = mods } act
+
+let bind_c map ?ctrl ?shift ?alt c =
+  bind map ?ctrl ?shift ?alt (Ev.Char (Char.code c))
+
+let () =
+  bind_c procs 'q' Quit;
+  bind_c procs 'j' Select_next;
+  bind_c procs 'k' Select_prev;
+  bind_c procs 'x' Kill_proc;
+  bind_c procs 's' Start_proc;
+  bind_c procs ~ctrl:true 'a' Focus_term;
+
+  bind_c term ~ctrl:true 'a' Focus_procs
+
+let handle map key = Hashtbl.find_opt map key
+
+(***************)
+
+let to_string (key : Tui.Event.key_event) =
   let buf = Buffer.create 8 in
 
-  List.iter
-    (function
-      | `Ctrl -> Buffer.add_string buf "C-"
-      | `Meta -> Buffer.add_string buf "M-"
-      | `Shift -> Buffer.add_string buf "S-")
-    mods;
+  if key.modifiers.control then Buffer.add_string buf "C-";
+  if key.modifiers.shift then Buffer.add_string buf "S-";
+  if key.modifiers.alt then Buffer.add_string buf "M-";
 
   let add_s = Buffer.add_string buf in
-  (match main with
-  | `ASCII c -> Buffer.add_char buf c
-  | `Uchar uc -> Buffer.add_utf_8_uchar buf uc
-  | `Tab -> add_s "Tab"
-  | `Arrow `Down -> add_s "Down"
-  | `Arrow `Up -> add_s "Up"
-  | `Arrow `Left -> add_s "Left"
-  | `Arrow `Right -> add_s "Right"
-  | `Backspace -> add_s "Bksp"
-  | `Delete -> add_s "Del"
-  | `Enter -> add_s "Enter"
-  | `Escape -> add_s "Esc"
-  | `Function x -> add_s (Printf.sprintf "F%d" x)
-  | `Page `Up -> add_s "PgUp"
-  | `Page `Down -> add_s "PgDn"
-  | `Home -> add_s "Home"
-  | `End -> add_s "End"
-  | `Insert -> add_s "Ins"
-  | `Copy -> add_s "Copy"
-  | `Paste -> add_s "Paste"
-  | `Focus _ -> add_s "Focus?");
+  (match key.code with
+  | Char code -> Buffer.add_utf_8_uchar buf (Uchar.of_int code)
+  | Tab -> add_s "Tab"
+  | Down -> add_s "Down"
+  | Up -> add_s "Up"
+  | Left -> add_s "Left"
+  | Right -> add_s "Right"
+  | Backspace -> add_s "Bksp"
+  | Delete -> add_s "Del"
+  | Enter -> add_s "Enter"
+  | Esc -> add_s "Esc"
+  | F x -> add_s (Printf.sprintf "F%d" x)
+  | Page_up -> add_s "PgUp"
+  | Page_down -> add_s "PgDn"
+  | Home -> add_s "Home"
+  | End -> add_s "End"
+  | Insert -> add_s "Ins"
+  | Back_tab -> add_s "BackTab"
+  | Null -> add_s "Null");
 
   Buffer.contents buf
-
-let procs_help =
-  [
-    ("Quit", key 'q');
-    ("Output", key ~control:true 'a');
-    ("Kill", key 'x');
-    ("Start", key 's');
-    ("Up", key 'k');
-    ("Down", key 'j');
-  ]
-
-let output_help = [ ("Process list", key ~control:true 'a') ]

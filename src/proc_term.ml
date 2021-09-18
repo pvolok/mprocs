@@ -104,38 +104,39 @@ let run (cmd : Cmd.t) ~size =
     on_term_prop;
   }
 
-let resize ~rows ~cols pt = Pty.resize ~rows ~columns:cols pt.pty
+let resize ~rows ~cols pt =
+  Vterm.setSize ~size:{ rows; cols } pt.vterm;
+  Pty.resize ~rows ~columns:cols pt.pty
 
-let send_key pt (key : Nottui.Ui.key) =
-  let main, mods = key in
+let send_key pt (key : Tui.Event.key_event) =
   let modifier =
-    match mods with
-    | [] -> Vterm.None
-    | `Ctrl :: _ -> Vterm.Control
-    | `Meta :: _ -> Vterm.Alt
-    | `Shift :: _ -> Vterm.Shift
+    if key.modifiers.control then Vterm.Control
+    else if key.modifiers.shift then Vterm.Shift
+    else if key.modifiers.alt then Vterm.Alt
+    else Vterm.None
   in
 
   let send key mod_ = Vterm.Keyboard.input pt.vterm key mod_ in
 
-  match main with
-  | `ASCII c -> send (Unicode (Uchar.of_char c)) modifier
-  | `Uchar uc -> send (Unicode uc) modifier
-  | `Backspace -> send Vterm.Backspace modifier
-  | `Escape -> send Vterm.Escape modifier
-  | `Enter -> send Vterm.Enter modifier
-  | `Tab -> send Vterm.Tab modifier
-  | `Arrow `Up -> send Vterm.Up modifier
-  | `Arrow `Down -> send Vterm.Down modifier
-  | `Arrow `Left -> send Vterm.Left modifier
-  | `Arrow `Right -> send Vterm.Right modifier
-  | `Insert -> send Vterm.Insert modifier
-  | `Delete -> send Vterm.Delete modifier
-  | `Home -> send Vterm.Home modifier
-  | `End -> send Vterm.End modifier
-  | `Page `Down -> send Vterm.PageDown modifier
-  | `Page `Up -> send Vterm.PageUp modifier
-  | _ -> [%log warn "Proc_term.send_key ignored key: %s" (Keymap.to_string key)]
+  match key.code with
+  | Char code -> send (Unicode (Uchar.of_int code)) modifier
+  | Backspace -> send Vterm.Backspace modifier
+  | Esc -> send Vterm.Escape modifier
+  | Enter -> send Vterm.Enter modifier
+  | Tab -> send Vterm.Tab modifier
+  | Up -> send Vterm.Up modifier
+  | Down -> send Vterm.Down modifier
+  | Left -> send Vterm.Left modifier
+  | Right -> send Vterm.Right modifier
+  | Insert -> send Vterm.Insert modifier
+  | Delete -> send Vterm.Delete modifier
+  | Home -> send Vterm.Home modifier
+  | End -> send Vterm.End modifier
+  | Page_down -> send Vterm.PageDown modifier
+  | Page_up -> send Vterm.PageUp modifier
+  | _ ->
+      [%log
+        warn "Proc_term.send_key ignored key: %s" (Tui.Event.show_key_event key)]
 
 let stop pt = Pty.kill pt.pty
 

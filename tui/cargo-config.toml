@@ -1,0 +1,8 @@
+[build]
+rustflags = ["-C", "link-args=-Wl,-undefined,dynamic_lookup"]
+
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"

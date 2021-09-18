@@ -1,0 +1,3 @@
+type terminal
+
+type frame

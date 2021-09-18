@@ -6,11 +6,10 @@
   logs
   lwt
   lwt.unix
-  nottui
-  nottui-lwt
   vterm
   pty
   stdio
+  tui
   yojson)
  (inline_tests)
  (preprocess

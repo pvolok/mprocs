@@ -11,7 +11,7 @@ let run () =
       value & opt string "./mprocs.json"
       & info [ "c"; "config" ] ~docv:"PATH" ~doc)
   in
-  let run config = Main.run () in
+  let run config = Tui_main.run () in
   let main_t = Term.(const run $ config) in
   let info =
     Term.info "mprocs" ~doc:"run multiple processes" ~exits:Term.default_exits
