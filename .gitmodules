@@ -1,6 +1,0 @@
-[submodule "vendor/lwd"]
-	path = vendor/lwd
-	url = git@github.com:pvolok/lwd.git
-[submodule "vendor/notty"]
-	path = vendor/notty
-	url = git@github.com:pqwy/notty.git
