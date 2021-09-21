@@ -1,4 +1,4 @@
-let run term =
+let run ~config term =
   let input_stream =
     Lwt_stream.from Tui.Events.read |> Lwt_stream.map (fun e -> `Input e)
   in
@@ -15,19 +15,25 @@ let run term =
   in
 
   let rec loop () =
-    Tui.render term (fun f ->
-        try
-          let area = Tui.Render.size f in
-          let parts = Tui.Layout.(split [| Length 30; Percentage 100 |] area) in
+    (try
+       Tui.render term (fun f ->
+           try
+             let area = Tui.Render.size f in
+             let parts =
+               Tui.Layout.(split [| Length 30; Percentage 100 |] area)
+             in
 
-          Tui_procs.render f parts.(0);
+             Tui_procs.render f parts.(0);
 
-          Tui.render_block f
-            ~style:(Util.block_style (!Tui_state.focus = `Term))
-            "Output" parts.(1);
-          let term_area = Tui.Rect.sub ~l:1 ~t:1 ~r:1 ~b:1 parts.(1) in
-          Tui_term_ui.render f term_area
-        with ex -> [%log err "Render error: %s" (Printexc.to_string ex)]);
+             Tui.render_block f
+               ~style:(Util.block_style (!Tui_state.focus = `Term))
+               "Output" parts.(1);
+             let term_area = Tui.Rect.sub ~l:1 ~t:1 ~r:1 ~b:1 parts.(1) in
+
+             Tui_term_ui.render f term_area
+           with ex -> [%log err "Render error: %s" (Printexc.to_string ex)])
+       (*;*)
+     with ex -> [%log err "Tui.render failed: %s" (Printexc.to_string ex)]);
 
     let%lwt event = Lwt_stream.get all_stream in
     let result =
@@ -74,20 +80,22 @@ let run term =
 
   (* Starting processes after the first render so that the processes get correct
      terminal size. *)
-  Tui_engine.start ~config:"mprocs.json";
+  Tui_engine.start ~config;
 
   let%lwt () = loop_promise in
 
   Lwt.return_unit
 
-let run () =
+let run ~config () =
   let term = Tui.create () in
   let prog =
     Lwt.finalize
       (fun () ->
         Tui.start term;
-        run term)
-      (fun () -> Tui.stop term |> Lwt.return)
+        run ~config term)
+      (fun () ->
+        [%log debug "Stop tui."];
+        Tui.stop term |> Lwt.return)
   in
   Lwt_main.run prog;
   Gc.full_major ()

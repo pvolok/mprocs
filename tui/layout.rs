@@ -1,7 +1,7 @@
 use ocaml::{Error, Int};
 use tui::layout::{Constraint, Direction, Layout, Rect};
 
-#[derive(ocaml::IntoValue, ocaml::FromValue)]
+#[derive(ocaml::IntoValue, ocaml::FromValue, Debug)]
 pub struct MLRect {
     pub x: u16,
     pub y: u16,
@@ -63,7 +63,7 @@ pub fn tui_layout(spec: Vec<OConstraint>, area: MLRect) -> Vec<MLRect> {
         .direction(Direction::Horizontal)
         .constraints(
             spec.iter()
-                .map(|c| c.of_ml().unwrap())
+                .map(|c| c.of_ml().expect("<c.of_ml()>"))
                 .collect::<Vec<Constraint>>(),
         )
         .split(area.tui());

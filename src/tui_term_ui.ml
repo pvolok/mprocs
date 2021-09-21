@@ -34,7 +34,15 @@ module Vterm = struct
     Tui.Rect.iter
       (fun x y ->
         let cell =
-          Vterm.Screen.getCell ~row:(y - area.y) ~col:(x - area.x) pt.vterm
+          let x' = x - area.x in
+          let y' = y - area.y in
+          let { Vterm.rows = h'; cols = w' } = Vterm.getSize pt.vterm in
+          if x' >= 0 && x' < w' && y' >= 0 && y' < h' then
+            Vterm.Screen.getCell ~row:y' ~col:x' pt.vterm
+          else (
+            [%log
+              warn "Cell is out of bounds: x:%d y:%d w:%d h:%d." x' y' w' h'];
+            Vterm.ScreenCell.empty)
         in
 
         Buffer.clear buf;
@@ -49,7 +57,10 @@ module Vterm = struct
             " "
         in
         let style = conv_style cell in
-        Tui.render_string f ~style s Tui.Rect.{ x; y; w = 1; h = 1 })
+        if cell == Vterm.ScreenCell.empty then ()
+        else Tui.render_string f ~style s Tui.Rect.{ x; y; w = 1; h = 1 };
+
+        ())
       area
 end
 
@@ -60,9 +71,11 @@ let render f (area : Tui.Rect.t) =
   Tui.Rect.iter
     (fun x y -> Tui.render_string f " " Tui.Rect.{ x; y; w = 1; h = 1 })
     area;
-  match proc with
-  | Some { state = Running kind | Stopping kind; _ } -> (
-      match kind with
-      | Simple ps -> Simple.render f ps area
-      | Vterm pt -> Vterm.render f pt area)
-  | _ -> ()
+  try
+    match proc with
+    | Some { state = Running kind | Stopping kind; _ } -> (
+        match kind with
+        | Simple ps -> Simple.render f ps area
+        | Vterm pt -> Vterm.render f pt area)
+    | _ -> ()
+  with ex -> [%log err "Term render error: %s" (Printexc.to_string ex)]
