@@ -6,6 +6,10 @@ let run ~config term =
     Lwt_stream.from (fun () ->
         Tui_engine.Schedule.next_render () |> Lwt.map (Fun.const (Some `Render)))
   in
+  let render_stream =
+    Lwt_stream.from (fun () ->
+        Lwt_unix.sleep (1.0 /. 60.0) |> Lwt.map (fun () -> Some `Render))
+  in
   let quit_stream =
     Lwt_stream.from (fun () ->
         Tui_engine.quit_p |> Lwt.map (fun () -> Some `Quit))
@@ -22,12 +26,6 @@ let run ~config term =
              let parts =
                Tui.Layout.(split [| Length 30; Percentage 100 |] area)
              in
-
-             Tui_procs.render f parts.(0);
-
-             Tui.render_block f
-               ~style:(Util.block_style (!Tui_state.focus = `Term))
-               "Output" parts.(1);
              let term_area = Tui.Rect.sub ~l:1 ~t:1 ~r:1 ~b:1 parts.(1) in
 
              Tui_term_ui.render f term_area
@@ -40,7 +38,7 @@ let run ~config term =
       match event with
       | Some (`Input event) -> (
           match event with
-          | Key key -> (
+          | Tui.Event.Key key -> (
               let keymap =
                 match !Tui_state.focus with
                 | `Procs -> Keymap.procs

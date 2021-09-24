@@ -14,6 +14,11 @@ module Vterm = struct
     lor (if Vterm.Style.isItalic s then Tui.Style.Mod.italic else 0)
     lor if Vterm.Style.isUnderline s then Tui.Style.Mod.underlined else 0
 
+  let conv_mod (s : Vterm.Style.t) : Tui.Style.Mod.t =
+    (if Vterm.Style.isBold s then 0 else 0)
+    lor (if false then 0 else 0)
+    lor if false then 0 else 0
+
   let conv_color (c : Vterm.Color.raw) : Tui.Style.color option =
     match Vterm.Color.unpack c with
     | Vterm.Color.DefaultForeground | Vterm.Color.DefaultBackground ->
@@ -23,22 +28,29 @@ module Vterm = struct
 
   let conv_style (cell : Vterm.ScreenCell.t) : Tui.Style.t =
     {
-      fg = conv_color cell.fg;
-      bg = conv_color cell.bg;
+      (*fg = conv_color cell.fg;*)
+      (*bg = conv_color cell.bg;*)
+      (*add_modifier = conv_mod cell.style;*)
+      (*sub_modifier = 0;*)
+      fg = Some Tui.Style.Green;
+      bg = None;
       add_modifier = conv_mod cell.style;
       sub_modifier = 0;
     }
 
-  let render f (pt : Proc_term.t) (area : Tui.Rect.t) =
+  let render f _pt (area : Tui.Rect.t) =
     let buf = Buffer.create 4 in
     Tui.Rect.iter
       (fun x y ->
         let cell =
           let x' = x - area.x in
           let y' = y - area.y in
-          let { Vterm.rows = h'; cols = w' } = Vterm.getSize pt.vterm in
+          (*let { Vterm.rows = h'; cols = w' } = Vterm.getSize pt.vterm in*)
+          let w' = area.w in
+          let h' = area.h in
           if x' >= 0 && x' < w' && y' >= 0 && y' < h' then
-            Vterm.Screen.getCell ~row:y' ~col:x' pt.vterm
+            { Vterm.ScreenCell.empty with char = Uchar.of_char '?' }
+            (*Vterm.Screen.getCell ~row:y' ~col:x' pt.vterm*)
           else (
             [%log
               warn "Cell is out of bounds: x:%d y:%d w:%d h:%d." x' y' w' h'];
@@ -58,7 +70,7 @@ module Vterm = struct
         in
         let style = conv_style cell in
         if cell == Vterm.ScreenCell.empty then ()
-        else Tui.render_string f ~style s Tui.Rect.{ x; y; w = 1; h = 1 };
+        else Tui.render_string "f" ~style "s" Tui.Rect.{ x; y; w = 1; h = 1 };
 
         ())
       area
@@ -72,10 +84,8 @@ let render f (area : Tui.Rect.t) =
     (fun x y -> Tui.render_string f " " Tui.Rect.{ x; y; w = 1; h = 1 })
     area;
   try
-    match proc with
-    | Some { state = Running kind | Stopping kind; _ } -> (
-        match kind with
-        | Simple ps -> Simple.render f ps area
-        | Vterm pt -> Vterm.render f pt area)
+    
+    match Some 1 with
+    | Some _ -> Vterm.render f () area
     | _ -> ()
   with ex -> [%log err "Term render error: %s" (Printexc.to_string ex)]

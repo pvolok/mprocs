@@ -73,26 +73,27 @@ pub fn tui_render_block(
   f.render_widget(block, rect.tui());
 }
 
+
 #[ocaml::func]
 pub fn tui_render_string(
-  f: ocaml::Value,
-  style: Option<StyleML>,
-  s: &str,
-  rect: MLRect,
+  //f: ocaml::Value,
+  //style: Option<StyleML>,
+  //s: &str,
+  //rect: MLRect,
 ) {
-  let f = frame_val(&f);
+  //let f = frame_val(&f);
 
-  let style = match style {
-    Some(style) => Style::from(style),
-    None => Style::default(),
-  };
+  //let style = match style {
+    //Some(style) => Style::from(style),
+    //None => Style::default(),
+  //};
 
-  let w = RenderWidget::new(|buf| {
-    buf.set_stringn(rect.x, rect.y, s, rect.w.into(), style);
-  });
+  //let w = RenderWidget::new(|buf| {
+    //buf.set_stringn(rect.x, rect.y, s, rect.w.into(), style);
+  //});
 
-  if f.size().width == 0 || f.size().height == 0 {
-  } else {
-    f.render_widget(w, rect.tui());
-  }
+  //if f.size().width == 0 || f.size().height == 0 {
+  //} else {
+    //f.render_widget(w, rect.tui());
+  //}
 }

@@ -141,6 +141,7 @@ end
 module Style = struct
   type t = int
   let isBold v = v land 1 = 1
+  let isBold v = let a () = v land 1 = 1 in false
   let isItalic v = v land 2 = 2
   let isUnderline v = v land 4 = 4
 end
