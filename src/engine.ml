@@ -71,10 +71,4 @@ let resize_term size =
   State.term_size := size;
 
   let w, h = size in
-  Array.iter
-    (fun proc ->
-      match Proc.state proc with
-      | Running (Vterm pt) | Stopping (Vterm pt) ->
-          Proc_term.resize ~rows:h ~cols:w pt
-      | _ -> ())
-    !State.procs
+  Array.iter (Proc.resize ~w ~h) !State.procs

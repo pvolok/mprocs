@@ -110,6 +110,15 @@ let stopped proc =
       promise
   | Stopped s -> Lwt.return s
 
+let resize ~w ~h proc =
+  proc.size <- (w, h);
+  match proc.state with
+  | Stopped _ -> ()
+  | Running kind | Stopping kind -> (
+      match kind with
+      | Simple _ -> ()
+      | Vterm pt -> Proc_term.resize ~rows:h ~cols:w pt)
+
 let stop proc =
   match state proc with
   | Stopped _ -> ()
