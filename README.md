@@ -22,11 +22,21 @@ Example `mprocs.json`:
 
 ```json
 {
-  "server": {
-    "shell": "node src/server.js"
-  },
-  "test": {
-    "shell": "yarn test"
+  "procs": {
+    "nvim": {
+      "cmd": "nvim",
+      "args": ["nvim"]
+    },
+    "server": {
+      "shell": "nodemon server.js"
+    },
+    "webpack": {
+      "shell": "webpack serve"
+    },
+    "tests": {
+      "shell": "jest -w",
+      "tty": false
+    }
   }
 }
 ```
