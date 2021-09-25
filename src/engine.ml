@@ -34,6 +34,10 @@ let start ~config =
                Listeners.add proc.on_rerender (fun () ->
                    if i = !State.selected then Schedule.schedule ())
              in
+             let _id : Listeners.id =
+               Listeners.add proc.on_state_change (fun _ ->
+                   Schedule.schedule ())
+             in
              proc)
     in
 
