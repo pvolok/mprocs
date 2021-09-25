@@ -27,9 +27,10 @@ let run (cmd : Cmd.t) ~size =
     | Shell cmd -> Lwt_process.shell cmd
   in
 
-  (*let prog =*)
-  (*if String.equal prog "" && Array.length args > 0 then args.(0) else prog*)
-  (*in*)
+  let prog =
+    if String.equal prog "" && Array.length args > 0 then args.(0) else prog
+  in
+
   let vterm = Vterm.make ~rows:h ~cols:w in
 
   let pty = Pty.create ?env:cmd.env (prog, args) ~rows:h ~cols:w in
