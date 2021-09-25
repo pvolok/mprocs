@@ -1,3 +1,11 @@
+(* Init *)
+
+external tui_init : unit -> unit = "tui_init"
+
+let () = tui_init ()
+
+(* End init *)
+
 module Event = Event
 module Events = Events
 module Layout = Layout
@@ -7,19 +15,18 @@ module Render = Render
 module Style = Style
 module Types = Types
 
-type term = Types.terminal
 type frame = Types.frame
 
-let create = Term.create
-
-let start term =
+let create () =
+  Term.create ();
   Term.enable_raw_mode ();
   Term.enter_alternate_screen ();
-  Term.clear term
+  Term.clear ()
 
-let stop (_term : Term.t) =
+let destroy () =
   Term.leave_alternate_screen ();
-  Term.disable_raw_mode ()
+  Term.disable_raw_mode ();
+  Term.destroy ()
 
 let clear term = Term.clear term
 

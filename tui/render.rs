@@ -16,24 +16,21 @@ use crate::{
 type Backend = CrosstermBackend<io::Stdout>;
 
 #[ocaml::func]
-pub fn tui_render(
-  mut ptr: Pointer<Term>,
-  draw: ocaml::Value,
-) -> Result<(), Error> {
-  let term = ptr.as_mut();
+pub fn tui_render(draw: ocaml::Value) -> Result<(), Error> {
+  crate::terminal::use_term(|term| {
+    let mut result = Ok(());
 
-  let mut result = Ok(());
+    term.terminal.draw(|f| {
+      let ptr = Box::into_raw(Box::new(f));
+      let f_val = unsafe { ocaml::Value::alloc_abstract_ptr(ptr.clone()) };
+      result = unsafe { draw.call(gc, f_val) }.map(|_| ());
 
-  term.terminal.draw(|f| {
-    let ptr = Box::into_raw(Box::new(f));
-    let f_val = unsafe { ocaml::Value::alloc_abstract_ptr(ptr.clone()) };
-    result = unsafe { draw.call(gc, f_val) }.map(|_| ());
+      let f = unsafe { Box::from_raw(ptr) };
+      drop(f);
+    })?;
 
-    let f = unsafe { Box::from_raw(ptr) };
-    drop(f);
-  })?;
-
-  result
+    result
+  })
 }
 
 fn frame_val<'a>(f: &'a ocaml::Value) -> &'a mut Frame<Backend> {

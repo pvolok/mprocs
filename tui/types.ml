@@ -1,3 +1,1 @@
-type terminal
-
 type frame

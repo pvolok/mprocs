@@ -10,4 +10,4 @@ external render_block : frame -> Style.t option -> string -> Rect.t -> unit
   = "tui_render_block"
 let render_block f ?style title area = render_block f style title area
 
-external render : Types.terminal -> (frame -> unit) -> unit = "tui_render"
+external render : (frame -> unit) -> unit = "tui_render"

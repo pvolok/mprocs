@@ -1,4 +1,4 @@
-let run ~config term =
+let run ~config () =
   let input_stream =
     Lwt_stream.from Tui.Events.read |> Lwt_stream.map (fun e -> `Input e)
   in
@@ -16,7 +16,7 @@ let run ~config term =
 
   let rec loop () =
     (try
-       Tui.render term (fun f ->
+       Tui.render (fun f ->
            try
              let area = Tui.Render.size f in
              let parts =
@@ -87,15 +87,14 @@ let run ~config term =
   Lwt.return_unit
 
 let run ~config () =
-  let term = Tui.create () in
   let prog =
     Lwt.finalize
       (fun () ->
-        Tui.start term;
-        run ~config term)
+        Tui.create ();
+        run ~config ())
       (fun () ->
         [%log debug "Stop tui."];
-        Tui.stop term |> Lwt.return)
+        Tui.destroy () |> Lwt.return)
   in
   Lwt_main.run prog;
   Gc.full_major ()

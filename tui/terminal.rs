@@ -1,4 +1,4 @@
-use std::io;
+use std::{cell::RefCell, io};
 
 use crossterm::{
   terminal::{EnterAlternateScreen, LeaveAlternateScreen},
@@ -13,22 +13,41 @@ pub struct Term {
   pub terminal: Terminal<Backend>,
 }
 
-unsafe extern "C" fn finalize<T>(value: ocaml::Raw) {
-  let ptr = value.as_pointer::<T>();
-  ptr.drop_in_place();
+thread_local! {
+    pub static TERM : RefCell<Option<Term>> = RefCell::new(None);
+}
+
+pub fn use_term<F, R>(f: F) -> R
+where
+  F: FnOnce(&mut Term) -> R,
+{
+  TERM.with(|cell| {
+    let mut term = cell.borrow_mut();
+    let term = term.as_mut().unwrap();
+    f(term)
+  })
 }
 
 #[ocaml::func]
-pub fn tui_terminal_create() -> Result<Pointer<Term>, Error> {
+pub fn tui_terminal_create() -> Result<(), Error> {
   let stdout = io::stdout();
   let backend = CrosstermBackend::new(stdout);
   let terminal = Terminal::new(backend)?;
 
   let term = Term { terminal };
 
-  let ptr: Pointer<Term> =
-    Pointer::alloc_final(term, Some(finalize::<Term>), None);
-  Ok(ptr)
+  TERM.with(|cell| {
+    let _term = cell.replace(Some(term));
+  });
+
+  Ok(())
+}
+
+#[ocaml::func]
+pub fn tui_terminal_destroy() {
+  TERM.with(|cell| {
+    let _term = cell.replace(None);
+  });
 }
 
 #[ocaml::func]
@@ -42,8 +61,8 @@ pub fn tui_terminal_disable_raw_mode() -> Result<(), Error> {
 }
 
 #[ocaml::func]
-pub fn tui_terminal_clear(mut term: Pointer<Term>) -> Result<(), Error> {
-  Ok(term.as_mut().terminal.clear()?)
+pub fn tui_terminal_clear(mut _term: Pointer<Term>) -> Result<(), Error> {
+  use_term(|term| Ok(term.terminal.clear()?))
 }
 
 #[ocaml::func]
