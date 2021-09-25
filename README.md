@@ -5,8 +5,8 @@ separately.
 
 ## Screenshots
 
-![](img/screenshot1.png)
-![](img/screenshot2.png)
+<img src="img/screenshot1.png" width="656" height="410" />
+<img src="img/screenshot2.png" width="656" height="410" />
 
 ## Installation
 
