@@ -4,11 +4,10 @@ let run ~config () =
   in
   let render_stream =
     Lwt_stream.from (fun () ->
-        Tui_engine.Schedule.next_render () |> Lwt.map (Fun.const (Some `Render)))
+        Engine.Schedule.next_render () |> Lwt.map (Fun.const (Some `Render)))
   in
   let quit_stream =
-    Lwt_stream.from (fun () ->
-        Tui_engine.quit_p |> Lwt.map (fun () -> Some `Quit))
+    Lwt_stream.from (fun () -> Engine.quit_p |> Lwt.map (fun () -> Some `Quit))
   in
   let all_stream =
     Lwt_stream.choose [ input_stream; render_stream; quit_stream ]
@@ -24,14 +23,14 @@ let run ~config () =
                Tui.Layout.(hsplit [| Length 30; Percentage 100 |] vparts.(0))
              in
 
-             Tui_procs.render f hparts.(0);
+             Ui_procs.render f hparts.(0);
 
              Tui.render_block f
-               ~style:(Util.block_style (!Tui_state.focus = `Term))
+               ~style:(Util.block_style (!State.focus = `Term))
                "Output" hparts.(1);
              let term_area = Tui.Rect.sub ~l:1 ~t:1 ~r:1 ~b:1 hparts.(1) in
 
-             Tui_term_ui.render f term_area;
+             Ui_term.render f term_area;
 
              Ui_help.render f vparts.(1)
            with ex -> [%log err "Render error: %s" (Printexc.to_string ex)])
@@ -45,7 +44,7 @@ let run ~config () =
           match event with
           | Key key -> (
               let keymap =
-                match !Tui_state.focus with
+                match !State.focus with
                 | `Procs -> Keymap.procs
                 | `Term -> Keymap.term
               in
@@ -53,26 +52,26 @@ let run ~config () =
               match action with
               | Some action ->
                   (match action with
-                  | Keymap.Quit -> Tui_engine.quit ()
-                  | Keymap.Select_next -> Tui_state.next ()
-                  | Keymap.Select_prev -> Tui_state.prev ()
+                  | Keymap.Quit -> Engine.quit ()
+                  | Keymap.Select_next -> State.next ()
+                  | Keymap.Select_prev -> State.prev ()
                   | Keymap.Kill_proc ->
-                      Tui_state.get_current () |> Option.iter Tui_proc.stop
+                      State.get_current () |> Option.iter Proc.stop
                   | Keymap.Start_proc ->
-                      Tui_state.get_current () |> Option.iter Tui_proc.start
-                  | Keymap.Focus_term -> Tui_state.focus := `Term
-                  | Keymap.Focus_procs -> Tui_state.focus := `Procs);
+                      State.get_current () |> Option.iter Proc.start
+                  | Keymap.Focus_term -> State.focus := `Term
+                  | Keymap.Focus_procs -> State.focus := `Procs);
                   `Next
               | None ->
-                  (match (!Tui_state.focus, Tui_state.get_current ()) with
-                  | `Term, Some proc -> Tui_proc.send_key proc key
+                  (match (!State.focus, State.get_current ()) with
+                  | `Term, Some proc -> Proc.send_key proc key
                   | _ -> ());
                   `Next)
           | _ -> `Next)
       | Some `Render -> `Next
       | Some `Quit -> `Quit
       | None ->
-          Tui_engine.quit ();
+          Engine.quit ();
           `Next
     in
 
@@ -83,7 +82,7 @@ let run ~config () =
 
   (* Starting processes after the first render so that the processes get correct
      terminal size. *)
-  Tui_engine.start ~config;
+  Engine.start ~config;
 
   let%lwt () = loop_promise in
 

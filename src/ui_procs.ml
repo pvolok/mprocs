@@ -1,15 +1,15 @@
 let render f (area : Tui.Rect.t) =
   Tui.render_block f
-    ~style:(Util.block_style (!Tui_state.focus = `Procs))
+    ~style:(Util.block_style (!State.focus = `Procs))
     "Processes" area;
 
   let area = Tui.Rect.sub ~l:1 ~t:1 ~r:1 ~b:1 area in
   Array.iteri
-    (fun i (proc : Tui_proc.t) ->
+    (fun i (proc : Proc.t) ->
       let area = Tui.Rect.sub ~t:i area in
       let area = { area with h = 1 } in
 
-      let prefix = if !Tui_state.selected = i then "* " else "  " in
+      let prefix = if !State.selected = i then "* " else "  " in
       let name = prefix ^ proc.name in
       Tui.render_string f name area;
 
@@ -24,4 +24,4 @@ let render f (area : Tui.Rect.t) =
       in
 
       ())
-    !Tui_state.procs
+    !State.procs

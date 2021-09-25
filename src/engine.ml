@@ -25,21 +25,19 @@ let start ~config =
 
   let load () =
     let%lwt src = Lwt_io.with_file ~mode:Lwt_io.input config Lwt_io.read in
-    let decl = Decl.parse src in
+    let config = Config.parse src in
     let procs =
-      Array.of_list decl
-      |> Array.mapi (fun i { Decl.cmd; name } ->
-             let proc =
-               Tui_proc.create ~cmd ~size:!Tui_state.term_size ~name ()
-             in
+      Array.of_list config.procs
+      |> Array.mapi (fun i { Config.cmd; name } ->
+             let proc = Proc.create ~cmd ~size:!State.term_size ~name () in
              let _id : Listeners.id =
                Listeners.add proc.on_rerender (fun () ->
-                   if i = !Tui_state.selected then Schedule.schedule ())
+                   if i = !State.selected then Schedule.schedule ())
              in
              proc)
     in
 
-    Tui_state.procs := procs;
+    State.procs := procs;
     Schedule.schedule ();
     Lwt.return_unit
   in
@@ -53,9 +51,9 @@ let quit () =
   let all =
     Lwt_list.map_p
       (fun proc ->
-        Tui_proc.stop proc;
-        Tui_proc.stopped proc)
-      (Array.to_list !Tui_state.procs)
+        Proc.stop proc;
+        Proc.stopped proc)
+      (Array.to_list !State.procs)
   in
   Lwt.on_any all
     (fun _ -> Lwt.wakeup_later quit_r ())
@@ -66,13 +64,13 @@ let quit () =
       Lwt.wakeup_later quit_r ())
 
 let resize_term size =
-  Tui_state.term_size := size;
+  State.term_size := size;
 
   let w, h = size in
   Array.iter
     (fun proc ->
-      match Tui_proc.state proc with
+      match Proc.state proc with
       | Running (Vterm pt) | Stopping (Vterm pt) ->
           Proc_term.resize ~rows:h ~cols:w pt
       | _ -> ())
-    !Tui_state.procs
+    !State.procs

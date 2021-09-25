@@ -67,9 +67,9 @@ end
 let render f (area : Tui.Rect.t) =
   (let w = max 1 area.w in
    let h = max 1 area.h in
-   let w', h' = !Tui_state.term_size in
-   if w' <> w || h' <> h then Tui_engine.resize_term (w, h));
-  let proc = Tui_state.get_current () in
+   let w', h' = !State.term_size in
+   if w' <> w || h' <> h then Engine.resize_term (w, h));
+  let proc = State.get_current () in
   Tui.Rect.iter
     (fun x y -> Tui.render_string f " " Tui.Rect.{ x; y; w = 1; h = 1 })
     area;

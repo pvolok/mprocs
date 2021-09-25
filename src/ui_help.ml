@@ -4,7 +4,7 @@ let render f area =
   let inner = Tui.Rect.sub ~l:1 ~t:1 ~r:1 ~b:1 area in
 
   let items =
-    match !Tui_state.focus with
+    match !State.focus with
     | `Procs ->
         [
           ("q", "Quit");

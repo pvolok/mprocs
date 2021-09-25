@@ -1,7 +1,7 @@
 let focus : [ `Procs | `Term ] ref = ref `Procs
 
 let term_size = ref (80, 30)
-let procs : Tui_proc.t array ref = ref [||]
+let procs : Proc.t array ref = ref [||]
 
 let selected = ref 0
 let next () =
