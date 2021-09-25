@@ -1,6 +1,6 @@
 use std::io;
 
-use ocaml::{Error, Pointer};
+use ocaml::Error;
 use tui::{
   backend::CrosstermBackend,
   style::Style,
@@ -9,9 +9,7 @@ use tui::{
   Frame,
 };
 
-use crate::{
-  layout::MLRect, render_widget::RenderWidget, style::StyleML, terminal::Term,
-};
+use crate::{layout::RectML, render_widget::RenderWidget, style::StyleML};
 
 type Backend = CrosstermBackend<io::Stdout>;
 
@@ -42,10 +40,10 @@ fn frame_val<'a>(f: &'a ocaml::Value) -> &'a mut Frame<Backend> {
 }
 
 #[ocaml::func]
-pub fn tui_render_frame_size(f: ocaml::Value) -> MLRect {
+pub fn tui_render_frame_size(f: ocaml::Value) -> RectML {
   let f = frame_val(&f);
 
-  MLRect::of_tui(f.size())
+  RectML::of_tui(f.size())
 }
 
 #[ocaml::func]
@@ -53,7 +51,7 @@ pub fn tui_render_block(
   f: ocaml::Value,
   style: Option<StyleML>,
   title: &str,
-  rect: MLRect,
+  rect: RectML,
 ) {
   let f = frame_val(&f);
 
@@ -75,7 +73,7 @@ pub fn tui_render_string(
   f: ocaml::Value,
   style: Option<StyleML>,
   s: &str,
-  rect: MLRect,
+  rect: RectML,
 ) {
   let f = frame_val(&f);
 

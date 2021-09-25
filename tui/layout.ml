@@ -7,4 +7,11 @@ type constr =
   | Max of int
   | Min of int
 
-external split : constr array -> Rect.t -> Rect.t array = "tui_layout"
+type dir =
+  | Horizontal
+  | Vertical
+
+external split : constr array -> dir -> Rect.t -> Rect.t array = "tui_layout"
+
+let hsplit spec area = split spec Horizontal area
+let vsplit spec area = split spec Vertical area

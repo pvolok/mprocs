@@ -65,8 +65,10 @@ module Vterm = struct
 end
 
 let render f (area : Tui.Rect.t) =
-  (let w', h' = !Tui_state.term_size in
-   if w' <> area.w || h' <> area.h then Tui_engine.resize_term (area.w, area.h));
+  (let w = max 1 area.w in
+   let h = max 1 area.h in
+   let w', h' = !Tui_state.term_size in
+   if w' <> w || h' <> h then Tui_engine.resize_term (w, h));
   let proc = Tui_state.get_current () in
   Tui.Rect.iter
     (fun x y -> Tui.render_string f " " Tui.Rect.{ x; y; w = 1; h = 1 })

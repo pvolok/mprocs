@@ -19,18 +19,21 @@ let run ~config () =
        Tui.render (fun f ->
            try
              let area = Tui.Render.size f in
-             let parts =
-               Tui.Layout.(split [| Length 30; Percentage 100 |] area)
+             let vparts = Tui.Layout.(vsplit [| Min 0; Length 3 |]) area in
+             let hparts =
+               Tui.Layout.(hsplit [| Length 30; Percentage 100 |] vparts.(0))
              in
 
-             Tui_procs.render f parts.(0);
+             Tui_procs.render f hparts.(0);
 
              Tui.render_block f
                ~style:(Util.block_style (!Tui_state.focus = `Term))
-               "Output" parts.(1);
-             let term_area = Tui.Rect.sub ~l:1 ~t:1 ~r:1 ~b:1 parts.(1) in
+               "Output" hparts.(1);
+             let term_area = Tui.Rect.sub ~l:1 ~t:1 ~r:1 ~b:1 hparts.(1) in
 
-             Tui_term_ui.render f term_area
+             Tui_term_ui.render f term_area;
+
+             Ui_help.render f vparts.(1)
            with ex -> [%log err "Render error: %s" (Printexc.to_string ex)])
        (*;*)
      with ex -> [%log err "Tui.render failed: %s" (Printexc.to_string ex)]);
