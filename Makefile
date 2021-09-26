@@ -39,12 +39,34 @@ endif
 DIST=dist
 OUT=$(DIST)/$(PLAT)
 BIN_NAME=mprocs$(BIN_EXT)
+ZIP_OUT=$(DIST)/mprocs-$(PLAT).zip
 
+ROOT=$(shell pwd)
+
+.PHONY: build
 build:
-	rm -rf dist
-	dune build --profile=release bin/mprocs.exe
+	rm -rf $(OUT)
+	rm -rf $(ZIP_OUT)
 	mkdir -p $(OUT)
+	
+	opam install . --deps-only
+	opam exec dune build bin/mprocs.exe
 	strip -o $(OUT)/$(BIN_NAME) _build/default/bin/mprocs.exe
 	chmod +w $(OUT)/$(BIN_NAME)
 	upx --best --overlay=strip $(OUT)/$(BIN_NAME)
-	zip $(DIST)/mprocs-$(PLAT).zip $(OUT)/*
+	zip $(ZIP_OUT) $(OUT)/*
+
+build-alpine:
+	docker build -t mprocs-build-alpine build/alpine/
+	docker run --name mprocs-build-alpine2 --rm \
+		-v $(ROOT)/Makefile:/app/Makefile \
+		-v $(ROOT)/bin:/app/bin \
+		-v $(ROOT)/dist:/app/dist \
+		-v $(ROOT)/dune:/app/dune \
+		-v $(ROOT)/dune-project:/app/dune-project \
+		-v $(ROOT)/mprocs.opam:/app/mprocs.opam \
+		-v $(ROOT)/pty:/app/pty \
+		-v $(ROOT)/src:/app/src \
+		-v $(ROOT)/tui:/app/tui \
+		-v $(ROOT)/vterm:/app/vterm \
+		mprocs-build-alpine make build

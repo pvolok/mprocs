@@ -43,9 +43,7 @@ impl OConstraint {
   pub fn of_ml(&self) -> Result<Constraint, Error> {
     let constr = match self {
       OConstraint::Percentage(x) => (Constraint::Percentage(*x)),
-      OConstraint::Ratio(a, b) => {
-        Constraint::Ratio((*a).try_into()?, (*b).try_into()?)
-      }
+      OConstraint::Ratio(a, b) => Constraint::Ratio((*a) as u32, (*b) as u32),
       OConstraint::Length(x) => Constraint::Length(*x),
       OConstraint::Max(x) => Constraint::Max(*x),
       OConstraint::Min(x) => Constraint::Min(*x),
@@ -57,7 +55,7 @@ impl OConstraint {
     let constr = match constr {
       Constraint::Percentage(x) => OConstraint::Percentage(*x),
       Constraint::Ratio(a, b) => {
-        OConstraint::Ratio((*a).try_into()?, (*b).try_into()?)
+        OConstraint::Ratio((*a) as isize, (*b) as isize)
       }
       Constraint::Length(x) => OConstraint::Length(*x),
       Constraint::Max(x) => OConstraint::Max(*x),

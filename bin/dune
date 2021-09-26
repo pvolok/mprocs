@@ -1,3 +1,17 @@
 (executable
  (name mprocs)
+ (modules mprocs)
+ (flags
+  (:standard
+   (:include flags.sexp)))
  (libraries mprocs))
+
+(executable
+ (name discover)
+ (modules discover)
+ (libraries dune-configurator))
+
+(rule
+ (targets flags.sexp)
+ (action
+  (run ./discover.exe)))
