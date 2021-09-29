@@ -1,6 +1,6 @@
-use std::io;
+use std::{cell::RefCell, io};
 
-use ocaml::Error;
+use ocaml::{Error, Value};
 use tui::{
   backend::CrosstermBackend,
   style::Style,
@@ -9,85 +9,84 @@ use tui::{
   Frame,
 };
 
-use crate::{layout::RectML, render_widget::RenderWidget, style::StyleML};
+use crate::{
+  layout::RectML, render_widget::RenderWidget, style::StyleML,
+  terminal::use_term,
+};
 
 type Backend = CrosstermBackend<io::Stdout>;
 
 #[ocaml::func]
 pub fn tui_render(draw: ocaml::Value) -> Result<(), Error> {
-  crate::terminal::use_term(|term| {
-    let mut result = Ok(());
+  crate::terminal::use_term(|term| term.terminal.autoresize())?;
 
-    term.terminal.draw(|f| {
-      let ptr = Box::into_raw(Box::new(f));
-      let f_val = unsafe { ocaml::Value::alloc_abstract_ptr(ptr.clone()) };
-      result = unsafe { draw.call(gc, f_val) }.map(|_| ());
+  let result = unsafe { draw.call(gc, Value::unit()).map(|_| ()) };
 
-      let f = unsafe { Box::from_raw(ptr) };
-      drop(f);
-    })?;
+  crate::terminal::use_term(|term| -> Result<(), io::Error> {
+    term.terminal.draw(|_f| ())?;
+    Ok(())
+  })?;
 
-    result
+  result
+}
+
+fn with_frame<F, R>(f: F) -> R
+where
+  F: FnOnce(&mut Frame<Backend>) -> R,
+{
+  use_term(|term| {
+    let mut frame = term.terminal.get_frame();
+    f(&mut frame)
   })
 }
 
-fn frame_val<'a>(f: &'a ocaml::Value) -> &'a mut Frame<Backend> {
-  unsafe {
-    let ptr = f.abstract_ptr_val_mut() as *mut &mut tui::Frame<Backend>;
-    let f = ptr.as_mut().unwrap();
-    f
-  }
-}
-
 #[ocaml::func]
-pub fn tui_render_frame_size(f: ocaml::Value) -> RectML {
-  let f = frame_val(&f);
-
-  RectML::of_tui(f.size())
+pub fn tui_render_frame_size(_f: ocaml::Value) -> RectML {
+  with_frame(|f| RectML::of_tui(f.size()))
 }
 
 #[ocaml::func]
 pub fn tui_render_block(
-  f: ocaml::Value,
+  _f: ocaml::Value,
   style: Option<StyleML>,
   title: &str,
   rect: RectML,
 ) {
-  let f = frame_val(&f);
+  with_frame(|f| {
+    let style = match style {
+      Some(style) => Style::from(style),
+      None => Style::default(),
+    };
+    let span = Span::styled(title, style);
+    let block = Block::default()
+      .border_style(style)
+      .title(span)
+      .borders(Borders::ALL);
 
-  let style = match style {
-    Some(style) => Style::from(style),
-    None => Style::default(),
-  };
-  let span = Span::styled(title, style);
-  let block = Block::default()
-    .border_style(style)
-    .title(span)
-    .borders(Borders::ALL);
-
-  f.render_widget(block, rect.tui());
+    f.render_widget(block, rect.tui());
+  })
 }
 
 #[ocaml::func]
 pub fn tui_render_string(
-  f: ocaml::Value,
+  _f: ocaml::Value,
   style: Option<StyleML>,
   s: &str,
   rect: RectML,
 ) {
-  let f = frame_val(&f);
+  with_frame(|f| {
+    let style = match style {
+      Some(style) => Style::from(style),
+      None => Style::default(),
+    };
 
-  let style = match style {
-    Some(style) => Style::from(style),
-    None => Style::default(),
-  };
+    let w = RenderWidget::new(|buf| {
+      buf.set_stringn(rect.x, rect.y, s, rect.w.into(), style);
+    });
 
-  let w = RenderWidget::new(|buf| {
-    buf.set_stringn(rect.x, rect.y, s, rect.w.into(), style);
-  });
-
-  if f.size().width == 0 || f.size().height == 0 {
-  } else {
-    f.render_widget(w, rect.tui());
-  }
+    if f.size().width == 0 || f.size().height == 0 {
+    } else {
+      f.render_widget(w, rect.tui());
+    }
+  })
 }
