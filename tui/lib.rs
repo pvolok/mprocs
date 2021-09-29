@@ -6,6 +6,9 @@ mod render_widget;
 mod style;
 mod terminal;
 
+#[macro_use]
+extern crate lazy_static;
+
 use std::io::Write;
 
 #[ocaml::func]

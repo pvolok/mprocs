@@ -1,3 +1,5 @@
+open Base
+
 type t =
   | Quit
   | Select_next
@@ -6,18 +8,20 @@ type t =
   | Start_proc
   | Focus_term
   | Focus_procs
+[@@deriving show]
 
-let procs = Hashtbl.create 8
-let term = Hashtbl.create 8
+let procs = Hashtbl.create (module Tui.Event.Key)
+let term = Hashtbl.create (module Tui.Event.Key)
 
 module Ev = Tui.Event
+module Key = Tui.Event.Key
 
 let bind map ?(ctrl = false) ?(shift = false) ?(alt = false) code act =
-  let mods = { Ev.control = ctrl; shift; alt } in
-  Hashtbl.replace map { Ev.code; modifiers = mods } act
+  let mods = { Key.control = ctrl; shift; alt } in
+  Hashtbl.set map ~key:{ Key.code; modifiers = mods } ~data:act
 
 let bind_c map ?ctrl ?shift ?alt c =
-  bind map ?ctrl ?shift ?alt (Ev.Char (Char.code c))
+  bind map ?ctrl ?shift ?alt (Key.Char (Char.to_int c))
 
 let () =
   bind_c procs 'q' Quit;
@@ -29,11 +33,11 @@ let () =
 
   bind_c term ~ctrl:true 'a' Focus_procs
 
-let handle map key = Hashtbl.find_opt map key
+let handle map key = Hashtbl.find map key
 
 (***************)
 
-let to_string (key : Tui.Event.key_event) =
+let to_string (key : Tui.Event.Key.t) =
   let buf = Buffer.create 8 in
 
   if key.modifiers.control then Buffer.add_string buf "C-";
@@ -42,7 +46,7 @@ let to_string (key : Tui.Event.key_event) =
 
   let add_s = Buffer.add_string buf in
   (match key.code with
-  | Char code -> Buffer.add_utf_8_uchar buf (Uchar.of_int code)
+  | Char code -> Caml.Buffer.add_utf_8_uchar buf (Uchar.of_scalar_exn code)
   | Tab -> add_s "Tab"
   | Down -> add_s "Down"
   | Up -> add_s "Up"

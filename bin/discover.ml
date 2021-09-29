@@ -45,7 +45,7 @@ let () =
         match os with
         | Mac -> []
         | Linux -> [ "-cclib"; "-static"; "-cclib"; "-no-pie" ]
-        | Windows -> []
+        | Windows -> ["-cclib"; "-luserenv"]
         | _ -> failwith "Unsupported OS"
       in
 

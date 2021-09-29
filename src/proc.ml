@@ -127,7 +127,7 @@ let stop proc =
       | Simple ps -> Proc_simple.stop ps
       | Vterm pt -> Proc_term.stop pt)
 
-let send_key proc (key : Tui.Event.key_event) =
+let send_key proc (key : Tui.Event.Key.t) =
   match proc.state with
   | Running kind | Stopping kind -> (
       match kind with

@@ -109,7 +109,7 @@ let resize ~rows ~cols pt =
   Vterm.setSize ~size:{ rows; cols } pt.vterm;
   Pty.resize ~rows ~columns:cols pt.pty
 
-let send_key pt (key : Tui.Event.key_event) =
+let send_key pt (key : Tui.Event.Key.t) =
   let modifier =
     if key.modifiers.control then Vterm.Control
     else if key.modifiers.shift then Vterm.Shift
@@ -136,8 +136,7 @@ let send_key pt (key : Tui.Event.key_event) =
   | Page_down -> send Vterm.PageDown modifier
   | Page_up -> send Vterm.PageUp modifier
   | _ ->
-      [%log
-        warn "Proc_term.send_key ignored key: %s" (Tui.Event.show_key_event key)]
+      [%log warn "Proc_term.send_key ignored key: %s" (Tui.Event.Key.show key)]
 
 let stop pt = Pty.kill pt.pty
 

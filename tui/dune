@@ -43,4 +43,4 @@
  (foreign_archives tui)
  (libraries lwt.unix tui_c)
  (preprocess
-  (pps ppx_deriving.show)))
+  (pps ppx_jane ppx_deriving.show)))

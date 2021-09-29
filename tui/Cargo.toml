@@ -10,6 +10,7 @@ crate-type = ["staticlib"]
 path = "lib.rs"
 
 [dependencies]
-crossterm = "*"
-ocaml = "0.22.0"
+crossterm = "0.20"
+ocaml = "0.22.1"
 tui = { version = "*", default-features = false, features = ['crossterm'] }
+lazy_static = "1.4.0"
