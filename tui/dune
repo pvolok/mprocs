@@ -41,6 +41,6 @@
 (library
  (name tui)
  (foreign_archives tui)
- (libraries lwt.unix tui_c)
+ (libraries logs lwt.unix tui_c)
  (preprocess
   (pps ppx_jane ppx_deriving.show)))

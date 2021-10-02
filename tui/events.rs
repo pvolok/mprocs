@@ -1,24 +1,19 @@
-use crossterm::event::{read, Event};
+use crossterm::event as ev;
 use ocaml::{Raw, Value};
+use std::ffi::c_void;
 use std::io::Write;
-use std::{cell::RefCell, io};
-use std::{ffi::c_void, time::Duration};
-
+use std::ptr::null;
 use std::sync::mpsc::channel;
 use std::sync::{mpsc::Receiver, Arc, Mutex};
 use std::thread;
 
-#[repr(C)]
-pub struct Job(*const c_void);
-
-#[repr(C)]
-struct JobData(Option<crate::event::Event>);
+use crate::event::Event;
 
 lazy_static! {
   static ref RX: Arc<Mutex<Receiver<Option<crate::event::Event>>>> = {
     let (tx, rx) = channel::<Option<crate::event::Event>>();
     thread::spawn(move || loop {
-      let event = read().ok();
+      let event = ev::read().ok();
       let event = event.map(crate::event::from_crossterm);
       tx.send(event).unwrap();
     });
@@ -28,39 +23,38 @@ lazy_static! {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn worker_rs(job: Job) {
-  let data = tui_lwt_get_data(job).as_mut().unwrap();
-
+pub unsafe extern "C" fn tui_events_read_rs() -> *const Event {
   let event = (*RX).lock().unwrap().recv().unwrap();
-  data.0 = event;
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn result_rs(job: Job) -> Raw {
-  let data = Box::from_raw(tui_lwt_get_data(job));
-
-  ocaml::body!(gc: {
-    match data.0 {
-      Some(event) => ocaml::Value::some(gc, event).raw(),
-      None => ocaml::Value::none().raw(),
-    }
-  })
-}
-
-extern "C" {
-  fn tui_lwt_create_job(
-    worker: unsafe extern "C" fn(Job),
-    result: unsafe extern "C" fn(Job) -> Raw,
-    data: *mut JobData,
-  ) -> Raw;
-
-  fn tui_lwt_get_data(job: Job) -> *mut JobData;
+  let ptr = match event {
+    Some(event) => Box::into_raw(Box::from(event)),
+    None => null(),
+  };
+  {
+    let mut file = std::fs::OpenOptions::new()
+      .write(true)
+      .append(true)
+      .open("tde.log")
+      .unwrap();
+    writeln!(file, "read ptr: {}", ptr as usize).unwrap();
+  }
+  ptr
 }
 
 #[ocaml::func]
-pub fn tui_events_read_job() -> Raw {
-  let data = Box::from(JobData(Option::None));
-  let job =
-    unsafe { tui_lwt_create_job(worker_rs, result_rs, Box::into_raw(data)) };
-  return job;
+pub fn tui_event_unpack(v: Value) -> Option<Event> {
+  let ptr = unsafe { v.abstract_ptr_val_mut::<Event>() };
+  {
+    let mut file = std::fs::OpenOptions::new()
+      .write(true)
+      .append(true)
+      .open("tde.log")
+      .unwrap();
+    writeln!(file, "unpack ptr: {}", ptr as usize).unwrap();
+  }
+  let event = if ptr.is_null() {
+    None
+  } else {
+    unsafe { Some(*Box::from_raw(ptr)) }
+  };
+  event
 }
