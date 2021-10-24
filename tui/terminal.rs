@@ -4,7 +4,6 @@ use crossterm::{
   terminal::{EnterAlternateScreen, LeaveAlternateScreen},
   ExecutableCommand,
 };
-use ocaml::{Error, Pointer};
 use tui::{backend::CrosstermBackend, Terminal};
 
 type Backend = CrosstermBackend<io::Stdout>;
@@ -28,51 +27,47 @@ where
   })
 }
 
-#[ocaml::func]
-pub fn tui_terminal_create() -> Result<(), Error> {
+#[no_mangle]
+pub extern "C" fn tui_terminal_create() {
   let stdout = io::stdout();
   let backend = CrosstermBackend::new(stdout);
-  let terminal = Terminal::new(backend)?;
+  let terminal = Terminal::new(backend).unwrap();
 
   let term = Term { terminal };
 
   TERM.with(|cell| {
     let _term = cell.replace(Some(term));
   });
-
-  Ok(())
 }
 
-#[ocaml::func]
-pub fn tui_terminal_destroy() {
+#[no_mangle]
+pub extern "C" fn tui_terminal_destroy() {
   TERM.with(|cell| {
     let _term = cell.replace(None);
   });
 }
 
-#[ocaml::func]
-pub fn tui_terminal_enable_raw_mode() -> Result<(), Error> {
-  Ok(crossterm::terminal::enable_raw_mode()?)
+#[no_mangle]
+pub extern "C" fn tui_enable_raw_mode() {
+  crossterm::terminal::enable_raw_mode().unwrap()
 }
 
-#[ocaml::func]
-pub fn tui_terminal_disable_raw_mode() -> Result<(), Error> {
-  Ok(crossterm::terminal::disable_raw_mode()?)
+#[no_mangle]
+pub extern "C" fn tui_disable_raw_mode() {
+  crossterm::terminal::disable_raw_mode().unwrap()
 }
 
-#[ocaml::func]
-pub fn tui_terminal_clear(mut _term: Pointer<Term>) -> Result<(), Error> {
-  use_term(|term| Ok(term.terminal.clear()?))
+#[no_mangle]
+pub extern "C" fn tui_clear() {
+  use_term(|term| term.terminal.clear().unwrap())
 }
 
-#[ocaml::func]
-pub fn tui_enter_alternate_screen() -> Result<(), Error> {
-  io::stdout().execute(EnterAlternateScreen)?;
-  Ok(())
+#[no_mangle]
+pub extern "C" fn tui_enter_alternate_screen() {
+  io::stdout().execute(EnterAlternateScreen).unwrap();
 }
 
-#[ocaml::func]
-pub fn tui_leave_alternate_screen() -> Result<(), Error> {
-  io::stdout().execute(LeaveAlternateScreen)?;
-  Ok(())
+#[no_mangle]
+pub extern "C" fn tui_leave_alternate_screen() {
+  io::stdout().execute(LeaveAlternateScreen).unwrap();
 }

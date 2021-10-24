@@ -1,7 +1,9 @@
 type event_ptr
 
-external event_job : unit -> event_ptr Lwt_unix.job = "tui_event_job"
-
-external unpack_event : event_ptr -> Event.t option = "tui_event_unpack"
-
-let read () = Lwt_unix.run_job (event_job ()) |> Lwt.map unpack_event
+let read () =
+  let event = C.Fn2.tui_events_read_rs () in
+  let event = Funcs_stubs2.(event.lwt) in
+  event
+  |> Lwt.map (fun x ->
+         let event = C.Types.Event.of_c x in
+         match event with Finished -> None | event -> Some event)

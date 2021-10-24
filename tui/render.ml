@@ -1,13 +1,17 @@
-open Types
+open Base
 
-external size : frame -> Rect.t = "tui_render_frame_size"
+let size _frame = C.frame_size () |> Rect.of_c
 
-external render_string : frame -> Style.t option -> string -> Rect.t -> unit
-  = "tui_render_string"
-let render_string f ?style str area = render_string f style str area
+let render_block _f ?style title area =
+  let style_c =
+    Option.map style ~f:(fun s -> s |> C.Types.Style.to_c |> Ctypes.addr)
+  in
+  let area_c = C.Types.Rect.to_c area in
+  C.Fn.render_block style_c title area_c
 
-external render_block : frame -> Style.t option -> string -> Rect.t -> unit
-  = "tui_render_block"
-let render_block f ?style title area = render_block f style title area
-
-external render : (frame -> unit) -> unit = "tui_render"
+let render_string _f ?style str area =
+  let style_c =
+    Option.map style ~f:(fun s -> s |> C.Types.Style.to_c |> Ctypes.addr)
+  in
+  let area_c = C.Types.Rect.to_c area in
+  C.Fn.render_string style_c str area_c

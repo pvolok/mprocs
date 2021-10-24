@@ -1,0 +1,14 @@
+(library
+ (name tui_ctypes)
+ (libraries ctypes ctypes.stubs))
+
+(rule
+ (targets types.h types.ml types_bindings.ml types.rs)
+ (deps ../gen-tool/gen_tool.exe)
+ (mode promote)
+ (action
+  (run %{deps})))
+
+(rule
+ (action
+  (copy# gen-stubs/types_stubs.ml types_stubs.ml)))

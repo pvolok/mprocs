@@ -15,26 +15,26 @@ let run ~config () =
 
   let rec loop () =
     (try
-       Tui.render (fun f ->
-           try
-             let area = Tui.Render.size f in
-             let vparts = Tui.Layout.(vsplit [| Min 0; Length 3 |]) area in
-             let hparts =
-               Tui.Layout.(hsplit [| Length 30; Percentage 100 |] vparts.(0))
-             in
+       Tui.render_start ();
+       let f = () in
+       let area = Tui.Render.size f in
+       let vparts = Tui.Layout.(vsplit [| Min 0; Length 3 |]) area in
+       let hparts =
+         Tui.Layout.(hsplit [| Length 30; Percentage 100 |] vparts.(0))
+       in
 
-             Ui_procs.render f hparts.(0);
+       Ui_procs.render f hparts.(0);
 
-             Tui.render_block f
-               ~style:(Util.block_style (!State.focus = `Term))
-               "Output" hparts.(1);
-             let term_area = Tui.Rect.sub ~l:1 ~t:1 ~r:1 ~b:1 hparts.(1) in
+       Tui.render_block f
+         ~style:(Util.block_style (!State.focus = `Term))
+         "Output" hparts.(1);
+       let term_area = Tui.Rect.sub ~l:1 ~t:1 ~r:1 ~b:1 hparts.(1) in
 
-             Ui_term.render f term_area;
+       Ui_term.render f term_area;
 
-             Ui_help.render f vparts.(1)
-           with ex -> [%log err "Render error: %s" (Printexc.to_string ex)])
-       (*;*)
+       Ui_help.render f vparts.(1);
+
+       Tui.render_end ()
      with ex -> [%log err "Tui.render failed: %s" (Printexc.to_string ex)]);
 
     let%lwt event = Lwt_stream.get all_stream in

@@ -4,6 +4,7 @@
  (flags
   (:standard
    (:include flags.sexp)))
+ ;(ocamlopt_flags -runtime-variant=d)
  (libraries mprocs))
 
 (executable

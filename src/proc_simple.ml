@@ -61,7 +61,7 @@ let peek_lines t n =
 
 let lines_count t = CCDeque.length t.buffer + 1
 
-let send_key ps (key : Tui.Event.Key.t) =
+let send_key ps (key : Tui.Event.KeyEvent.t) =
   let send str = Lwt_io.write ps.process#stdin str |> Lwt.ignore_result in
   match key.code with
   | Char code ->

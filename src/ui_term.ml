@@ -14,14 +14,14 @@ module Vterm = struct
     lor (if Vterm.Style.isItalic s then Tui.Style.Mod.italic else 0)
     lor if Vterm.Style.isUnderline s then Tui.Style.Mod.underlined else 0
 
-  let conv_color (c : Vterm.Color.raw) : Tui.Style.color option =
+  let conv_color (c : Vterm.Color.raw) : Tui.C.Types.ColorOpt.t =
     match Vterm.Color.unpack c with
     | Vterm.Color.DefaultForeground | Vterm.Color.DefaultBackground ->
-        Some Tui.Style.Reset
-    | Vterm.Color.Rgb (r, g, b) -> Some (Tui.Style.Rgb (r, g, b))
-    | Vterm.Color.Index index -> Some (Tui.Style.Indexed index)
+        Some Reset
+    | Vterm.Color.Rgb (r, g, b) -> Some (Rgb (r, g, b))
+    | Vterm.Color.Index index -> Some (Indexed index)
 
-  let conv_style (cell : Vterm.ScreenCell.t) : Tui.Style.t =
+  let conv_style (cell : Vterm.ScreenCell.t) : Tui.C.Types.Style.t =
     {
       fg = conv_color cell.fg;
       bg = conv_color cell.bg;
@@ -58,7 +58,7 @@ module Vterm = struct
         in
         let style = conv_style cell in
         if cell == Vterm.ScreenCell.empty then ()
-        else Tui.render_string f ~style s Tui.Rect.{ x; y; w = 1; h = 1 };
+        else Tui.render_string f ~style s { Tui.Rect.x; y; w = 1; h = 1 };
 
         ())
       area
@@ -71,7 +71,7 @@ let render f (area : Tui.Rect.t) =
    if w' <> w || h' <> h then Engine.resize_term (w, h));
   let proc = State.get_current () in
   Tui.Rect.iter
-    (fun x y -> Tui.render_string f " " Tui.Rect.{ x; y; w = 1; h = 1 })
+    (fun x y -> Tui.render_string f " " { Tui.Rect.x; y; w = 1; h = 1 })
     area;
   try
     match proc with

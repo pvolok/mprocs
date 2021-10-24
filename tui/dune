@@ -11,6 +11,7 @@
   Cargo.lock
   Cargo.toml
   (glob_files *.rs)
+  (source_tree ctypes)
   (source_tree vendor))
  (action
   (progn
@@ -31,16 +32,31 @@
 ; the FFI OCaml lib
 
 (library
- (name tui_c)
- (modules)
- (foreign_stubs
-  (language c)
-  (names lwt))
- (libraries lwt.unix))
-
-(library
  (name tui)
  (foreign_archives tui)
- (libraries logs lwt.unix tui_c)
+ (foreign_stubs
+  (language c)
+  (names funcs_stubs))
+ (libraries ctypes.stubs ctypes.foreign logs lwt.unix tui_ctypes)
  (preprocess
   (pps ppx_jane ppx_deriving.show)))
+
+(rule
+ (action
+  (copy cfuncs/funcs.h funcs.h)))
+
+(rule
+ (action
+  (copy cfuncs/funcs_stubs.c funcs_stubs.c)))
+
+(rule
+ (action
+  (copy cfuncs/funcs_stubs.ml funcs_stubs.ml)))
+
+(rule
+ (action
+  (copy cfuncs/funcs_stubs2.ml funcs_stubs2.ml)))
+
+(rule
+ (action
+  (copy cfuncs/bindings.ml funcs_bindings.ml)))

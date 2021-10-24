@@ -1,0 +1,18 @@
+(executable
+ (name bindgen)
+ (modules bindgen bindings)
+ (libraries ctypes ctypes.stubs ctypes.foreign tui_ctypes))
+
+(rule
+ (targets funcs_stubs.c funcs_stubs.ml funcs_stubs2.ml)
+ (deps bindgen.exe)
+ (action
+  (run %{deps})))
+
+;(rule
+;(action
+;(copy# ../ctypes/types_bindings.ml types_bindings.ml)))
+
+;(rule
+;(action
+;(copy# ../ctypes/types_stubs.ml types_stubs.ml)))

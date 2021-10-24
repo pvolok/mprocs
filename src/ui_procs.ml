@@ -16,8 +16,22 @@ let render f (area : Tui.Rect.t) =
       let () =
         let str, style =
           match proc.state with
-          | Stopped _ -> (" DOWN", Tui.Style.make ~fg:Red ())
-          | Running _ | Stopping _ -> (" UP", Tui.Style.make ~fg:Green ())
+          | Stopped _ ->
+              ( " DOWN",
+                {
+                  Tui.C.Types.Style.fg = Some Red;
+                  bg = None;
+                  add_modifier = 0;
+                  sub_modifier = 0;
+                } )
+          | Running _ | Stopping _ ->
+              ( " UP",
+                {
+                  Tui.C.Types.Style.fg = Some Green;
+                  bg = None;
+                  add_modifier = 0;
+                  sub_modifier = 0;
+                } )
         in
         let area' = Tui.Rect.sub ~l:(area.w - String.length str) area in
         Tui.render_string f ~style str area'

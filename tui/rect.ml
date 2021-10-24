@@ -1,9 +1,4 @@
-type t = {
-  x : int;
-  y : int;
-  w : int;
-  h : int;
-}
+include C.Types.Rect
 
 let sub ?(l = 0) ?(t = 0) ?(r = 0) ?(b = 0) rect =
   { x = rect.x + l; y = rect.y + t; w = rect.w - l - r; h = rect.h - t - b }
