@@ -1,0 +1,19 @@
+[package]
+name = "mprocs"
+version = "0.2.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "mprocs"
+path = "rust/main.rs"
+
+[dependencies]
+anyhow = "1.0.44"
+crossterm = { version = "0.20", features = ["event-stream"] }
+tokio = { version = "1", features = ["full"] }
+futures = { version = "*" }
+portable-pty = "0.5.0"
+tui = { version = "*", default-features = false, features = ['crossterm'] }
+unicode-width = "0.1.9"
