@@ -4,6 +4,7 @@ mod proc;
 mod state;
 mod theme;
 mod ui_procs;
+mod ui_term;
 
 use std::io;
 

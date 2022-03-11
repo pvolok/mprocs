@@ -9,7 +9,7 @@ use tui::{
   Frame,
 };
 
-use crate::{state::State, theme::Theme};
+use crate::{proc::Proc, state::State, theme::Theme};
 
 type Backend = CrosstermBackend<io::Stdout>;
 
@@ -33,11 +33,7 @@ pub fn render_procs(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
   frame.render_stateful_widget(items, area, &mut list_state);
 }
 
-fn create_proc_item<'a>(
-  proc: &crate::state::Proc,
-  is_cur: bool,
-  width: u16,
-) -> ListItem<'a> {
+fn create_proc_item<'a>(proc: &Proc, is_cur: bool, width: u16) -> ListItem<'a> {
   let status = Span::styled(
     " UP",
     Style::default()

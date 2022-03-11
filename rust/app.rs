@@ -9,11 +9,15 @@ use crossterm::{
   },
 };
 use futures::{future::FutureExt, select, StreamExt};
-use tui::{backend::CrosstermBackend, Terminal};
+use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tui::{
+  backend::CrosstermBackend,
+  layout::{Constraint, Direction, Layout},
+  Terminal,
+};
 
 use crate::{
-  state::{Proc, State},
-  ui_procs::render_procs,
+  proc::Proc, state::State, ui_procs::render_procs, ui_term::render_term,
 };
 
 type Term = Terminal<CrosstermBackend<io::Stdout>>;
@@ -25,61 +29,24 @@ enum LoopAction {
 
 pub struct App {
   state: State,
+  events: Receiver<()>,
+  events_tx: Sender<()>,
 }
 
 impl App {
   pub fn new() -> Self {
+    let (tx, rx) = channel::<()>(100);
+
     let state = State {
-      procs: vec![
-        Proc {
-          name: "proc1".to_string(),
-        },
-        Proc {
-          name: "proc2".to_string(),
-        },
-        Proc {
-          name: "proc3".to_string(),
-        },
-        Proc {
-          name: "proc1".to_string(),
-        },
-        Proc {
-          name: "proc2".to_string(),
-        },
-        Proc {
-          name: "proc3".to_string(),
-        },
-        Proc {
-          name: "proc1".to_string(),
-        },
-        Proc {
-          name: "proc2".to_string(),
-        },
-        Proc {
-          name: "proc3".to_string(),
-        },
-        Proc {
-          name: "proc1".to_string(),
-        },
-        Proc {
-          name: "proc2".to_string(),
-        },
-        Proc {
-          name: "proc3".to_string(),
-        },
-        Proc {
-          name: "proc1".to_string(),
-        },
-        Proc {
-          name: "proc2".to_string(),
-        },
-        Proc {
-          name: "proc3".to_string(),
-        },
-      ],
+      procs: Vec::new(),
       selected: 0,
     };
-    App { state }
+
+    App {
+      state,
+      events: rx,
+      events_tx: tx,
+    }
   }
 
   pub async fn run(self) -> Result<(), io::Error> {
@@ -101,16 +68,42 @@ impl App {
   async fn main_loop(mut self, terminal: &mut Term) -> Result<(), io::Error> {
     let mut input = EventStream::new();
 
-    loop {
-      terminal.draw(|f| {
-        let area = f.size();
+    let mut cur_size: Option<(u16, u16)> = None;
 
-        render_procs(area, f, &mut self.state);
+    loop {
+      let mut term_size = (0, 0);
+      terminal.draw(|f| {
+        let chunks = Layout::default()
+          .direction(Direction::Horizontal)
+          .constraints([Constraint::Length(30), Constraint::Min(2)].as_ref())
+          .split(f.size());
+
+        render_procs(chunks[0], f, &mut self.state);
+        render_term(chunks[1], f, &mut self.state);
+
+        term_size = (chunks[1].height - 2, chunks[1].width - 2);
       })?;
+
+      match cur_size {
+        Some((rows, cols)) => {
+          if rows != term_size.0 || cols != term_size.1 {
+            for proc in &self.state.procs {
+              proc.inst.resize(term_size.0, term_size.1);
+            }
+          }
+        }
+        None => {
+          cur_size = Some(term_size);
+          self.start_procs(term_size);
+        }
+      }
 
       let loop_action = select! {
         event = input.next().fuse() => {
           self.handle_input(event)
+        }
+        _ = self.events.recv().fuse() => {
+          LoopAction::Continue
         }
       };
 
@@ -121,6 +114,14 @@ impl App {
     }
 
     Ok(())
+  }
+
+  fn start_procs(&mut self, size: (u16, u16)) {
+    self.state.procs.push(Proc::new(
+      "proc1".to_string(),
+      self.events_tx.clone(),
+      size,
+    ));
   }
 
   fn handle_input(

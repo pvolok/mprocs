@@ -17,3 +17,4 @@ futures = { version = "*" }
 portable-pty = "0.5.0"
 tui = { version = "*", default-features = false, features = ['crossterm'] }
 unicode-width = "0.1.9"
+vt100 = "0.15.1"

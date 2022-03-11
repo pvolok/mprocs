@@ -1,22 +1,33 @@
-use portable_pty::ExitStatus;
+use std::sync::{Arc, RwLock};
+
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{ExitStatus, MasterPty};
 use tokio::io::AsyncWriteExt;
 use tokio::io::{AsyncReadExt, DuplexStream};
+use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
 use tokio::task::spawn_blocking;
 
 pub struct Inst {
-  rx_exit: Receiver<Option<ExitStatus>>,
-  io: DuplexStream,
+  pub vt: Arc<RwLock<vt100::Parser>>,
+  pub master: Box<dyn MasterPty + Send>,
 }
 
 impl Inst {
-  pub fn spawn(cmd: CommandBuilder) -> anyhow::Result<Self> {
+  pub fn spawn(
+    cmd: CommandBuilder,
+    tx: Sender<()>,
+    size: (u16, u16),
+  ) -> anyhow::Result<Self> {
+    let mut vt = vt100::Parser::new(size.0, size.1, 1000);
+    vt.process(b"this text is \x1b[31mRED\x1b[m");
+    let vt = Arc::new(RwLock::new(vt));
+
     let pty_system = native_pty_system();
 
     let pair = pty_system.openpty(PtySize {
-      rows: 24,
-      cols: 80,
+      rows: size.0,
+      cols: size.1,
       pixel_width: 0,
       pixel_height: 0,
     })?;
@@ -40,53 +51,50 @@ impl Inst {
     let master = pair.master;
     let mut reader = master.try_clone_reader().unwrap();
     let mut writer = master.try_clone_writer().unwrap();
-    let (server, client) = tokio::io::duplex(256);
-    let (mut server_read, mut server_write) = tokio::io::split(server);
-    tokio::spawn(async move {
+
+    let vt1 = vt.clone();
+    spawn_blocking(move || {
+      let mut buf = [0; 256];
       loop {
-        let mut buf = [0; 256];
-        let read_result = spawn_blocking(move || {
-          let result = reader.read(&mut buf);
-          result.map(|c| (reader, c))
-        })
-        .await
-        .unwrap();
-        match read_result {
-          Ok((reader_back, count)) => {
-            reader = reader_back;
-            let _write_result = server_write.write_all(&buf[..count]).await;
-          }
-          _ => break,
-        }
-      }
-      Ok::<_, anyhow::Error>(())
-    });
-    tokio::spawn(async move {
-      loop {
-        let mut buf = [0; 256];
-        let count = server_read.read(&mut buf).await;
-        match count {
+        match reader.read(&mut buf) {
           Ok(count) => {
-            writer = spawn_blocking(move || {
-              writer.write_all(&buf[..count]).unwrap();
-              writer
-            })
-            .await
-            .unwrap();
+            vt1.write().unwrap().process(&buf[..count]);
+            tx.blocking_send(()).unwrap();
           }
           _ => break,
         }
       }
     });
 
-    let inst = Inst {
-      rx_exit,
-      io: client,
-    };
+    let inst = Inst { vt, master };
     Ok(inst)
+  }
+
+  pub fn resize(&self, rows: u16, cols: u16) {
+    self
+      .master
+      .resize(PtySize {
+        rows,
+        cols,
+        pixel_width: 0,
+        pixel_height: 0,
+      })
+      .unwrap();
+
+    self.vt.write().unwrap().set_size(rows, cols);
   }
 }
 
 pub struct Proc {
-  inst: Inst,
+  pub name: String,
+  pub inst: Inst,
+}
+
+impl Proc {
+  pub fn new(name: String, tx: Sender<()>, size: (u16, u16)) -> Self {
+    Proc {
+      name,
+      inst: Inst::spawn(CommandBuilder::new("top"), tx, size).unwrap(),
+    }
+  }
 }
