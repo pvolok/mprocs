@@ -63,6 +63,20 @@ impl Widget for UiTerm {
         let to_cell = buf.get_mut(area.x + col, area.y + row);
         if let Some(cell) = screen.cell(row, col) {
           if cell.has_contents() {
+            let mut mods = Modifier::empty();
+            mods.set(Modifier::BOLD, cell.bold());
+            mods.set(Modifier::ITALIC, cell.italic());
+            mods.set(Modifier::REVERSED, cell.inverse());
+            mods.set(Modifier::UNDERLINED, cell.underline());
+
+            let style = Style {
+              fg: conv_color(cell.fgcolor()),
+              bg: conv_color(cell.bgcolor()),
+              add_modifier: mods,
+              sub_modifier: Modifier::empty(),
+            };
+            to_cell.set_style(style);
+
             to_cell.set_symbol(&cell.contents());
           } else {
             // Cell doesn't have content.
@@ -74,6 +88,14 @@ impl Widget for UiTerm {
         }
       }
     }
+  }
+}
+
+fn conv_color(color: vt100::Color) -> Option<tui::style::Color> {
+  match color {
+    vt100::Color::Default => None,
+    vt100::Color::Idx(index) => Some(tui::style::Color::Indexed(index)),
+    vt100::Color::Rgb(r, g, b) => Some(tui::style::Color::Rgb(r, g, b)),
   }
 }
 

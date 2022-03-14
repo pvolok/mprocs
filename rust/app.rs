@@ -130,6 +130,12 @@ impl App {
 
   fn start_procs(&mut self, size: (u16, u16)) {
     self.state.procs.push(Proc::new(
+      "htop".to_string(),
+      CommandBuilder::new("htop"),
+      self.events_tx.clone(),
+      size,
+    ));
+    self.state.procs.push(Proc::new(
       "top".to_string(),
       CommandBuilder::new("top"),
       self.events_tx.clone(),
