@@ -20,10 +20,10 @@ pub fn render_procs(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
   list_state.select(Some(state.selected));
   let items = state
     .procs
-    .iter()
+    .iter_mut()
     .enumerate()
     .map(|(i, proc)| {
-      create_proc_item(&proc, i == state.selected, frame.size().width)
+      create_proc_item(proc, i == state.selected, area.width - 2)
     })
     .collect::<Vec<_>>();
   let items = List::new(items)
@@ -33,13 +33,21 @@ pub fn render_procs(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
   frame.render_stateful_widget(items, area, &mut list_state);
 }
 
-fn create_proc_item<'a>(proc: &Proc, is_cur: bool, width: u16) -> ListItem<'a> {
-  let status = Span::styled(
-    " UP",
-    Style::default()
-      .fg(Color::LightGreen)
-      .add_modifier(Modifier::BOLD),
-  );
+fn create_proc_item<'a>(
+  proc: &mut Proc,
+  is_cur: bool,
+  width: u16,
+) -> ListItem<'a> {
+  let status = if proc.is_up() {
+    Span::styled(
+      " UP",
+      Style::default()
+        .fg(Color::LightGreen)
+        .add_modifier(Modifier::BOLD),
+    )
+  } else {
+    Span::styled(" DOWN", Style::default().fg(Color::LightRed))
+  };
 
   let mark = if is_cur {
     Span::raw(">>")

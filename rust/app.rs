@@ -8,7 +8,11 @@ use crossterm::{
     LeaveAlternateScreen,
   },
 };
-use futures::{future::FutureExt, select, StreamExt};
+use futures::{
+  future::{join_all, FutureExt},
+  select, StreamExt,
+};
+use portable_pty::CommandBuilder;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tui::{
   backend::CrosstermBackend,
@@ -113,12 +117,27 @@ impl App {
       };
     }
 
+    join_all(self.state.procs.into_iter().map(|mut proc| {
+      if proc.is_up() {
+        proc.inst.killer.kill();
+      }
+      proc.wait()
+    }))
+    .await;
+
     Ok(())
   }
 
   fn start_procs(&mut self, size: (u16, u16)) {
     self.state.procs.push(Proc::new(
-      "proc1".to_string(),
+      "top".to_string(),
+      CommandBuilder::new("top"),
+      self.events_tx.clone(),
+      size,
+    ));
+    self.state.procs.push(Proc::new(
+      "ls".to_string(),
+      CommandBuilder::new("ls"),
       self.events_tx.clone(),
       size,
     ));
