@@ -1,19 +1,13 @@
-use std::fs::{File, OpenOptions};
-use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread::{self, spawn};
+use std::time::Duration;
 
-use portable_pty::{
-  native_pty_system, Child, ChildKiller, CommandBuilder, PtySize, SlavePty,
-};
+use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
 use portable_pty::{ExitStatus, MasterPty};
-use tokio::io::AsyncWriteExt;
-use tokio::io::{AsyncReadExt, DuplexStream};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
-use tokio::sync::oneshot::Receiver;
-use tokio::task::{spawn_blocking, JoinHandle};
+use tokio::task::spawn_blocking;
 
 pub struct Inst {
   pub vt: Arc<RwLock<vt100::Parser>>,
@@ -30,7 +24,7 @@ impl Inst {
     tx: Sender<()>,
     size: (u16, u16),
   ) -> anyhow::Result<Self> {
-    let mut vt = vt100::Parser::new(size.0, size.1, 1000);
+    let vt = vt100::Parser::new(size.0, size.1, 1000);
     let vt = Arc::new(RwLock::new(vt));
 
     let pty_system = native_pty_system();
@@ -48,7 +42,6 @@ impl Inst {
     let killer = child.clone_killer();
 
     let mut reader = pair.master.try_clone_reader().unwrap();
-    let mut writer = pair.master.try_clone_writer().unwrap();
 
     {
       let vt = vt.clone();
@@ -69,7 +62,7 @@ impl Inst {
                   Err(_) => break,
                 }
               } else {
-                thread::sleep_ms(10);
+                thread::sleep(Duration::from_millis(10));
               }
             }
             _ => break,
@@ -133,7 +126,7 @@ impl Proc {
   }
 
   pub async fn wait(self) {
-    self.inst.on_exit.await;
+    let _res = self.inst.on_exit.await;
   }
 
   pub fn is_up(&mut self) -> bool {

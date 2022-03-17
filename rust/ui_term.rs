@@ -1,31 +1,34 @@
 use std::{
-  borrow::BorrowMut,
   io,
   sync::{Arc, RwLock},
 };
 
-use crossterm::cursor::MoveToRow;
 use tui::{
   backend::CrosstermBackend,
   layout::{Margin, Rect},
   style::{Color, Modifier, Style},
-  text::{Span, Spans},
-  widgets::{Block, BorderType, Borders, List, ListItem, ListState, Widget},
+  text::Span,
+  widgets::{Block, BorderType, Borders, Widget},
   Frame,
 };
 
-use crate::{proc::Proc, state::State, theme::Theme};
+use crate::{
+  state::{Scope, State},
+  theme::Theme,
+};
 
 type Backend = CrosstermBackend<io::Stdout>;
 
 pub fn render_term(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
   let theme = Theme::default();
 
+  let active = state.scope == Scope::Term;
+
   if let Some(proc) = state.get_current_proc() {
     let block = Block::default()
-      .title("Terminal")
+      .title(Span::styled("Terminal", theme.pane_title(active)))
       .borders(Borders::ALL)
-      .border_style(Style::default().fg(Color::White))
+      .border_style(theme.pane_border(active))
       .border_type(BorderType::Rounded)
       .style(Style::default().bg(Color::Black));
     frame.render_widget(block, area);
@@ -38,6 +41,15 @@ pub fn render_term(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
         horizontal: 1,
       }),
     );
+
+    {
+      let vt = proc.inst.vt.read().unwrap();
+      let screen = vt.screen();
+      let cursor = screen.cursor_position();
+      if !screen.hide_cursor() {
+        frame.set_cursor(area.x + 1 + cursor.1, area.y + 1 + cursor.0);
+      }
+    }
   }
 }
 
@@ -56,8 +68,6 @@ impl Widget for UiTerm {
     let vt = self.vt.read().unwrap();
     let screen = vt.screen();
 
-    let width = area.width;
-    let height = area.height;
     for row in 0..area.height {
       for col in 0..area.width {
         let to_cell = buf.get_mut(area.x + col, area.y + row);
@@ -97,39 +107,4 @@ fn conv_color(color: vt100::Color) -> Option<tui::style::Color> {
     vt100::Color::Idx(index) => Some(tui::style::Color::Indexed(index)),
     vt100::Color::Rgb(r, g, b) => Some(tui::style::Color::Rgb(r, g, b)),
   }
-}
-
-fn create_proc_item<'a>(proc: &Proc, is_cur: bool, width: u16) -> ListItem<'a> {
-  let status = Span::styled(
-    " UP",
-    Style::default()
-      .fg(Color::LightGreen)
-      .add_modifier(Modifier::BOLD),
-  );
-
-  let mark = if is_cur {
-    Span::raw(">>")
-  } else {
-    Span::raw("  ")
-  };
-
-  let mut name = proc.name.clone();
-  let name_max = width as usize - mark.width() - status.width();
-  let name_len = name.chars().count();
-  if name_len > name_max {
-    name.truncate(
-      name
-        .char_indices()
-        .nth(name_max)
-        .map_or(name.len(), |(n, _)| n),
-    )
-  }
-  if name_len < name_max {
-    for _ in name_len..name_max {
-      name.push(' ');
-    }
-  }
-  let name = Span::raw(name);
-
-  ListItem::new(Spans::from(vec![mark, name, status]))
 }

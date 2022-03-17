@@ -12,9 +12,11 @@ path = "rust/main.rs"
 [dependencies]
 anyhow = "1.0.44"
 crossterm = { version = "0.20", features = ["event-stream"] }
-tokio = { version = "1", features = ["full"] }
+flexi_logger = "0.22.3"
 futures = { version = "*" }
+log = "0.4.14"
 portable-pty = "0.7.0"
+tokio = { version = "1", features = ["full"] }
 tui = { version = "*", default-features = false, features = ['crossterm'] }
 unicode-width = "0.1.9"
 vt100 = "0.15.1"

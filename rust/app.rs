@@ -1,7 +1,7 @@
 use std::io;
 
 use crossterm::{
-  event::{Event, EventStream, KeyCode},
+  event::{Event, EventStream},
   execute,
   terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen,
@@ -21,7 +21,14 @@ use tui::{
 };
 
 use crate::{
-  proc::Proc, state::State, ui_procs::render_procs, ui_term::render_term,
+  encode_term::{encode_key, KeyCodeEncodeModes},
+  event::AppEvent,
+  keymap::Keymap,
+  proc::Proc,
+  state::{Scope, State},
+  ui_keymap::render_keymap,
+  ui_procs::render_procs,
+  ui_term::render_term,
 };
 
 type Term = Terminal<CrosstermBackend<io::Stdout>>;
@@ -42,6 +49,7 @@ impl App {
     let (tx, rx) = channel::<()>(100);
 
     let state = State {
+      scope: Scope::Procs,
       procs: Vec::new(),
       selected: 0,
     };
@@ -77,15 +85,24 @@ impl App {
     loop {
       let mut term_size = (0, 0);
       terminal.draw(|f| {
-        let chunks = Layout::default()
-          .direction(Direction::Horizontal)
-          .constraints([Constraint::Length(30), Constraint::Min(2)].as_ref())
-          .split(f.size());
+        let (procs_rect, term_rect, keymap_rect) = {
+          let top_bot = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .split(f.size());
+          let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(30), Constraint::Min(2)].as_ref())
+            .split(top_bot[0]);
 
-        render_procs(chunks[0], f, &mut self.state);
-        render_term(chunks[1], f, &mut self.state);
+          (chunks[0], chunks[1], top_bot[1])
+        };
 
-        term_size = (chunks[1].height - 2, chunks[1].width - 2);
+        render_procs(procs_rect, f, &mut self.state);
+        render_term(term_rect, f, &mut self.state);
+        render_keymap(keymap_rect, f, &mut self.state);
+
+        term_size = (term_rect.height - 2, term_rect.width - 2);
       })?;
 
       match cur_size {
@@ -102,9 +119,11 @@ impl App {
         }
       }
 
+      let keymap = Keymap::default();
+
       let loop_action = select! {
         event = input.next().fuse() => {
-          self.handle_input(event)
+          self.handle_input(event, &keymap)
         }
         _ = self.events.recv().fuse() => {
           LoopAction::Continue
@@ -119,7 +138,7 @@ impl App {
 
     join_all(self.state.procs.into_iter().map(|mut proc| {
       if proc.is_up() {
-        proc.inst.killer.kill();
+        proc.inst.killer.kill().unwrap();
       }
       proc.wait()
     }))
@@ -129,6 +148,12 @@ impl App {
   }
 
   fn start_procs(&mut self, size: (u16, u16)) {
+    self.state.procs.push(Proc::new(
+      "zsh".to_string(),
+      CommandBuilder::new("zsh"),
+      self.events_tx.clone(),
+      size,
+    ));
     self.state.procs.push(Proc::new(
       "htop".to_string(),
       CommandBuilder::new("htop"),
@@ -152,28 +177,70 @@ impl App {
   fn handle_input(
     &mut self,
     event: Option<crossterm::Result<Event>>,
+    keymap: &Keymap,
   ) -> LoopAction {
     match event {
-      Some(crossterm::Result::Ok(e)) => match e {
-        Event::Key(key) => match key.code {
-          crossterm::event::KeyCode::Char('q') => LoopAction::Quit,
-          crossterm::event::KeyCode::Esc => LoopAction::Quit,
-
-          KeyCode::Char('j') => {
-            self.state.selected += 1;
+      Some(crossterm::Result::Ok(event)) => match event {
+        Event::Key(key) => {
+          if let Some(bound) = keymap.resolve(self.state.scope, &key) {
+            self.handle_event(bound)
+          } else if self.state.scope == Scope::Term {
+            self.handle_event(&AppEvent::SendKey(key))
+          } else {
             LoopAction::Continue
           }
-          KeyCode::Char('k') => {
-            self.state.selected -= 1;
-            LoopAction::Continue
-          }
-
-          _ => LoopAction::Continue,
-        },
+        }
         Event::Mouse(_) => LoopAction::Continue,
         Event::Resize(_, _) => LoopAction::Continue,
       },
       _ => LoopAction::Quit,
+    }
+  }
+
+  fn handle_event(&mut self, event: &AppEvent) -> LoopAction {
+    match event {
+      AppEvent::Quit => LoopAction::Quit,
+
+      AppEvent::ToggleScope => {
+        self.state.scope = self.state.scope.toggle();
+        LoopAction::Continue
+      }
+
+      AppEvent::NextProc => {
+        let mut next = self.state.selected + 1;
+        if next >= self.state.procs.len() {
+          next = 0;
+        }
+        self.state.selected = next;
+        LoopAction::Continue
+      }
+      AppEvent::PrevProc => {
+        let next = if self.state.selected > 0 {
+          self.state.selected - 1
+        } else {
+          self.state.procs.len() - 1
+        };
+        self.state.selected = next;
+        LoopAction::Continue
+      }
+
+      AppEvent::SendKey(key) => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          if proc.is_up() {
+            let encoder = encode_key(
+              key,
+              KeyCodeEncodeModes {
+                enable_csi_u_key_encoding: false,
+                application_cursor_keys: false,
+                newline_mode: false,
+              },
+            )
+            .unwrap_or_else(|_| "?".to_owned());
+            proc.inst.master.write_all(encoder.as_bytes()).unwrap();
+          }
+        }
+        LoopAction::Continue
+      }
     }
   }
 }

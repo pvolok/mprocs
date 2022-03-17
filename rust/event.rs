@@ -1,6 +1,12 @@
-use crossterm::event::Event;
+use crossterm::event::KeyEvent;
 
 pub enum AppEvent {
-  TermRender,
-  Key(Event),
+  Quit,
+
+  ToggleScope,
+
+  NextProc,
+  PrevProc,
+
+  SendKey(KeyEvent),
 }
