@@ -16,7 +16,7 @@ use portable_pty::CommandBuilder;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tui::{
   backend::CrosstermBackend,
-  layout::{Constraint, Direction, Layout},
+  layout::{Constraint, Direction, Layout, Margin, Rect},
   Terminal,
 };
 
@@ -80,44 +80,21 @@ impl App {
   async fn main_loop(mut self, terminal: &mut Term) -> Result<(), io::Error> {
     let mut input = EventStream::new();
 
-    let mut cur_size: Option<(u16, u16)> = None;
+    {
+      let area = AppLayout::new(terminal.size().unwrap()).term_area();
+      let rows = area.height;
+      let cols = area.width;
+      self.start_procs((rows, cols));
+    }
 
     loop {
-      let mut term_size = (0, 0);
       terminal.draw(|f| {
-        let (procs_rect, term_rect, keymap_rect) = {
-          let top_bot = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
-            .split(f.size());
-          let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(30), Constraint::Min(2)].as_ref())
-            .split(top_bot[0]);
+        let layout = AppLayout::new(f.size());
 
-          (chunks[0], chunks[1], top_bot[1])
-        };
-
-        render_procs(procs_rect, f, &mut self.state);
-        render_term(term_rect, f, &mut self.state);
-        render_keymap(keymap_rect, f, &mut self.state);
-
-        term_size = (term_rect.height - 2, term_rect.width - 2);
+        render_procs(layout.procs, f, &mut self.state);
+        render_term(layout.term, f, &mut self.state);
+        render_keymap(layout.keymap, f, &mut self.state);
       })?;
-
-      match cur_size {
-        Some((rows, cols)) => {
-          if rows != term_size.0 || cols != term_size.1 {
-            for proc in &self.state.procs {
-              proc.inst.resize(term_size.0, term_size.1);
-            }
-          }
-        }
-        None => {
-          cur_size = Some(term_size);
-          self.start_procs(term_size);
-        }
-      }
 
       let keymap = Keymap::default();
 
@@ -191,7 +168,16 @@ impl App {
           }
         }
         Event::Mouse(_) => LoopAction::Continue,
-        Event::Resize(_, _) => LoopAction::Continue,
+        Event::Resize(width, height) => {
+          let area = AppLayout::new(Rect::new(0, 0, width, height)).term_area();
+          let rows = area.height;
+          let cols = area.width;
+          for proc in &self.state.procs {
+            proc.inst.resize(rows, cols);
+          }
+
+          LoopAction::Continue
+        }
       },
       _ => LoopAction::Quit,
     }
@@ -242,5 +228,37 @@ impl App {
         LoopAction::Continue
       }
     }
+  }
+}
+
+struct AppLayout {
+  procs: Rect,
+  term: Rect,
+  keymap: Rect,
+}
+
+impl AppLayout {
+  pub fn new(area: Rect) -> Self {
+    let top_bot = Layout::default()
+      .direction(Direction::Vertical)
+      .constraints([Constraint::Min(1), Constraint::Length(1)])
+      .split(area);
+    let chunks = Layout::default()
+      .direction(Direction::Horizontal)
+      .constraints([Constraint::Length(30), Constraint::Min(2)].as_ref())
+      .split(top_bot[0]);
+
+    Self {
+      procs: chunks[0],
+      term: chunks[1],
+      keymap: top_bot[1],
+    }
+  }
+
+  pub fn term_area(&self) -> Rect {
+    self.term.inner(&Margin {
+      vertical: 1,
+      horizontal: 1,
+    })
   }
 }
