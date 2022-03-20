@@ -59,6 +59,18 @@ impl Default for Keymap {
       KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE),
       AppEvent::PrevProc,
     );
+    keymap.bind_p(
+      KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
+      AppEvent::TermProc,
+    );
+    keymap.bind_p(
+      KeyEvent::new(KeyCode::Char('X'), KeyModifiers::SHIFT),
+      AppEvent::KillProc,
+    );
+    let ctrlc = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+    keymap.bind_p(ctrlc, AppEvent::SendKey(ctrlc));
+    let ctrld = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
+    keymap.bind_p(ctrld, AppEvent::SendKey(ctrld));
 
     keymap
   }

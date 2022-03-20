@@ -14,6 +14,7 @@ anyhow = "1.0.44"
 crossterm = { version = "0.20", features = ["event-stream"] }
 flexi_logger = "0.22.3"
 futures = { version = "*" }
+libc = "0.2.120"
 log = "0.4.14"
 portable-pty = "0.7.0"
 tokio = { version = "1", features = ["full"] }

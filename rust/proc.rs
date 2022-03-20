@@ -11,6 +11,8 @@ use tokio::task::spawn_blocking;
 
 pub struct Inst {
   pub vt: Arc<RwLock<vt100::Parser>>,
+
+  pub pid: u32,
   pub master: Box<dyn MasterPty + Send>,
   pub killer: Box<dyn ChildKiller + Send + Sync>,
 
@@ -39,11 +41,13 @@ impl Inst {
     let (tx_exit, on_exit) =
       tokio::sync::oneshot::channel::<Option<ExitStatus>>();
     let mut child = pair.slave.spawn_command(cmd)?;
+    let pid = child.process_id().unwrap();
     let killer = child.clone_killer();
 
     let mut reader = pair.master.try_clone_reader().unwrap();
 
     {
+      let tx = tx.clone();
       let vt = vt.clone();
       let running = running.clone();
       spawn_blocking(move || {
@@ -72,17 +76,21 @@ impl Inst {
     }
 
     {
+      let tx = tx.clone();
       let running = running.clone();
       spawn(move || {
         // Block until program exits
         let status = child.wait();
         running.store(false, Ordering::Relaxed);
+        let _result = tx.send(());
         let _send_result = tx_exit.send(status.ok());
       });
     }
 
     let inst = Inst {
       vt,
+
+      pid,
       master: pair.master,
       killer,
 
@@ -131,5 +139,17 @@ impl Proc {
 
   pub fn is_up(&mut self) -> bool {
     self.inst.running.load(Ordering::Relaxed)
+  }
+
+  pub fn term(&mut self) {
+    if self.is_up() {
+      unsafe { libc::kill(self.inst.pid as i32, libc::SIGTERM) };
+    }
+  }
+
+  pub fn kill(&mut self) {
+    if self.is_up() {
+      let _result = self.inst.killer.kill();
+    }
   }
 }

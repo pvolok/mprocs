@@ -326,6 +326,7 @@ dependencies = [
  "crossterm",
  "flexi_logger",
  "futures",
+ "libc",
  "log",
  "portable-pty",
  "tokio",

@@ -210,6 +210,19 @@ impl App {
         LoopAction::Continue
       }
 
+      AppEvent::TermProc => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.term();
+        }
+        LoopAction::Continue
+      }
+      AppEvent::KillProc => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.kill();
+        }
+        LoopAction::Continue
+      }
+
       AppEvent::SendKey(key) => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           if proc.is_up() {
