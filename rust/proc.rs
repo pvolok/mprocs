@@ -8,9 +8,10 @@ use portable_pty::{ExitStatus, MasterPty};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tokio::task::spawn_blocking;
+use tui::layout::Rect;
 
 pub struct Inst {
-  pub vt: Arc<RwLock<vt100::Parser>>,
+  pub vt: VtWrap,
 
   pub pid: u32,
   pub master: Box<dyn MasterPty + Send>,
@@ -20,19 +21,22 @@ pub struct Inst {
   pub on_exit: oneshot::Receiver<Option<ExitStatus>>,
 }
 
+pub type VtWrap = Arc<RwLock<vt100::Parser>>;
+
 impl Inst {
   pub fn spawn(
+    id: usize,
     cmd: CommandBuilder,
-    tx: Sender<()>,
-    size: (u16, u16),
+    tx: Sender<(usize, ProcUpdate)>,
+    size: &Rect,
   ) -> anyhow::Result<Self> {
-    let vt = vt100::Parser::new(size.0, size.1, 1000);
+    let vt = vt100::Parser::new(size.height, size.width, 1000);
     let vt = Arc::new(RwLock::new(vt));
 
     let pty_system = native_pty_system();
     let pair = pty_system.openpty(PtySize {
-      rows: size.0,
-      cols: size.1,
+      rows: size.height,
+      cols: size.width,
       pixel_width: 0,
       pixel_height: 0,
     })?;
@@ -61,7 +65,7 @@ impl Inst {
             Ok(count) => {
               if count > 0 {
                 vt.clone().write().unwrap().process(&buf[..count]);
-                match tx.blocking_send(()) {
+                match tx.blocking_send((id, ProcUpdate::Render)) {
                   Ok(_) => (),
                   Err(_) => break,
                 }
@@ -82,7 +86,7 @@ impl Inst {
         // Block until program exits
         let status = child.wait();
         running.store(false, Ordering::Relaxed);
-        let _result = tx.send(());
+        let _result = tx.blocking_send((id, ProcUpdate::Stopped));
         let _send_result = tx_exit.send(status.ok());
       });
     }
@@ -100,7 +104,10 @@ impl Inst {
     Ok(inst)
   }
 
-  pub fn resize(&self, rows: u16, cols: u16) {
+  pub fn resize(&self, size: &Rect) {
+    let rows = size.height;
+    let cols = size.width;
+
     self
       .master
       .resize(PtySize {
@@ -116,40 +123,107 @@ impl Inst {
 }
 
 pub struct Proc {
+  pub id: usize,
   pub name: String,
-  pub inst: Inst,
+  pub cmd: CommandBuilder,
+  pub size: Rect,
+
+  pub tx: Sender<(usize, ProcUpdate)>,
+
+  pub inst: Option<Inst>,
+}
+
+#[derive(Debug)]
+pub enum ProcUpdate {
+  Render,
+  Stopped,
+  Started,
 }
 
 impl Proc {
   pub fn new(
+    id: usize,
     name: String,
     cmd: CommandBuilder,
-    tx: Sender<()>,
-    size: (u16, u16),
+    tx: Sender<(usize, ProcUpdate)>,
+    size: Rect,
   ) -> Self {
-    Proc {
+    let mut proc = Proc {
+      id,
       name,
-      inst: Inst::spawn(cmd, tx, size).unwrap(),
+      cmd,
+      size,
+
+      tx,
+
+      inst: None,
+    };
+
+    proc.spawn_new_inst();
+
+    proc
+  }
+
+  fn spawn_new_inst(&mut self) {
+    assert!(self.inst.is_none());
+
+    let inst =
+      Inst::spawn(self.id, self.cmd.clone(), self.tx.clone(), &self.size)
+        .unwrap();
+    self.inst = Some(inst);
+  }
+
+  pub fn start(&mut self) {
+    if !self.is_up() {
+      self.inst = None;
+      self.spawn_new_inst();
+
+      let _res = self.tx.try_send((self.id, ProcUpdate::Started));
     }
   }
 
   pub async fn wait(self) {
-    let _res = self.inst.on_exit.await;
+    if let Some(inst) = self.inst {
+      let _res = inst.on_exit.await;
+    }
   }
 
   pub fn is_up(&mut self) -> bool {
-    self.inst.running.load(Ordering::Relaxed)
+    if let Some(inst) = self.inst.as_mut() {
+      inst.running.load(Ordering::Relaxed)
+    } else {
+      false
+    }
   }
 
   pub fn term(&mut self) {
     if self.is_up() {
-      unsafe { libc::kill(self.inst.pid as i32, libc::SIGTERM) };
+      if let Some(inst) = self.inst.as_mut() {
+        unsafe { libc::kill(inst.pid as i32, libc::SIGTERM) };
+      }
     }
   }
 
   pub fn kill(&mut self) {
     if self.is_up() {
-      let _result = self.inst.killer.kill();
+      if let Some(inst) = self.inst.as_mut() {
+        let _result = inst.killer.kill();
+      }
+    }
+  }
+
+  pub fn resize(&mut self, size: Rect) {
+    if let Some(inst) = self.inst.as_mut() {
+      inst.resize(&size);
+    }
+    self.size = size;
+  }
+
+  pub fn write_all(&mut self, bytes: &[u8]) {
+    if self.is_up() {
+      if let Some(inst) = self.inst.as_mut() {
+        inst.master.write_all(bytes).unwrap();
+      }
     }
   }
 }

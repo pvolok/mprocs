@@ -60,6 +60,10 @@ impl Default for Keymap {
       AppEvent::PrevProc,
     );
     keymap.bind_p(
+      KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE),
+      AppEvent::StartProc,
+    );
+    keymap.bind_p(
       KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
       AppEvent::TermProc,
     );

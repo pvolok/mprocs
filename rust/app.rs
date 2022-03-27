@@ -24,7 +24,7 @@ use crate::{
   encode_term::{encode_key, KeyCodeEncodeModes},
   event::AppEvent,
   keymap::Keymap,
-  proc::Proc,
+  proc::{Proc, ProcUpdate},
   state::{Scope, State},
   ui_keymap::render_keymap,
   ui_procs::render_procs,
@@ -34,19 +34,20 @@ use crate::{
 type Term = Terminal<CrosstermBackend<io::Stdout>>;
 
 enum LoopAction {
-  Continue,
+  Render,
+  Skip,
   Quit,
 }
 
 pub struct App {
   state: State,
-  events: Receiver<()>,
-  events_tx: Sender<()>,
+  events: Receiver<(usize, ProcUpdate)>,
+  events_tx: Sender<(usize, ProcUpdate)>,
 }
 
 impl App {
   pub fn new() -> Self {
-    let (tx, rx) = channel::<()>(100);
+    let (tx, rx) = channel::<(usize, ProcUpdate)>(100);
 
     let state = State {
       scope: Scope::Procs,
@@ -82,19 +83,20 @@ impl App {
 
     {
       let area = AppLayout::new(terminal.size().unwrap()).term_area();
-      let rows = area.height;
-      let cols = area.width;
-      self.start_procs((rows, cols));
+      self.start_procs(area);
     }
 
+    let mut render_needed = true;
     loop {
-      terminal.draw(|f| {
-        let layout = AppLayout::new(f.size());
+      if render_needed {
+        terminal.draw(|f| {
+          let layout = AppLayout::new(f.size());
 
-        render_procs(layout.procs, f, &mut self.state);
-        render_term(layout.term, f, &mut self.state);
-        render_keymap(layout.keymap, f, &mut self.state);
-      })?;
+          render_procs(layout.procs, f, &mut self.state);
+          render_term(layout.term, f, &mut self.state);
+          render_keymap(layout.keymap, f, &mut self.state);
+        })?;
+      }
 
       let keymap = Keymap::default();
 
@@ -102,20 +104,31 @@ impl App {
         event = input.next().fuse() => {
           self.handle_input(event, &keymap)
         }
-        _ = self.events.recv().fuse() => {
-          LoopAction::Continue
+        event = self.events.recv().fuse() => {
+          if let Some(event) = event {
+            self.handle_proc_update(event)
+          } else {
+            LoopAction::Skip
+          }
         }
       };
 
       match loop_action {
-        LoopAction::Continue => {}
+        LoopAction::Render => {
+          render_needed = true;
+        }
+        LoopAction::Skip => {
+          render_needed = false;
+        }
         LoopAction::Quit => break,
       };
     }
 
     join_all(self.state.procs.into_iter().map(|mut proc| {
       if proc.is_up() {
-        proc.inst.killer.kill().unwrap();
+        if let Some(ref mut inst) = proc.inst {
+          inst.killer.kill().unwrap();
+        }
       }
       proc.wait()
     }))
@@ -124,26 +137,30 @@ impl App {
     Ok(())
   }
 
-  fn start_procs(&mut self, size: (u16, u16)) {
+  fn start_procs(&mut self, size: Rect) {
     self.state.procs.push(Proc::new(
+      1,
       "zsh".to_string(),
       CommandBuilder::new("zsh"),
       self.events_tx.clone(),
       size,
     ));
     self.state.procs.push(Proc::new(
+      2,
       "htop".to_string(),
       CommandBuilder::new("htop"),
       self.events_tx.clone(),
       size,
     ));
     self.state.procs.push(Proc::new(
+      3,
       "top".to_string(),
       CommandBuilder::new("top"),
       self.events_tx.clone(),
       size,
     ));
     self.state.procs.push(Proc::new(
+      4,
       "ls".to_string(),
       CommandBuilder::new("ls"),
       self.events_tx.clone(),
@@ -164,19 +181,17 @@ impl App {
           } else if self.state.scope == Scope::Term {
             self.handle_event(&AppEvent::SendKey(key))
           } else {
-            LoopAction::Continue
+            LoopAction::Skip
           }
         }
-        Event::Mouse(_) => LoopAction::Continue,
+        Event::Mouse(_) => LoopAction::Skip,
         Event::Resize(width, height) => {
           let area = AppLayout::new(Rect::new(0, 0, width, height)).term_area();
-          let rows = area.height;
-          let cols = area.width;
-          for proc in &self.state.procs {
-            proc.inst.resize(rows, cols);
+          for proc in &mut self.state.procs {
+            proc.resize(area);
           }
 
-          LoopAction::Continue
+          LoopAction::Render
         }
       },
       _ => LoopAction::Quit,
@@ -189,7 +204,7 @@ impl App {
 
       AppEvent::ToggleScope => {
         self.state.scope = self.state.scope.toggle();
-        LoopAction::Continue
+        LoopAction::Render
       }
 
       AppEvent::NextProc => {
@@ -198,7 +213,7 @@ impl App {
           next = 0;
         }
         self.state.selected = next;
-        LoopAction::Continue
+        LoopAction::Render
       }
       AppEvent::PrevProc => {
         let next = if self.state.selected > 0 {
@@ -207,20 +222,26 @@ impl App {
           self.state.procs.len() - 1
         };
         self.state.selected = next;
-        LoopAction::Continue
+        LoopAction::Render
       }
 
+      AppEvent::StartProc => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.start();
+        }
+        LoopAction::Skip
+      }
       AppEvent::TermProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.term();
         }
-        LoopAction::Continue
+        LoopAction::Skip
       }
       AppEvent::KillProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.kill();
         }
-        LoopAction::Continue
+        LoopAction::Skip
       }
 
       AppEvent::SendKey(key) => {
@@ -235,11 +256,26 @@ impl App {
               },
             )
             .unwrap_or_else(|_| "?".to_owned());
-            proc.inst.master.write_all(encoder.as_bytes()).unwrap();
+            proc.write_all(encoder.as_bytes());
           }
         }
-        LoopAction::Continue
+        LoopAction::Skip
       }
+    }
+  }
+
+  fn handle_proc_update(&mut self, event: (usize, ProcUpdate)) -> LoopAction {
+    match event.1 {
+      ProcUpdate::Render => {
+        if let Some(proc) = self.state.get_current_proc().as_ref() {
+          if proc.id == event.0 {
+            return LoopAction::Render;
+          }
+        }
+        LoopAction::Skip
+      }
+      ProcUpdate::Stopped => LoopAction::Render,
+      ProcUpdate::Started => LoopAction::Render,
     }
   }
 }

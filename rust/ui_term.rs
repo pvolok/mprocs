@@ -33,21 +33,23 @@ pub fn render_term(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
       .style(Style::default().bg(Color::Black));
     frame.render_widget(block, area);
 
-    let term = UiTerm::new(proc.inst.vt.clone());
-    frame.render_widget(
-      term,
-      area.inner(&Margin {
-        vertical: 1,
-        horizontal: 1,
-      }),
-    );
+    if let Some(inst) = proc.inst.as_ref() {
+      let term = UiTerm::new(inst.vt.clone());
+      frame.render_widget(
+        term,
+        area.inner(&Margin {
+          vertical: 1,
+          horizontal: 1,
+        }),
+      );
 
-    {
-      let vt = proc.inst.vt.read().unwrap();
-      let screen = vt.screen();
-      let cursor = screen.cursor_position();
-      if !screen.hide_cursor() {
-        frame.set_cursor(area.x + 1 + cursor.1, area.y + 1 + cursor.0);
+      {
+        let vt = inst.vt.read().unwrap();
+        let screen = vt.screen();
+        let cursor = screen.cursor_position();
+        if !screen.hide_cursor() {
+          frame.set_cursor(area.x + 1 + cursor.1, area.y + 1 + cursor.0);
+        }
       }
     }
   }

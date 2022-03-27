@@ -7,6 +7,7 @@ pub enum AppEvent {
 
   NextProc,
   PrevProc,
+  StartProc,
   TermProc,
   KillProc,
 
