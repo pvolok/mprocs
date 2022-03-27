@@ -3,16 +3,17 @@ use std::io;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui::{
   backend::CrosstermBackend,
-  layout::Rect,
+  layout::{Margin, Rect},
   style::{Color, Style},
   text::{Span, Spans, Text},
-  widgets::Paragraph,
+  widgets::{Block, BorderType, Borders, Paragraph},
   Frame,
 };
 
 use crate::{
   encode_term::print_key,
   state::{Scope, State},
+  theme::Theme,
 };
 
 type Backend = CrosstermBackend<io::Stdout>;
@@ -22,6 +23,16 @@ pub fn render_keymap(
   frame: &mut Frame<Backend>,
   state: &mut State,
 ) {
+  let theme = Theme::default();
+
+  let block = Block::default()
+    .title(Span::styled("Help", theme.pane_title(false)))
+    .borders(Borders::ALL)
+    .border_style(theme.pane_border(false))
+    .border_type(BorderType::Rounded)
+    .style(Style::default().bg(Color::Black));
+  frame.render_widget(block, area);
+
   let items = match state.scope {
     Scope::Procs => vec![
       (KeyCode::Char('a'), KeyModifiers::CONTROL, "Toggle focus"),
@@ -54,5 +65,11 @@ pub fn render_keymap(
   let line = Text::from(vec![line]);
 
   let p = Paragraph::new(line);
-  frame.render_widget(p, area);
+  frame.render_widget(
+    p,
+    area.inner(&Margin {
+      vertical: 1,
+      horizontal: 1,
+    }),
+  );
 }

@@ -5,8 +5,8 @@ separately.
 
 ## Screenshots
 
-<img src="img/screenshot1.png" width="656" height="410" />
-<img src="img/screenshot2.png" width="656" height="410" />
+<img src="img/screenshot1.png" width="889" height="564" />
+<img src="img/screenshot2.png" width="889" height="564" />
 
 ## Installation
 
@@ -24,8 +24,7 @@ Example `mprocs.json`:
 {
   "procs": {
     "nvim": {
-      "cmd": "nvim",
-      "args": ["nvim"]
+      "cmd": ["nvim"]
     },
     "server": {
       "shell": "nodemon server.js"
@@ -35,7 +34,7 @@ Example `mprocs.json`:
     },
     "tests": {
       "shell": "jest -w",
-      "tty": false
+      "env": ["NODE_ENV=test"]
     }
   }
 }
@@ -47,6 +46,7 @@ Process list focused:
 - `q` - Quit
 - `C-a` - Focus output pane
 - `x` - Kill selected process
+- `X` - Force terminate selected process
 - `s` - Start selected process, if it is not running
 - `k` - Select previous process
 - `j` - Select next process

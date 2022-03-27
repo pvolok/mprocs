@@ -14,9 +14,12 @@ anyhow = "1.0.44"
 crossterm = { version = "0.20", features = ["event-stream"] }
 flexi_logger = "0.22.3"
 futures = { version = "*" }
+indexmap = { version = "1.8.0", features = ["serde"] }
 libc = "0.2.120"
 log = "0.4.14"
 portable-pty = "0.7.0"
+serde = { version = "1.0.136", features = ["derive"] }
+serde_json = { version = "1.0.79", features = ["preserve_order"] }
 tokio = { version = "1", features = ["full"] }
 tui = { version = "*", default-features = false, features = ['crossterm'] }
 unicode-width = "0.1.9"

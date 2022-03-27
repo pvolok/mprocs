@@ -21,6 +21,7 @@ use tui::{
 };
 
 use crate::{
+  config::Config,
   encode_term::{encode_key, KeyCodeEncodeModes},
   event::AppEvent,
   keymap::Keymap,
@@ -62,7 +63,7 @@ impl App {
     }
   }
 
-  pub async fn run(self) -> Result<(), io::Error> {
+  pub async fn run(self) -> anyhow::Result<()> {
     let stdout = io::stdout();
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
@@ -78,12 +79,12 @@ impl App {
     result
   }
 
-  async fn main_loop(mut self, terminal: &mut Term) -> Result<(), io::Error> {
+  async fn main_loop(mut self, terminal: &mut Term) -> anyhow::Result<()> {
     let mut input = EventStream::new();
 
     {
       let area = AppLayout::new(terminal.size().unwrap()).term_area();
-      self.start_procs(area);
+      self.start_procs(area)?;
     }
 
     let mut render_needed = true;
@@ -137,35 +138,23 @@ impl App {
     Ok(())
   }
 
-  fn start_procs(&mut self, size: Rect) {
-    self.state.procs.push(Proc::new(
-      1,
-      "zsh".to_string(),
-      CommandBuilder::new("zsh"),
-      self.events_tx.clone(),
-      size,
-    ));
-    self.state.procs.push(Proc::new(
-      2,
-      "htop".to_string(),
-      CommandBuilder::new("htop"),
-      self.events_tx.clone(),
-      size,
-    ));
-    self.state.procs.push(Proc::new(
-      3,
-      "top".to_string(),
-      CommandBuilder::new("top"),
-      self.events_tx.clone(),
-      size,
-    ));
-    self.state.procs.push(Proc::new(
-      4,
-      "ls".to_string(),
-      CommandBuilder::new("ls"),
-      self.events_tx.clone(),
-      size,
-    ));
+  fn start_procs(&mut self, size: Rect) -> anyhow::Result<()> {
+    let config = Config::from_file("mprocs.json")?;
+
+    let mut procs = config
+      .procs
+      .into_iter()
+      .enumerate()
+      .map(|(id, (name, proc_cfg))| {
+        let cmd = CommandBuilder::from(proc_cfg);
+
+        Proc::new(id, name, cmd, self.events_tx.clone(), size)
+      })
+      .collect::<Vec<_>>();
+
+    self.state.procs.append(&mut procs);
+
+    Ok(())
   }
 
   fn handle_input(
@@ -290,7 +279,7 @@ impl AppLayout {
   pub fn new(area: Rect) -> Self {
     let top_bot = Layout::default()
       .direction(Direction::Vertical)
-      .constraints([Constraint::Min(1), Constraint::Length(1)])
+      .constraints([Constraint::Min(1), Constraint::Length(3)])
       .split(area);
     let chunks = Layout::default()
       .direction(Direction::Horizontal)

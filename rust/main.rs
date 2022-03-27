@@ -1,6 +1,7 @@
 #![feature(iter_intersperse)]
 
 mod app;
+mod config;
 mod encode_term;
 mod event;
 mod keymap;
@@ -25,5 +26,11 @@ async fn main() -> Result<(), std::io::Error> {
     .unwrap();
 
   let app = App::new();
-  app.run().await
+  match app.run().await {
+    Ok(()) => Ok(()),
+    Err(err) => {
+      eprintln!("Error: {}", err);
+      Ok(())
+    }
+  }
 }
