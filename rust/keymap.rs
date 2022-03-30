@@ -52,6 +52,10 @@ impl Default for Keymap {
       AppEvent::Quit,
     );
     keymap.bind_p(
+      KeyEvent::new(KeyCode::Char('Q'), KeyModifiers::SHIFT),
+      AppEvent::ForceQuit,
+    );
+    keymap.bind_p(
       KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
       AppEvent::NextProc,
     );

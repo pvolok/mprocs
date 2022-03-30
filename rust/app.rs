@@ -8,10 +8,7 @@ use crossterm::{
     LeaveAlternateScreen,
   },
 };
-use futures::{
-  future::{join_all, FutureExt},
-  select, StreamExt,
-};
+use futures::{future::FutureExt, select, StreamExt};
 use portable_pty::CommandBuilder;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tui::{
@@ -37,7 +34,7 @@ type Term = Terminal<CrosstermBackend<io::Stdout>>;
 enum LoopAction {
   Render,
   Skip,
-  Quit,
+  ForceQuit,
 }
 
 pub struct App {
@@ -54,6 +51,8 @@ impl App {
       scope: Scope::Procs,
       procs: Vec::new(),
       selected: 0,
+
+      quitting: false,
     };
 
     App {
@@ -114,6 +113,10 @@ impl App {
         }
       };
 
+      if self.state.quitting && self.state.all_procs_down() {
+        break;
+      }
+
       match loop_action {
         LoopAction::Render => {
           render_needed = true;
@@ -121,19 +124,9 @@ impl App {
         LoopAction::Skip => {
           render_needed = false;
         }
-        LoopAction::Quit => break,
+        LoopAction::ForceQuit => break,
       };
     }
-
-    join_all(self.state.procs.into_iter().map(|mut proc| {
-      if proc.is_up() {
-        if let Some(ref mut inst) = proc.inst {
-          inst.killer.kill().unwrap();
-        }
-      }
-      proc.wait()
-    }))
-    .await;
 
     Ok(())
   }
@@ -183,13 +176,32 @@ impl App {
           LoopAction::Render
         }
       },
-      _ => LoopAction::Quit,
+      _ => {
+        log::warn!("Crossterm input is None.");
+        LoopAction::Skip
+      }
     }
   }
 
   fn handle_event(&mut self, event: &AppEvent) -> LoopAction {
     match event {
-      AppEvent::Quit => LoopAction::Quit,
+      AppEvent::Quit => {
+        self.state.quitting = true;
+        for proc in self.state.procs.iter_mut() {
+          if proc.is_up() {
+            proc.term();
+          }
+        }
+        LoopAction::Render
+      }
+      AppEvent::ForceQuit => {
+        for proc in self.state.procs.iter_mut() {
+          if proc.is_up() {
+            proc.kill();
+          }
+        }
+        LoopAction::ForceQuit
+      }
 
       AppEvent::ToggleScope => {
         self.state.scope = self.state.scope.toggle();

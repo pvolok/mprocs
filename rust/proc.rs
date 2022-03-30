@@ -3,10 +3,9 @@ use std::sync::{Arc, RwLock};
 use std::thread::{self, spawn};
 use std::time::Duration;
 
+use portable_pty::MasterPty;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
-use portable_pty::{ExitStatus, MasterPty};
 use tokio::sync::mpsc::Sender;
-use tokio::sync::oneshot;
 use tokio::task::spawn_blocking;
 use tui::layout::Rect;
 
@@ -18,7 +17,6 @@ pub struct Inst {
   pub killer: Box<dyn ChildKiller + Send + Sync>,
 
   pub running: Arc<AtomicBool>,
-  pub on_exit: oneshot::Receiver<Option<ExitStatus>>,
 }
 
 pub type VtWrap = Arc<RwLock<vt100::Parser>>;
@@ -42,8 +40,6 @@ impl Inst {
     })?;
 
     let running = Arc::new(AtomicBool::new(true));
-    let (tx_exit, on_exit) =
-      tokio::sync::oneshot::channel::<Option<ExitStatus>>();
     let mut child = pair.slave.spawn_command(cmd)?;
     let pid = child.process_id().unwrap();
     let killer = child.clone_killer();
@@ -84,10 +80,9 @@ impl Inst {
       let running = running.clone();
       spawn(move || {
         // Block until program exits
-        let status = child.wait();
+        let _status = child.wait();
         running.store(false, Ordering::Relaxed);
         let _result = tx.blocking_send((id, ProcUpdate::Stopped));
-        let _send_result = tx_exit.send(status.ok());
       });
     }
 
@@ -99,7 +94,6 @@ impl Inst {
       killer,
 
       running,
-      on_exit,
     };
     Ok(inst)
   }
@@ -182,14 +176,8 @@ impl Proc {
     }
   }
 
-  pub async fn wait(self) {
-    if let Some(inst) = self.inst {
-      let _res = inst.on_exit.await;
-    }
-  }
-
-  pub fn is_up(&mut self) -> bool {
-    if let Some(inst) = self.inst.as_mut() {
+  pub fn is_up(&self) -> bool {
+    if let Some(inst) = self.inst.as_ref() {
       inst.running.load(Ordering::Relaxed)
     } else {
       false
