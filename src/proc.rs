@@ -187,9 +187,19 @@ impl Proc {
   pub fn term(&mut self) {
     if self.is_up() {
       if let Some(inst) = self.inst.as_mut() {
-        unsafe { libc::kill(inst.pid as i32, libc::SIGTERM) };
+        Self::term_impl(inst);
       }
     }
+  }
+
+  #[cfg(windows)]
+  fn term_impl(inst: &mut Inst) {
+    let _result = inst.killer.kill();
+  }
+
+  #[cfg(not(windows))]
+  fn term_impl(inst: &mut Inst) {
+    unsafe { libc::kill(inst.pid as i32, libc::SIGTERM) };
   }
 
   pub fn kill(&mut self) {
