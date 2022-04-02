@@ -10,7 +10,7 @@ strip = "symbols"
 
 [[bin]]
 name = "mprocs"
-path = "rust/main.rs"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.44"
