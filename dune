@@ -1,8 +1,0 @@
-(env
- (dev
-  (flags
-   (:standard -warn-error -A))))
-
-(alias
- (name default)
- (deps bin/mprocs.exe))

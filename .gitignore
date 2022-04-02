@@ -1,7 +1,5 @@
-/_build/
-/dist/
 /mprocs.json
-/tde.log
+/mprocs.log
 
 
 # Added by cargo
