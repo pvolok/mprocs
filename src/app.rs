@@ -38,13 +38,16 @@ enum LoopAction {
 }
 
 pub struct App {
+  config: Config,
   state: State,
   events: Receiver<(usize, ProcUpdate)>,
   events_tx: Sender<(usize, ProcUpdate)>,
 }
 
 impl App {
-  pub fn new() -> Self {
+  pub fn from_config_file(cfg_path: String) -> anyhow::Result<Self> {
+    let config = Config::from_file(cfg_path)?;
+
     let (tx, rx) = channel::<(usize, ProcUpdate)>(100);
 
     let state = State {
@@ -55,11 +58,13 @@ impl App {
       quitting: false,
     };
 
-    App {
+    let app = App {
+      config,
       state,
       events: rx,
       events_tx: tx,
-    }
+    };
+    Ok(app)
   }
 
   pub async fn run(self) -> anyhow::Result<()> {
@@ -132,16 +137,15 @@ impl App {
   }
 
   fn start_procs(&mut self, size: Rect) -> anyhow::Result<()> {
-    let config = Config::from_file("mprocs.json")?;
-
-    let mut procs = config
+    let mut procs = self
+      .config
       .procs
-      .into_iter()
+      .iter()
       .enumerate()
       .map(|(id, (name, proc_cfg))| {
         let cmd = CommandBuilder::from(proc_cfg);
 
-        Proc::new(id, name, cmd, self.events_tx.clone(), size)
+        Proc::new(id, name.clone(), cmd, self.events_tx.clone(), size)
       })
       .collect::<Vec<_>>();
 

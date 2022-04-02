@@ -13,7 +13,18 @@ pub struct Config {
 impl Config {
   pub fn from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Config> {
     // Open the file in read-only mode with buffer.
-    let file = File::open(path)?;
+    let file = match File::open(&path) {
+      Ok(file) => file,
+      Err(err) => match err.kind() {
+        std::io::ErrorKind::NotFound => {
+          return Err(anyhow::anyhow!(
+            "Config file '{}' not found.",
+            path.as_ref().display()
+          ))
+        }
+        _kind => return Err(err.into()),
+      },
+    };
     let reader = BufReader::new(file);
 
     let config = serde_json::from_reader(reader)?;
@@ -39,9 +50,9 @@ pub enum CmdConfig {
   Shell { shell: String },
 }
 
-impl From<ProcConfig> for CommandBuilder {
-  fn from(cfg: ProcConfig) -> Self {
-    let mut cmd = match cfg.cmd {
+impl From<&ProcConfig> for CommandBuilder {
+  fn from(cfg: &ProcConfig) -> Self {
+    let mut cmd = match &cfg.cmd {
       CmdConfig::Cmd { cmd } => {
         let (head, tail) = cmd.split_at(1);
         let mut cmd = CommandBuilder::new(&head[0]);
@@ -62,15 +73,15 @@ impl From<ProcConfig> for CommandBuilder {
       }
     };
 
-    if let Some(env) = cfg.env {
+    if let Some(env) = &cfg.env {
       for entry in env {
         let (k, v) = entry.split_once('=').unwrap_or((&entry, ""));
         cmd.env(k, v);
       }
     }
 
-    let cwd = match cfg.cwd {
-      Some(cwd) => Some(cwd),
+    let cwd = match &cfg.cwd {
+      Some(cwd) => Some(cwd.clone()),
       None => std::env::current_dir()
         .ok()
         .map(|cd| cd.as_path().to_string_lossy().to_string()),
