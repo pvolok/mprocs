@@ -43,10 +43,11 @@ Example `mprocs.json`:
 ### Key bindings
 
 Process list focused:
-- `q` - Quit
+- `q` - Quit (soft kill processes and wait then to exit)
+- `Q` - Force quit (terminate processes)
 - `C-a` - Focus output pane
-- `x` - Kill selected process
-- `X` - Force terminate selected process
+- `x` - Soft kill selected process (send SIGTERM signal, hard kill on Windows)
+- `X` - Hard kill selected process (send SIGKILL)
 - `s` - Start selected process, if it is not running
 - `k` - Select previous process
 - `j` - Select next process
