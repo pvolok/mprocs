@@ -1,3 +1,4 @@
+#![feature(assert_matches)]
 #![feature(iter_intersperse)]
 
 mod app;

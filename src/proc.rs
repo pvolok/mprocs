@@ -1,3 +1,5 @@
+use std::assert_matches::assert_matches;
+use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread::{self, spawn};
@@ -17,6 +19,15 @@ pub struct Inst {
   pub killer: Box<dyn ChildKiller + Send + Sync>,
 
   pub running: Arc<AtomicBool>,
+}
+
+impl Debug for Inst {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Inst")
+      .field("pid", &self.pid)
+      .field("running", &self.running)
+      .finish()
+  }
 }
 
 pub type VtWrap = Arc<RwLock<vt100::Parser>>;
@@ -124,7 +135,14 @@ pub struct Proc {
 
   pub tx: Sender<(usize, ProcUpdate)>,
 
-  pub inst: Option<Inst>,
+  pub inst: ProcState,
+}
+
+#[derive(Debug)]
+pub enum ProcState {
+  None,
+  Some(Inst),
+  Error(String),
 }
 
 #[derive(Debug)]
@@ -150,7 +168,7 @@ impl Proc {
 
       tx,
 
-      inst: None,
+      inst: ProcState::None,
     };
 
     proc.spawn_new_inst();
@@ -159,17 +177,20 @@ impl Proc {
   }
 
   fn spawn_new_inst(&mut self) {
-    assert!(self.inst.is_none());
+    assert_matches!(self.inst, ProcState::None);
 
-    let inst =
-      Inst::spawn(self.id, self.cmd.clone(), self.tx.clone(), &self.size)
-        .unwrap();
-    self.inst = Some(inst);
+    let spawned =
+      Inst::spawn(self.id, self.cmd.clone(), self.tx.clone(), &self.size);
+    let inst = match spawned {
+      Ok(inst) => ProcState::Some(inst),
+      Err(err) => ProcState::Error(err.to_string()),
+    };
+    self.inst = inst;
   }
 
   pub fn start(&mut self) {
     if !self.is_up() {
-      self.inst = None;
+      self.inst = ProcState::None;
       self.spawn_new_inst();
 
       let _res = self.tx.try_send((self.id, ProcUpdate::Started));
@@ -177,7 +198,7 @@ impl Proc {
   }
 
   pub fn is_up(&self) -> bool {
-    if let Some(inst) = self.inst.as_ref() {
+    if let ProcState::Some(inst) = &self.inst {
       inst.running.load(Ordering::Relaxed)
     } else {
       false
@@ -186,7 +207,7 @@ impl Proc {
 
   pub fn term(&mut self) {
     if self.is_up() {
-      if let Some(inst) = self.inst.as_mut() {
+      if let ProcState::Some(inst) = &mut self.inst {
         Self::term_impl(inst);
       }
     }
@@ -204,14 +225,14 @@ impl Proc {
 
   pub fn kill(&mut self) {
     if self.is_up() {
-      if let Some(inst) = self.inst.as_mut() {
+      if let ProcState::Some(inst) = &mut self.inst {
         let _result = inst.killer.kill();
       }
     }
   }
 
   pub fn resize(&mut self, size: Rect) {
-    if let Some(inst) = self.inst.as_mut() {
+    if let ProcState::Some(inst) = &self.inst {
       inst.resize(&size);
     }
     self.size = size;
@@ -219,7 +240,7 @@ impl Proc {
 
   pub fn write_all(&mut self, bytes: &[u8]) {
     if self.is_up() {
-      if let Some(inst) = self.inst.as_mut() {
+      if let ProcState::Some(inst) = &mut self.inst {
         inst.master.write_all(bytes).unwrap();
       }
     }

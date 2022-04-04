@@ -7,12 +7,13 @@ use tui::{
   backend::CrosstermBackend,
   layout::{Margin, Rect},
   style::{Color, Modifier, Style},
-  text::Span,
-  widgets::{Block, BorderType, Borders, Widget},
+  text::{Span, Text},
+  widgets::{Block, BorderType, Borders, Paragraph, Widget, Wrap},
   Frame,
 };
 
 use crate::{
+  proc::ProcState,
   state::{Scope, State},
   theme::Theme,
 };
@@ -33,23 +34,36 @@ pub fn render_term(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
       .style(Style::default().bg(Color::Black));
     frame.render_widget(block, area);
 
-    if let Some(inst) = proc.inst.as_ref() {
-      let term = UiTerm::new(inst.vt.clone());
-      frame.render_widget(
-        term,
-        area.inner(&Margin {
-          vertical: 1,
-          horizontal: 1,
-        }),
-      );
+    match &proc.inst {
+      ProcState::None => (),
+      ProcState::Some(inst) => {
+        let term = UiTerm::new(inst.vt.clone());
+        frame.render_widget(
+          term,
+          area.inner(&Margin {
+            vertical: 1,
+            horizontal: 1,
+          }),
+        );
 
-      {
-        let vt = inst.vt.read().unwrap();
-        let screen = vt.screen();
-        let cursor = screen.cursor_position();
-        if !screen.hide_cursor() {
-          frame.set_cursor(area.x + 1 + cursor.1, area.y + 1 + cursor.0);
+        {
+          let vt = inst.vt.read().unwrap();
+          let screen = vt.screen();
+          let cursor = screen.cursor_position();
+          if !screen.hide_cursor() {
+            frame.set_cursor(area.x + 1 + cursor.1, area.y + 1 + cursor.0);
+          }
         }
+      }
+      ProcState::Error(err) => {
+        let text = Text::styled(err, Style::default().fg(Color::Red));
+        frame.render_widget(
+          Paragraph::new(text).wrap(Wrap { trim: false }),
+          area.inner(&Margin {
+            vertical: 1,
+            horizontal: 1,
+          }),
+        );
       }
     }
   }
