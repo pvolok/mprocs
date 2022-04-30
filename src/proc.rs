@@ -241,8 +241,36 @@ impl Proc {
   pub fn write_all(&mut self, bytes: &[u8]) {
     if self.is_up() {
       if let ProcState::Some(inst) = &mut self.inst {
+        {
+          let mut vt = inst.vt.write().unwrap();
+          if vt.screen().scrollback() > 0 {
+            vt.set_scrollback(0);
+          }
+        }
         inst.master.write_all(bytes).unwrap();
       }
+    }
+  }
+
+  pub fn scroll_up(&mut self) {
+    if let ProcState::Some(inst) = &mut self.inst {
+      let mut vt = inst.vt.write().unwrap();
+      let pos = usize::saturating_add(
+        vt.screen().scrollback(),
+        vt.screen().size().0 as usize / 2,
+      );
+      vt.set_scrollback(pos);
+    }
+  }
+
+  pub fn scroll_down(&mut self) {
+    if let ProcState::Some(inst) = &mut self.inst {
+      let mut vt = inst.vt.write().unwrap();
+      let pos = usize::saturating_sub(
+        vt.screen().scrollback(),
+        vt.screen().size().0 as usize / 2,
+      );
+      vt.set_scrollback(pos);
     }
   }
 }

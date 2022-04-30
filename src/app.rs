@@ -249,6 +249,21 @@ impl App {
         LoopAction::Skip
       }
 
+      AppEvent::ScrollUp => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.scroll_up();
+          return LoopAction::Render;
+        }
+        LoopAction::Skip
+      }
+      AppEvent::ScrollDown => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.scroll_down();
+          return LoopAction::Render;
+        }
+        LoopAction::Skip
+      }
+
       AppEvent::SendKey(key) => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           if proc.is_up() {

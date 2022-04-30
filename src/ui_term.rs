@@ -46,7 +46,7 @@ pub fn render_term(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
           }),
         );
 
-        {
+        if active {
           let vt = inst.vt.read().unwrap();
           let screen = vt.screen();
           let cursor = screen.cursor_position();
@@ -113,6 +113,19 @@ impl Widget for UiTerm {
           to_cell.set_char('?');
         }
       }
+    }
+
+    let scrollback = screen.scrollback();
+    if scrollback > 0 {
+      let str = format!(" -{} ", scrollback);
+      let width = str.len() as u16;
+      let span = Span::styled(
+        str,
+        Style::reset().bg(Color::LightYellow).fg(Color::Black),
+      );
+      let x = area.x + area.width - width;
+      let y = area.y;
+      buf.set_span(x, y, &span, width);
     }
   }
 }

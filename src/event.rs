@@ -12,5 +12,8 @@ pub enum AppEvent {
   TermProc,
   KillProc,
 
+  ScrollDown,
+  ScrollUp,
+
   SendKey(KeyEvent),
 }
