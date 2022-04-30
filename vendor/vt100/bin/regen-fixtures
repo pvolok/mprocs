@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+for file in tests/data/fixtures/*.in; do
+    cargo run --example generate_fixture "$(basename "$file" .in)"
+done
