@@ -56,7 +56,7 @@ pub struct ProcConfig {
   #[serde(default)]
   pub cwd: Option<String>,
   #[serde(default)]
-  pub env: Option<Vec<String>>,
+  pub env: Option<IndexMap<String, Option<String>>>,
 }
 
 impl ProcConfig {
@@ -88,28 +88,52 @@ impl ProcConfig {
       }
       Value::Object(_) => {
         let map = val.as_object()?;
-        let shell = map.get("shell");
-        let cmd = map.get("cmd");
-        let cmd = match (shell, cmd) {
-          (None, Some(cmd)) => CmdConfig::Cmd {
-            cmd: cmd
-              .as_array()?
+
+        let cmd = {
+          let shell = map.get("shell");
+          let cmd = map.get("cmd");
+
+          match (shell, cmd) {
+            (None, Some(cmd)) => CmdConfig::Cmd {
+              cmd: cmd
+                .as_array()?
+                .into_iter()
+                .map(|v| v.as_str().map(|s| s.to_owned()))
+                .collect::<Vec<_>>()
+                .lift()?,
+            },
+            (Some(shell), None) => CmdConfig::Shell {
+              shell: shell.as_str()?.to_owned(),
+            },
+            (None, None) => todo!(),
+            (Some(_), Some(_)) => todo!(),
+          }
+        };
+
+        let env = match map.get("env") {
+          Some(env) => {
+            let env = env.as_object()?;
+            let env = env
               .into_iter()
-              .map(|v| v.as_str().map(|s| s.to_owned()))
-              .collect::<Vec<_>>()
-              .lift()?,
-          },
-          (Some(shell), None) => CmdConfig::Shell {
-            shell: shell.as_str()?.to_owned(),
-          },
-          (None, None) => todo!(),
-          (Some(_), Some(_)) => todo!(),
+              .map(|(k, v)| {
+                let v = match v.0 {
+                  Value::Null => Ok(None),
+                  Value::String(v) => Ok(Some(v.to_owned())),
+                  _ => Err(v.error_at("Expected string or null")),
+                };
+                (k, v)
+              })
+              .collect::<IndexMap<_, _>>()
+              .lift()?;
+            Some(env)
+          }
+          None => None,
         };
 
         Ok(ProcConfig {
           cmd,
           cwd: None,
-          env: None,
+          env,
         })
       }
     }
@@ -175,9 +199,12 @@ impl From<&ProcConfig> for CommandBuilder {
     };
 
     if let Some(env) = &cfg.env {
-      for entry in env {
-        let (k, v) = entry.split_once('=').unwrap_or((&entry, ""));
-        cmd.env(k, v);
+      for (k, v) in env {
+        if let Some(v) = v {
+          cmd.env(k, v);
+        } else {
+          cmd.env_remove(k);
+        }
       }
     }
 
@@ -230,6 +257,10 @@ struct Val<'a>(&'a Value, Trace);
 impl<'a> Val<'a> {
   pub fn new(value: &'a Value) -> Self {
     Val(value, Trace::empty())
+  }
+
+  pub fn error_at<T: AsRef<str>>(&self, msg: T) -> anyhow::Error {
+    anyhow::format_err!("{} at {}", msg.as_ref(), self.1.to_string())
   }
 
   pub fn as_str(&self) -> anyhow::Result<&str> {

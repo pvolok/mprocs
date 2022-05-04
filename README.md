@@ -34,15 +34,29 @@ Example `mprocs.json`:
     },
     "tests": {
       "shell": "jest -w",
-      "env": ["NODE_ENV=test"]
+      "env": {
+        "NODE_ENV": "test"
+      }
     }
   }
 }
 ```
 
+### Config
+
+- **procs**: _object_ - Processes to run.
+  - **shell**: _string_ - Shell command to run (only **shell** or **cmd** must
+    be provided).
+  - **cmd**: _array<string>_ - Array of command and args to run (only **shell**
+    or **cmd** must be provided).
+  - **env**: _object<string, string|null>_ - Set env variables. Object keys are
+    variable names. Assign variable to null, to clear variables inherited from
+    parent process.
+
 ### Key bindings
 
 Process list focused:
+
 - `q` - Quit (soft kill processes and wait then to exit)
 - `Q` - Force quit (terminate processes)
 - `C-a` - Focus output pane
@@ -51,6 +65,9 @@ Process list focused:
 - `s` - Start selected process, if it is not running
 - `k` - Select previous process
 - `j` - Select next process
+- `C-d` - Scroll output down
+- `C-u` - Scroll output up
 
 Process output focused:
+
 - `C-a` - Focus processes pane
