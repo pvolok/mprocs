@@ -45,9 +45,7 @@ pub struct App {
 }
 
 impl App {
-  pub fn from_config_file(cfg_path: String) -> anyhow::Result<Self> {
-    let config = Config::from_file(cfg_path)?;
-
+  pub fn from_config_file(config: Config) -> anyhow::Result<Self> {
     let (tx, rx) = channel::<(usize, ProcUpdate)>(100);
 
     let state = State {
@@ -142,10 +140,10 @@ impl App {
       .procs
       .iter()
       .enumerate()
-      .map(|(id, (name, proc_cfg))| {
+      .map(|(id, proc_cfg)| {
         let cmd = CommandBuilder::from(proc_cfg);
 
-        Proc::new(id, name.clone(), cmd, self.events_tx.clone(), size)
+        Proc::new(id, proc_cfg.name.clone(), cmd, self.events_tx.clone(), size)
       })
       .collect::<Vec<_>>();
 

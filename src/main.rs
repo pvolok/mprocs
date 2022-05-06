@@ -13,19 +13,13 @@ mod ui_keymap;
 mod ui_procs;
 mod ui_term;
 
-use clap::Parser;
+use std::path::Path;
+
+use clap::{arg, command};
+use config::{CmdConfig, Config, ProcConfig};
 use flexi_logger::FileSpec;
 
 use crate::app::App;
-
-/// Run multiple processes in parallel and see output
-#[derive(clap::Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-struct Args {
-  /// Config path
-  #[clap(short, long, default_value_t = String::from("mprocs.json"))]
-  config: String,
-}
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
@@ -46,8 +40,36 @@ async fn main() -> Result<(), std::io::Error> {
 }
 
 async fn run_app() -> anyhow::Result<()> {
-  let args = Args::parse();
+  let matches = command!()
+    .arg(arg!(-c --config [PATH] "Config path").default_value("mprocs.json"))
+    .arg(arg!([COMMANDS]... "Commands to run (if omitted, commands from config will be run)"))
+    .get_matches();
 
-  let app = App::from_config_file(args.config)?;
+  let config_required = matches.occurrences_of("COMMANDS") == 0
+    || matches.occurrences_of("config") > 0;
+  let config_path = Path::new(matches.value_of("config").unwrap());
+  let mut config = if config_required || config_path.is_file() {
+    Config::from_file(config_path)?
+  } else {
+    Config::default()
+  };
+
+  if let Some(cmds) = matches.values_of("COMMANDS") {
+    let procs = cmds
+      .into_iter()
+      .map(|cmd| ProcConfig {
+        name: cmd.to_owned(),
+        cmd: CmdConfig::Shell {
+          shell: cmd.to_owned(),
+        },
+        env: None,
+        cwd: None,
+      })
+      .collect::<Vec<_>>();
+
+    config.procs = procs;
+  }
+
+  let app = App::from_config_file(config)?;
   app.run().await
 }

@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 pub struct Config {
-  pub procs: IndexMap<String, ProcConfig>,
+  pub procs: Vec<ProcConfig>,
 }
 
 impl Config {
@@ -35,12 +35,12 @@ impl Config {
       let procs = procs
         .as_object()?
         .into_iter()
-        .map(|(name, proc)| (name, ProcConfig::from_val(proc)))
-        .collect::<IndexMap<_, _>>()
+        .map(|(name, proc)| ProcConfig::from_val(name, proc))
+        .collect::<Vec<_>>()
         .lift()?;
       procs
     } else {
-      IndexMap::new()
+      Vec::new()
     };
 
     let config = Config { procs };
@@ -49,23 +49,27 @@ impl Config {
   }
 }
 
-#[derive(Deserialize, Serialize)]
+impl Default for Config {
+  fn default() -> Self {
+    Self { procs: Vec::new() }
+  }
+}
+
 pub struct ProcConfig {
-  #[serde(flatten)]
+  pub name: String,
   pub cmd: CmdConfig,
-  #[serde(default)]
   pub cwd: Option<String>,
-  #[serde(default)]
   pub env: Option<IndexMap<String, Option<String>>>,
 }
 
 impl ProcConfig {
-  fn from_val(val: Val) -> anyhow::Result<ProcConfig> {
+  fn from_val(name: String, val: Val) -> anyhow::Result<ProcConfig> {
     match val.0 {
       Value::Null => todo!(),
       Value::Bool(_) => todo!(),
       Value::Number(_) => todo!(),
       Value::String(shell) => Ok(ProcConfig {
+        name,
         cmd: CmdConfig::Shell {
           shell: shell.to_owned(),
         },
@@ -81,6 +85,7 @@ impl ProcConfig {
         let cmd = cmd.lift()?;
 
         Ok(ProcConfig {
+          name,
           cmd: CmdConfig::Cmd { cmd },
           cwd: None,
           env: None,
@@ -131,6 +136,7 @@ impl ProcConfig {
         };
 
         Ok(ProcConfig {
+          name,
           cmd,
           cwd: None,
           env,
