@@ -1,0 +1,31 @@
+{
+  "name": "mprocs",
+  "version": "0.1.0",
+  "description": "Run multiple processes in parallel",
+  "license": "MIT",
+  "repository": "github:pvolok/mprocs",
+  "author": {
+    "name": "Pavel Volokitin",
+    "email": "pavelvolokitin@gmail.com"
+  },
+  "bin": {
+    "mprocs": "cli.js"
+  },
+  "engines": {
+    "node": ">=0.10.0"
+  },
+  "files": [
+    "mprocs-*/mprocs",
+    "mprocs-*/mprocs.exe",
+    "cli.js",
+    "index.js"
+  ],
+  "keywords": [
+    "cli",
+    "concurrent",
+    "parallel",
+    "process",
+    "runner",
+    "task"
+  ]
+}

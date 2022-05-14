@@ -15,6 +15,10 @@ platform and put it into a directory included in PATH.
 
 ## Usage
 
+1. Run `mprocs cmd1 cmd2 …` (example: `mprocs "yarn test -w" "webpack serve"`)
+
+OR
+
 1. Create `mprocs.json` file
 2. Run `mprocs` command
 

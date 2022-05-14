@@ -1,7 +1,9 @@
 /mprocs.json
 /mprocs.log
 
+/npm/mprocs-*
 
-# Added by cargo
+/release/
 
+# Cargo
 /target
