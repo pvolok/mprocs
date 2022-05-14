@@ -1,4 +1,4 @@
-SET VERSION=0.1.0
+SET VERSION=0.2.0
 
 RMDIR /Q /S release || exit /b
 MKDIR release\mprocs-%VERSION%-win64 || exit /b
