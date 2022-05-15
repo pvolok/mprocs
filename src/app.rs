@@ -170,6 +170,12 @@ impl App {
         }
         Event::Mouse(_) => LoopAction::Skip,
         Event::Resize(width, height) => {
+          let (width, height) = if cfg!(windows) {
+            crossterm::terminal::size().unwrap()
+          } else {
+            (width, height)
+          };
+
           let area = AppLayout::new(Rect::new(0, 0, width, height)).term_area();
           for proc in &mut self.state.procs {
             proc.resize(area);

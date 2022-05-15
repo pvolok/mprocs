@@ -16,7 +16,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0.44"
 clap = { version = "3.1.8", features = ["cargo"] }
-crossterm = { version = "0.20", features = ["event-stream"] }
+crossterm = { version = "0.23.2", features = ["event-stream"] }
 flexi_logger = "0.22.3"
 futures = { version = "*" }
 indexmap = { version = "1.8.0", features = ["serde"] }
