@@ -21,7 +21,7 @@ anyhow = "1.0.44"
 clap = { version = "3.1.8", features = ["cargo"] }
 crossterm = { version = "0.23.2", features = ["event-stream"] }
 flexi_logger = "0.22.3"
-futures = { version = "*" }
+futures = { version = "0.3.21" }
 indexmap = { version = "1.8.0", features = ["serde"] }
 libc = "0.2.120"
 log = "0.4.14"
@@ -29,7 +29,7 @@ portable-pty = "0.7.0"
 serde = { version = "1.0.136", features = ["derive"] }
 serde_json = { version = "1.0.79", features = ["preserve_order"] }
 tokio = { version = "1", features = ["full"] }
-tui = { version = "*", default-features = false, features = ['crossterm'] }
+tui = "0.18.0"
 unicode-width = "0.1.9"
 vt100 = "0.15.1"
 
