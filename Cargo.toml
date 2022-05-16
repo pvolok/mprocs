@@ -4,6 +4,8 @@ description = "Run multiple processes in parallel and see output"
 version = "0.2.1"
 edition = "2021"
 
+include = ["/src", "/vendor"]
+
 [profile.release]
 strip = "symbols"
 
