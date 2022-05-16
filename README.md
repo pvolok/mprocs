@@ -13,6 +13,16 @@ separately.
 [Download](https://github.com/pvolok/mprocs/releases) executable for your
 platform and put it into a directory included in PATH.
 
+### npm
+
+```sh
+npm install -g mprocs
+```
+
+```sh
+yarn global add mprocs
+```
+
 ## Usage
 
 1. Run `mprocs cmd1 cmd2 …` (example: `mprocs "yarn test -w" "webpack serve"`)
