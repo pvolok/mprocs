@@ -130,6 +130,7 @@ impl Inst {
 pub struct Proc {
   pub id: usize,
   pub name: String,
+  pub to_restart: bool,
   pub cmd: CommandBuilder,
   pub size: Rect,
 
@@ -163,6 +164,7 @@ impl Proc {
     let mut proc = Proc {
       id,
       name,
+      to_restart: false,
       cmd,
       size,
 
