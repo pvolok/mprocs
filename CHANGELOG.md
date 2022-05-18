@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Fix build on rust stable
+
 ## 0.2.1 - 2022-05-15
 
 - Fix terminal size on Windows

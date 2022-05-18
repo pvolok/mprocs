@@ -1,10 +1,10 @@
-use std::assert_matches::assert_matches;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread::{self, spawn};
 use std::time::Duration;
 
+use assert_matches::assert_matches;
 use portable_pty::MasterPty;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
 use tokio::sync::mpsc::Sender;
