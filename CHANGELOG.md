@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add new arrow and page keybindings
 - Fix build on rust stable
 
 ## 0.2.1 - 2022-05-15
