@@ -60,7 +60,15 @@ impl Default for Keymap {
       AppEvent::NextProc,
     );
     keymap.bind_p(
+      KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+      AppEvent::NextProc,
+    );
+    keymap.bind_p(
       KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE),
+      AppEvent::PrevProc,
+    );
+    keymap.bind_p(
+      KeyEvent::new(KeyCode::Up, KeyModifiers::NONE),
       AppEvent::PrevProc,
     );
     keymap.bind_p(
@@ -80,8 +88,16 @@ impl Default for Keymap {
 
     let ctrlu = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
     keymap.bind_p(ctrlu, AppEvent::ScrollUp);
+    keymap.bind_p(
+      KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
+      AppEvent::ScrollUp,
+    );
     let ctrld = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
     keymap.bind_p(ctrld, AppEvent::ScrollDown);
+    keymap.bind_p(
+      KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE),
+      AppEvent::ScrollDown,
+    );
 
     keymap
   }
