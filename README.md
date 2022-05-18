@@ -96,10 +96,10 @@ Process list focused:
 - `x` - Soft kill selected process (send SIGTERM signal, hard kill on Windows)
 - `X` - Hard kill selected process (send SIGKILL)
 - `s` - Start selected process, if it is not running
-- `k` - Select previous process
-- `j` - Select next process
-- `C-d` - Scroll output down
-- `C-u` - Scroll output up
+- `k` or `↑` - Select previous process
+- `j` or `↓` - Select next process
+- `C-d` or `page down` - Scroll output down
+- `C-u` or `page up` - Scroll output up
 
 Process output focused:
 
