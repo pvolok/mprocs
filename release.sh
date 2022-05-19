@@ -1,6 +1,10 @@
+#!/usr/bin/env bash
+
 set -e
 
-VERSION=0.2.1
+DIR=`dirname $0`
+
+VERSION=`$DIR/scripts/version.sh`
 
 rm -rf release
 
