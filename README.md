@@ -21,12 +21,12 @@ shows output of each command separately and allows to interact with processes
 
 ## Installation
 
-### Download binary
+### Download binary (Linux, Macos, Windows)
 
 [Download](https://github.com/pvolok/mprocs/releases) executable for your
 platform and put it into a directory included in PATH.
 
-### npm
+### npm (Linux, Macos, Windows)
 
 ```sh
 npm install -g mprocs
@@ -36,16 +36,22 @@ npm install -g mprocs
 yarn global add mprocs
 ```
 
-### homebrew
+### homebrew (Macos)
 
 ```sh
 brew install pvolok/mprocs/mprocs
 ```
 
-### cargo
+### cargo (All platforms)
 
 ```sh
 cargo install mprocs
+```
+
+### scoop (Windows)
+
+```sh
+scoop install https://raw.githubusercontent.com/pvolok/mprocs/master/scoop.json
 ```
 
 ## Usage
