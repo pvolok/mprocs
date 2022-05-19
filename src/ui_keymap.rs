@@ -41,6 +41,7 @@ pub fn render_keymap(
       (KeyCode::Char('k'), KeyModifiers::NONE, "Prev"),
       (KeyCode::Char('s'), KeyModifiers::NONE, "Start"),
       (KeyCode::Char('x'), KeyModifiers::NONE, "Stop"),
+      (KeyCode::Char('r'), KeyModifiers::NONE, "Restart"),
     ],
     Scope::Term => {
       vec![(KeyCode::Char('a'), KeyModifiers::CONTROL, "Toggle focus")]

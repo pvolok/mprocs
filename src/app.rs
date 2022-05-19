@@ -252,6 +252,20 @@ impl App {
         }
         LoopAction::Skip
       }
+      AppEvent::RestartProc => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.term();
+          proc.to_restart = true;
+        }
+        LoopAction::Skip
+      }
+      AppEvent::ForceRestartProc => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.kill();
+          proc.to_restart = true;
+        }
+        LoopAction::Skip
+      }
 
       AppEvent::ScrollUp => {
         if let Some(proc) = self.state.get_current_proc_mut() {
@@ -298,7 +312,15 @@ impl App {
         }
         LoopAction::Skip
       }
-      ProcUpdate::Stopped => LoopAction::Render,
+      ProcUpdate::Stopped => {
+        if let Some(proc) = self.state.get_proc_mut(event.0) {
+          if proc.to_restart {
+            proc.start();
+            proc.to_restart = false;
+          }
+        }
+        LoopAction::Render
+      }
       ProcUpdate::Started => LoopAction::Render,
     }
   }

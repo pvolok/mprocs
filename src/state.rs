@@ -32,6 +32,10 @@ impl State {
     self.procs.get_mut(self.selected)
   }
 
+  pub fn get_proc_mut(&mut self, id: usize) -> Option<&mut Proc> {
+    self.procs.iter_mut().find(|proc| proc.id == id)
+  }
+
   pub fn all_procs_down(&self) -> bool {
     self.procs.iter().all(|proc| !proc.is_up())
   }

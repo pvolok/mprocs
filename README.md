@@ -102,6 +102,8 @@ Process list focused:
 - `x` - Soft kill selected process (send SIGTERM signal, hard kill on Windows)
 - `X` - Hard kill selected process (send SIGKILL)
 - `s` - Start selected process, if it is not running
+- `r` - Soft kill selected process and restart it when it stops
+- `R` - Hard kill selected process and restart it when it stops
 - `k` or `↑` - Select previous process
 - `j` or `↓` - Select next process
 - `C-d` or `page down` - Scroll output down

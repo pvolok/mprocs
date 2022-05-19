@@ -83,6 +83,14 @@ impl Default for Keymap {
       KeyEvent::new(KeyCode::Char('X'), KeyModifiers::SHIFT),
       AppEvent::KillProc,
     );
+    keymap.bind_p(
+      KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
+      AppEvent::RestartProc,
+    );
+    keymap.bind_p(
+      KeyEvent::new(KeyCode::Char('R'), KeyModifiers::SHIFT),
+      AppEvent::ForceRestartProc,
+    );
     let ctrlc = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
     keymap.bind_p(ctrlc, AppEvent::SendKey(ctrlc));
 
