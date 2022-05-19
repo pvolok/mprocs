@@ -14,6 +14,24 @@ It is simmilar to
 shows output of each command separately and allows to interact with processes
 (you can even work in _vim_ inside _mprocs_).
 
+<!--ts-->
+* [mprocs](#mprocs)
+   * [Screenshots](#screenshots)
+   * [Installation](#installation)
+      * [Download binary (Linux, Macos, Windows)](#download-binary-linux-macos-windows)
+      * [npm (Linux, Macos, Windows)](#npm-linux-macos-windows)
+      * [homebrew (Macos)](#homebrew-macos)
+      * [cargo (All platforms)](#cargo-all-platforms)
+      * [scoop (Windows)](#scoop-windows)
+   * [Usage](#usage)
+      * [Config](#config)
+      * [Key bindings](#key-bindings)
+
+<!-- Created by https://github.com/ekalinin/github-markdown-toc -->
+<!-- Added by: pvolok, at: Fri May 20 00:30:56 +07 2022 -->
+
+<!--te-->
+
 ## Screenshots
 
 <img src="img/screenshot1.png" width="889" height="564" />
