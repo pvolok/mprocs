@@ -9,6 +9,10 @@ include = ["/src", "/vendor"]
 
 [profile.release]
 strip = "symbols"
+opt-level = "z" # optimize for binary size
+lto = true # link time optimization
+panic = "abort"
+codegen-units = 1
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
