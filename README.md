@@ -25,10 +25,11 @@ shows output of each command separately and allows to interact with processes
   - [scoop (Windows)](#scoop-windows)
 - [Usage](#usage)
   - [Config](#config)
+    - [$select operator](#select-operator)
   - [Key bindings](#key-bindings)
 
 <!-- Created by https://github.com/ekalinin/github-markdown-toc -->
-<!-- Added by: pvolok, at: Fri May 20 00:36:40 +07 2022 -->
+<!-- Added by: pvolok, at: Sat May 21 22:14:47 +07 2022 -->
 
 <!--te-->
 
@@ -141,7 +142,7 @@ Example `mprocs.json`:
         "$else": "echo $TEXT"
       },
       "env": {
-        "CUR_OS": {
+        "TEXT": {
           "$select": "os",
           "windows": "Windows",
           "linux": "Linux",
