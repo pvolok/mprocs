@@ -1,4 +1,4 @@
-use std::{fs::File, io::BufReader, path::Path, rc::Rc};
+use std::{env::consts::OS, fs::File, io::BufReader, path::Path, rc::Rc};
 
 use portable_pty::CommandBuilder;
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,7 @@ impl Config {
     let reader = BufReader::new(file);
 
     let config: Value = serde_json::from_reader(reader)?;
-    let config = Val::new(&config);
+    let config = Val::new(&config)?;
     let config = config.as_object()?;
 
     let procs = if let Some(procs) = config.get("procs") {
@@ -261,8 +261,43 @@ impl Trace {
 struct Val<'a>(&'a Value, Trace);
 
 impl<'a> Val<'a> {
-  pub fn new(value: &'a Value) -> Self {
-    Val(value, Trace::empty())
+  pub fn new(value: &'a Value) -> anyhow::Result<Self> {
+    Self::create(value, Trace::empty())
+  }
+
+  pub fn create(value: &'a Value, trace: Trace) -> anyhow::Result<Self> {
+    match value {
+      Value::Object(map) => {
+        if map.keys().next().map_or(false, |k| k.eq("$select")) {
+          let (v, t) = Self::select(map, trace.clone())?;
+          return Self::create(v, t);
+        }
+      }
+      _ => (),
+    }
+    Ok(Val(value, trace))
+  }
+
+  fn select(
+    map: &'a serde_json::Map<String, Value>,
+    trace: Trace,
+  ) -> anyhow::Result<(&'a Value, Trace)> {
+    if map.get("$select").unwrap() == "os" {
+      if let Some(v) = map.get(OS) {
+        return Ok((v, trace.add(OS)));
+      }
+
+      if let Some(v) = map.get("$else") {
+        return Ok((v, trace.add("$else")));
+      }
+
+      anyhow::bail!(
+        "No matching condition found at {}. Use \"$else\" for default value.",
+        trace.to_string(),
+      )
+    } else {
+      anyhow::bail!("Expected \"os\" at {}", trace.add("$select").to_string())
+    }
   }
 
   pub fn error_at<T: AsRef<str>>(&self, msg: T) -> anyhow::Error {
@@ -276,31 +311,29 @@ impl<'a> Val<'a> {
   }
 
   pub fn as_array(&self) -> anyhow::Result<Vec<Val>> {
-    Ok(
-      self
-        .0
-        .as_array()
-        .ok_or_else(|| {
-          anyhow::format_err!("Expected array at {}", self.1.to_string())
-        })?
-        .iter()
-        .enumerate()
-        .map(|(i, item)| Val(item, self.1.add(i)))
-        .collect(),
-    )
+    self
+      .0
+      .as_array()
+      .ok_or_else(|| {
+        anyhow::format_err!("Expected array at {}", self.1.to_string())
+      })?
+      .iter()
+      .enumerate()
+      .map(|(i, item)| Val::create(item, self.1.add(i)))
+      .collect::<Vec<_>>()
+      .lift()
   }
 
   pub fn as_object(&self) -> anyhow::Result<IndexMap<String, Val>> {
-    Ok(
-      self
-        .0
-        .as_object()
-        .ok_or_else(|| {
-          anyhow::format_err!("Expected object at {}", self.1.to_string())
-        })?
-        .iter()
-        .map(|(k, item)| (k.to_owned(), Val(item, self.1.add(k))))
-        .collect(),
-    )
+    self
+      .0
+      .as_object()
+      .ok_or_else(|| {
+        anyhow::format_err!("Expected object at {}", self.1.to_string())
+      })?
+      .iter()
+      .map(|(k, item)| (k.to_owned(), Val::create(item, self.1.add(k))))
+      .collect::<IndexMap<_, _>>()
+      .lift()
   }
 }

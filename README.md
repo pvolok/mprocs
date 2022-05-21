@@ -116,6 +116,44 @@ Example `mprocs.json`:
     variable names. Assign variable to null, to clear variables inherited from
     parent process.
 
+#### `$select` operator
+
+You can define different values depending on the current operating system.
+To provide different values based on current OS define an object with:
+
+- First field `"$select": "os"`
+- Fields defining values for different OSes: `"macos": "value"`. Possible
+  values are listed here:
+  https://doc.rust-lang.org/std/env/consts/constant.OS.html.
+- Field `"$else": "default value"` will be matched if no value was defined for
+  current OS. If current OS is not matched and field `$else` is missing, then
+  mprocs will fail to load config.
+
+Example `mprocs.json`:
+
+```json
+{
+  "procs": {
+    "my processs": {
+      "shell": {
+        "$select": "os",
+        "windows": "echo %TEXT%",
+        "$else": "echo $TEXT"
+      },
+      "env": {
+        "CUR_OS": {
+          "$select": "os",
+          "windows": "Windows",
+          "linux": "Linux",
+          "macos": "Macos",
+          "freebsd": "FreeBSD"
+        }
+      }
+    }
+  }
+}
+```
+
 ### Key bindings
 
 Process list focused:

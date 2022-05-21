@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add $select operator in config
 - Add new arrow and page keybindings
 - Fix build on rust stable
 
