@@ -37,7 +37,10 @@ impl Config {
         .into_iter()
         .map(|(name, proc)| ProcConfig::from_val(name, proc))
         .collect::<Vec<_>>()
-        .lift()?;
+        .lift()?
+        .into_iter()
+        .filter_map(|x| x)
+        .collect::<Vec<_>>();
       procs
     } else {
       Vec::new()
@@ -63,19 +66,19 @@ pub struct ProcConfig {
 }
 
 impl ProcConfig {
-  fn from_val(name: String, val: Val) -> anyhow::Result<ProcConfig> {
+  fn from_val(name: String, val: Val) -> anyhow::Result<Option<ProcConfig>> {
     match val.0 {
-      Value::Null => todo!(),
+      Value::Null => Ok(None),
       Value::Bool(_) => todo!(),
       Value::Number(_) => todo!(),
-      Value::String(shell) => Ok(ProcConfig {
+      Value::String(shell) => Ok(Some(ProcConfig {
         name,
         cmd: CmdConfig::Shell {
           shell: shell.to_owned(),
         },
         cwd: None,
         env: None,
-      }),
+      })),
       Value::Array(_) => {
         let cmd = val.as_array()?;
         let cmd = cmd
@@ -84,12 +87,12 @@ impl ProcConfig {
           .collect::<Vec<_>>();
         let cmd = cmd.lift()?;
 
-        Ok(ProcConfig {
+        Ok(Some(ProcConfig {
           name,
           cmd: CmdConfig::Cmd { cmd },
           cwd: None,
           env: None,
-        })
+        }))
       }
       Value::Object(_) => {
         let map = val.as_object()?;
@@ -135,12 +138,12 @@ impl ProcConfig {
           None => None,
         };
 
-        Ok(ProcConfig {
+        Ok(Some(ProcConfig {
           name,
           cmd,
           cwd: None,
           env,
-        })
+        }))
       }
     }
   }
