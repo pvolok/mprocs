@@ -33,10 +33,26 @@ pub fn render_procs(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
       create_proc_item(proc, i == state.selected, area.width - 2, theme)
     })
     .collect::<Vec<_>>();
+
+  let title = {
+    let mut spans = vec![Span::styled("Processes", theme.pane_title(active))];
+    if state.quitting {
+      spans.push(Span::from(" "));
+      spans.push(Span::styled(
+        "QUITTING",
+        Style::default()
+          .fg(Color::Black)
+          .bg(Color::Red)
+          .add_modifier(Modifier::BOLD),
+      ));
+    }
+    spans
+  };
+
   let items = List::new(items)
     .block(
       Block::default()
-        .title(Span::styled("Processes", theme.pane_title(active)))
+        .title(title)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(theme.pane_border(active)),
@@ -63,7 +79,7 @@ fn create_proc_item<'a>(
   };
 
   let mark = if is_cur {
-    Span::raw(">")
+    Span::raw("•")
   } else {
     Span::raw(" ")
   };
