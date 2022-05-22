@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.2.2 - 2022-05-22
+
 - Add experimental remote control
 - Add $select operator in config
 - Add restart command
