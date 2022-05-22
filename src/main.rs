@@ -1,5 +1,6 @@
 mod app;
 mod config;
+mod ctl;
 mod encode_term;
 mod event;
 mod keymap;
@@ -13,7 +14,8 @@ mod ui_term;
 use std::path::Path;
 
 use clap::{arg, command};
-use config::{CmdConfig, Config, ProcConfig};
+use config::{CmdConfig, Config, ProcConfig, ServerConfig};
+use ctl::run_ctl;
 use flexi_logger::FileSpec;
 
 use crate::app::App;
@@ -39,17 +41,30 @@ async fn main() -> Result<(), std::io::Error> {
 async fn run_app() -> anyhow::Result<()> {
   let matches = command!()
     .arg(arg!(-c --config [PATH] "Config path").default_value("mprocs.json"))
+    .arg(arg!(-s --server [PATH] "Remote control server address. Example: 127.0.0.1:4050."))
+    .arg(arg!(--ctl [JSON] "Send json encoded command to running mprocs"))
     .arg(arg!([COMMANDS]... "Commands to run (if omitted, commands from config will be run)"))
     .get_matches();
 
-  let config_required = matches.occurrences_of("COMMANDS") == 0
-    || matches.occurrences_of("config") > 0;
-  let config_path = Path::new(matches.value_of("config").unwrap());
-  let mut config = if config_required || config_path.is_file() {
-    Config::from_file(config_path)?
-  } else {
-    Config::default()
+  let mut config = {
+    let config_required = matches.occurrences_of("COMMANDS") == 0
+      || matches.occurrences_of("config") > 0;
+    let config_path = Path::new(matches.value_of("config").unwrap());
+
+    if config_required || config_path.is_file() {
+      Config::from_file(config_path)?
+    } else {
+      Config::default()
+    }
   };
+
+  if let Some(server_addr) = matches.value_of("server") {
+    config.server = Some(ServerConfig::from_str(server_addr)?);
+  }
+
+  if matches.occurrences_of("ctl") > 0 {
+    return run_ctl(matches.value_of("ctl").unwrap(), &config).await;
+  }
 
   if let Some(cmds) = matches.values_of("COMMANDS") {
     let procs = cmds

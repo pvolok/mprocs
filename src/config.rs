@@ -8,6 +8,7 @@ use serde_json::Value;
 
 pub struct Config {
   pub procs: Vec<ProcConfig>,
+  pub server: Option<ServerConfig>,
 }
 
 impl Config {
@@ -46,7 +47,13 @@ impl Config {
       Vec::new()
     };
 
-    let config = Config { procs };
+    let server = if let Some(addr) = config.get("server") {
+      Some(ServerConfig::from_str(addr.as_str()?)?)
+    } else {
+      None
+    };
+
+    let config = Config { procs, server };
 
     Ok(config)
   }
@@ -54,7 +61,10 @@ impl Config {
 
 impl Default for Config {
   fn default() -> Self {
-    Self { procs: Vec::new() }
+    Self {
+      procs: Vec::new(),
+      server: None,
+    }
   }
 }
 
@@ -146,6 +156,16 @@ impl ProcConfig {
         }))
       }
     }
+  }
+}
+
+pub enum ServerConfig {
+  Tcp(String),
+}
+
+impl ServerConfig {
+  pub fn from_str(server_addr: &str) -> anyhow::Result<Self> {
+    Ok(Self::Tcp(server_addr.to_string()))
   }
 }
 

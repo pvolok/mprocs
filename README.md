@@ -27,9 +27,10 @@ shows output of each command separately and allows to interact with processes
   - [Config](#config)
     - [$select operator](#select-operator)
   - [Key bindings](#key-bindings)
+  - [Remote control (EXPERIMENTAL)](#remote-control-experimental)
 
 <!-- Created by https://github.com/ekalinin/github-markdown-toc -->
-<!-- Added by: pvolok, at: Sat May 21 22:14:47 +07 2022 -->
+<!-- Added by: pvolok, at: Sun May 22 22:04:14 +07 2022 -->
 
 <!--te-->
 
@@ -175,3 +176,26 @@ Process list focused:
 Process output focused:
 
 - `C-a` - Focus processes pane
+
+### Remote control (EXPERIMENTAL)
+
+**This feature is experimental and likely to be changed.**
+
+Optionally, _mprocs_ can listen on TCP port for remote commands. You have to
+define remote control server address in `mprocs.json` (`{"server": "127.0.0.1:4050"}`) or via cli argument (`mprocs --server 127.0.0.1:4050`). To
+send a command to running _mprocs_ instance use the **ctl** argument: `mprocs --ctl '"Quit"'`.
+
+Possible commands:
+
+- `"Quit"`
+- `"ForceQuit"`
+- `"ToggleScope"`
+- `"NextProc"`
+- `"PrevProc"`
+- `"StartProc"`
+- `"TermProc"`
+- `"KillProc"`
+- `"RestartProc"`
+- `"ForceRestartProc"`
+- `"ScrollDown"`
+- `"ScrollUp"`

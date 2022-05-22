@@ -10,7 +10,10 @@ use crossterm::{
 };
 use futures::{future::FutureExt, select, StreamExt};
 use portable_pty::CommandBuilder;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::{
+  io::AsyncReadExt,
+  sync::mpsc::{channel, Receiver, Sender},
+};
 use tui::{
   backend::CrosstermBackend,
   layout::{Constraint, Direction, Layout, Margin, Rect},
@@ -18,7 +21,7 @@ use tui::{
 };
 
 use crate::{
-  config::Config,
+  config::{Config, ServerConfig},
   encode_term::{encode_key, KeyCodeEncodeModes},
   event::AppEvent,
   keymap::Keymap,
@@ -73,7 +76,57 @@ impl App {
     enable_raw_mode()?;
     execute!(io::stdout(), EnterAlternateScreen)?;
 
-    let result = self.main_loop(&mut terminal).await;
+    let (ctl_tx, ctl_rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+    let (exit_trigger, exit_listener) = triggered::trigger();
+
+    let server_thread = if let Some(ref server_addr) = self.config.server {
+      let server = match server_addr {
+        ServerConfig::Tcp(addr) => tokio::net::TcpListener::bind(addr).await?,
+      };
+
+      let server_thread = tokio::spawn(async move {
+        loop {
+          let on_exit = exit_listener.clone();
+          let mut socket: tokio::net::TcpStream = select! {
+            _ = on_exit.fuse() => break,
+            client = server.accept().fuse() => {
+              if let Ok((socket, _)) = client {
+                socket
+              } else {
+                break;
+              }
+            }
+          };
+
+          let ctl_tx = ctl_tx.clone();
+          let on_exit = exit_listener.clone();
+          tokio::spawn(async move {
+            let mut buf: Vec<u8> = Vec::with_capacity(32);
+            let () = select! {
+              _ = on_exit.fuse() => return,
+              count = socket.read_to_end(&mut buf).fuse() => {
+                if count.is_err() {
+                  return;
+                }
+              }
+            };
+            let msg: AppEvent = serde_json::from_slice(buf.as_slice()).unwrap();
+            // log::info!("Received remote command: {:?}", msg);
+            ctl_tx.send(msg).unwrap();
+          });
+        }
+      });
+      Some(server_thread)
+    } else {
+      None
+    };
+
+    let result = self.main_loop(&mut terminal, ctl_rx).await;
+
+    exit_trigger.trigger();
+    if let Some(server_thread) = server_thread {
+      let _ = server_thread.await;
+    }
 
     disable_raw_mode()?;
     execute!(io::stdout(), LeaveAlternateScreen)?;
@@ -81,7 +134,11 @@ impl App {
     result
   }
 
-  async fn main_loop(mut self, terminal: &mut Term) -> anyhow::Result<()> {
+  async fn main_loop(
+    mut self,
+    terminal: &mut Term,
+    mut ctl_rx: tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+  ) -> anyhow::Result<()> {
     let mut input = EventStream::new();
 
     {
@@ -110,6 +167,13 @@ impl App {
         event = self.events.recv().fuse() => {
           if let Some(event) = event {
             self.handle_proc_update(event)
+          } else {
+            LoopAction::Skip
+          }
+        }
+        event = ctl_rx.recv().fuse() => {
+          if let Some(event) = event {
+            self.handle_event(&event)
           } else {
             LoopAction::Skip
           }

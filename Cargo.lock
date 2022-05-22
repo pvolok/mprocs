@@ -382,6 +382,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "triggered",
  "tui",
  "unicode-width",
  "vt100",
@@ -811,6 +812,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "triggered"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce148eae0d1a376c1b94ae651fc3261d9cb8294788b962b7382066376503a2d1"
 
 [[package]]
 name = "tui"

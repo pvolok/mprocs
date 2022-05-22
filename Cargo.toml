@@ -34,6 +34,7 @@ portable-pty = "0.7.0"
 serde = { version = "1.0.136", features = ["derive"] }
 serde_json = { version = "1.0.79", features = ["preserve_order"] }
 tokio = { version = "1", features = ["full"] }
+triggered = "0.1.2"
 tui = "0.18.0"
 unicode-width = "0.1.9"
 vt100 = "0.15.1"

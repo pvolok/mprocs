@@ -1,5 +1,7 @@
 use crossterm::event::KeyEvent;
+use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Deserialize, Serialize)]
 pub enum AppEvent {
   Quit,
   ForceQuit,
@@ -17,5 +19,6 @@ pub enum AppEvent {
   ScrollDown,
   ScrollUp,
 
+  #[serde(skip)]
   SendKey(KeyEvent),
 }

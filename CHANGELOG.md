@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add experimental remote control
 - Add $select operator in config
 - Add restart command
 - Add new arrow and page keybindings
