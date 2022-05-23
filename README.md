@@ -74,6 +74,16 @@ cargo install mprocs
 scoop install https://raw.githubusercontent.com/pvolok/mprocs/master/scoop.json
 ```
 
+### AUR (Arch Linux)
+
+```sh
+yay mprocs
+```
+
+```sh
+yay mprocs-bin
+```
+
 ## Usage
 
 1. Run `mprocs cmd1 cmd2 …` (example: `mprocs "yarn test -w" "webpack serve"`)
