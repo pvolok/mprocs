@@ -25,7 +25,7 @@ use crate::{
   encode_term::{encode_key, KeyCodeEncodeModes},
   event::AppEvent,
   keymap::Keymap,
-  proc::{Proc, ProcUpdate},
+  proc::{Proc, ProcState, ProcUpdate},
   state::{Scope, State},
   ui_keymap::render_keymap,
   ui_procs::render_procs,
@@ -349,11 +349,18 @@ impl App {
       AppEvent::SendKey(key) => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           if proc.is_up() {
+            let application_cursor_keys = match &proc.inst {
+              ProcState::None => unreachable!(),
+              ProcState::Some(inst) => {
+                inst.vt.read().unwrap().screen().application_cursor()
+              }
+              ProcState::Error(_) => unreachable!(),
+            };
             let encoder = encode_key(
               key,
               KeyCodeEncodeModes {
                 enable_csi_u_key_encoding: false,
-                application_cursor_keys: false,
+                application_cursor_keys,
                 newline_mode: false,
               },
             )
