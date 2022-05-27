@@ -11,15 +11,15 @@ impl Theme {
     if active {
       style.fg(Color::White).add_modifier(Modifier::BOLD)
     } else {
-      style.fg(Color::Rgb(180, 180, 180))
+      style.fg(Color::Gray)
     }
   }
   pub fn pane_border(&self, active: bool) -> Style {
     let style = Style::default();
     if active {
-      style.fg(Color::Rgb(230, 230, 230))
+      style.fg(Color::White)
     } else {
-      style.fg(Color::Rgb(180, 180, 180))
+      style.fg(Color::Gray)
     }
   }
 
@@ -36,7 +36,7 @@ impl Default for Theme {
   fn default() -> Self {
     Self {
       procs_item: Style::default(),
-      procs_item_active: Style::default().bg(Color::Rgb(50, 50, 50)),
+      procs_item_active: Style::default().bg(Color::Indexed(240)),
     }
   }
 }
