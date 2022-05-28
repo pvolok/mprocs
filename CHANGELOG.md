@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.2.3 - 2022-05-28
+
 - Add "Add process" feature
 - Use only indexed colors
 
