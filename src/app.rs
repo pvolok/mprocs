@@ -122,7 +122,7 @@ impl App {
                 }
               }
             };
-            let msg: AppEvent = serde_json::from_slice(buf.as_slice()).unwrap();
+            let msg: AppEvent = serde_yaml::from_slice(buf.as_slice()).unwrap();
             // log::info!("Received remote command: {:?}", msg);
             ctl_tx.send(msg).unwrap();
           });
