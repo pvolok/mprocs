@@ -374,6 +374,8 @@ dependencies = [
  "tokio",
  "triggered",
  "tui",
+ "tui-input",
+ "unicode-segmentation",
  "unicode-width",
  "vt100",
 ]
@@ -806,10 +808,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "unicode-segmentation"
-version = "1.8.0"
+name = "tui-input"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8895849a949e7845e06bd6dc1aa51731a103c42707010a5b591c0038fb73385b"
+checksum = "59e209d9885c3f3559cc9849b1eca9726246be07a2a91aceb96b42c71c6c0ff9"
+dependencies = [
+ "crossterm",
+]
+
+[[package]]
+name = "unicode-segmentation"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e8820f5d777f6224dc4be3632222971ac30164d4a258d595640799554ebfd99"
 
 [[package]]
 name = "unicode-width"

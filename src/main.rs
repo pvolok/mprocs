@@ -7,6 +7,7 @@ mod keymap;
 mod proc;
 mod state;
 mod theme;
+mod ui_add_proc;
 mod ui_keymap;
 mod ui_procs;
 mod ui_term;

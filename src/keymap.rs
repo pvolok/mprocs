@@ -93,6 +93,10 @@ impl Default for Keymap {
     );
     let ctrlc = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
     keymap.bind_p(ctrlc, AppEvent::SendKey(ctrlc));
+    keymap.bind_p(
+      KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE),
+      AppEvent::ShowAddProc,
+    );
 
     let ctrlu = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
     keymap.bind_p(ctrlu, AppEvent::ScrollUp);

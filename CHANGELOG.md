@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Add "Add process" feature
+- Use only indexed colors
+
 ## 0.2.2 - 2022-05-22
 
 - Add experimental remote control

@@ -15,6 +15,8 @@ pub enum AppEvent {
   KillProc,
   RestartProc,
   ForceRestartProc,
+  ShowAddProc,
+  AddProc(String),
 
   ScrollDown,
   ScrollUp,

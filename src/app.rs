@@ -1,7 +1,7 @@
 use std::io;
 
 use crossterm::{
-  event::{Event, EventStream},
+  event::{Event, EventStream, KeyCode, KeyEvent},
   execute,
   terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen,
@@ -12,21 +12,23 @@ use futures::{future::FutureExt, select, StreamExt};
 use portable_pty::CommandBuilder;
 use tokio::{
   io::AsyncReadExt,
-  sync::mpsc::{channel, Receiver, Sender},
+  sync::mpsc::{UnboundedReceiver, UnboundedSender},
 };
 use tui::{
   backend::CrosstermBackend,
   layout::{Constraint, Direction, Layout, Margin, Rect},
   Terminal,
 };
+use tui_input::Input;
 
 use crate::{
-  config::{Config, ServerConfig},
+  config::{CmdConfig, Config, ProcConfig, ServerConfig},
   encode_term::{encode_key, KeyCodeEncodeModes},
   event::AppEvent,
   keymap::Keymap,
   proc::{Proc, ProcState, ProcUpdate},
-  state::{Scope, State},
+  state::{Modal, Scope, State},
+  ui_add_proc::render_add_proc,
   ui_keymap::render_keymap,
   ui_procs::render_procs,
   ui_term::render_term,
@@ -42,41 +44,50 @@ enum LoopAction {
 
 pub struct App {
   config: Config,
+  terminal: Term,
   state: State,
-  events: Receiver<(usize, ProcUpdate)>,
-  events_tx: Sender<(usize, ProcUpdate)>,
+  upd_rx: UnboundedReceiver<(usize, ProcUpdate)>,
+  upd_tx: UnboundedSender<(usize, ProcUpdate)>,
+  ev_rx: UnboundedReceiver<AppEvent>,
+  ev_tx: UnboundedSender<AppEvent>,
 }
 
 impl App {
   pub fn from_config_file(config: Config) -> anyhow::Result<Self> {
-    let (tx, rx) = channel::<(usize, ProcUpdate)>(100);
+    let backend = CrosstermBackend::new(io::stdout());
+    let terminal = Terminal::new(backend)?;
+
+    let (upd_tx, upd_rx) =
+      tokio::sync::mpsc::unbounded_channel::<(usize, ProcUpdate)>();
+    let (ev_tx, ev_rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
 
     let state = State {
       scope: Scope::Procs,
       procs: Vec::new(),
       selected: 0,
 
+      modal: None,
+
       quitting: false,
     };
 
     let app = App {
       config,
+      terminal,
       state,
-      events: rx,
-      events_tx: tx,
+      upd_rx,
+      upd_tx,
+
+      ev_rx,
+      ev_tx,
     };
     Ok(app)
   }
 
   pub async fn run(self) -> anyhow::Result<()> {
-    let stdout = io::stdout();
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
     enable_raw_mode()?;
     execute!(io::stdout(), EnterAlternateScreen)?;
 
-    let (ctl_tx, ctl_rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
     let (exit_trigger, exit_listener) = triggered::trigger();
 
     let server_thread = if let Some(ref server_addr) = self.config.server {
@@ -84,6 +95,7 @@ impl App {
         ServerConfig::Tcp(addr) => tokio::net::TcpListener::bind(addr).await?,
       };
 
+      let ev_tx = self.ev_tx.clone();
       let server_thread = tokio::spawn(async move {
         loop {
           let on_exit = exit_listener.clone();
@@ -98,7 +110,7 @@ impl App {
             }
           };
 
-          let ctl_tx = ctl_tx.clone();
+          let ctl_tx = ev_tx.clone();
           let on_exit = exit_listener.clone();
           tokio::spawn(async move {
             let mut buf: Vec<u8> = Vec::with_capacity(32);
@@ -121,7 +133,7 @@ impl App {
       None
     };
 
-    let result = self.main_loop(&mut terminal, ctl_rx).await;
+    let result = self.main_loop().await;
 
     exit_trigger.trigger();
     if let Some(server_thread) = server_thread {
@@ -134,27 +146,31 @@ impl App {
     result
   }
 
-  async fn main_loop(
-    mut self,
-    terminal: &mut Term,
-    mut ctl_rx: tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
-  ) -> anyhow::Result<()> {
+  async fn main_loop(mut self) -> anyhow::Result<()> {
     let mut input = EventStream::new();
 
     {
-      let area = AppLayout::new(terminal.size().unwrap()).term_area();
+      let area = AppLayout::new(self.terminal.size().unwrap()).term_area();
       self.start_procs(area)?;
     }
 
     let mut render_needed = true;
     loop {
       if render_needed {
-        terminal.draw(|f| {
+        self.terminal.draw(|f| {
           let layout = AppLayout::new(f.size());
 
           render_procs(layout.procs, f, &mut self.state);
           render_term(layout.term, f, &mut self.state);
           render_keymap(layout.keymap, f, &mut self.state);
+
+          if let Some(modal) = &mut self.state.modal {
+            match modal {
+              Modal::AddProc { input } => {
+                render_add_proc(f.size(), f, input);
+              }
+            }
+          }
         })?;
       }
 
@@ -164,14 +180,14 @@ impl App {
         event = input.next().fuse() => {
           self.handle_input(event, &keymap)
         }
-        event = self.events.recv().fuse() => {
+        event = self.upd_rx.recv().fuse() => {
           if let Some(event) = event {
             self.handle_proc_update(event)
           } else {
             LoopAction::Skip
           }
         }
-        event = ctl_rx.recv().fuse() => {
+        event = self.ev_rx.recv().fuse() => {
           if let Some(event) = event {
             self.handle_event(&event)
           } else {
@@ -207,7 +223,7 @@ impl App {
       .map(|(id, proc_cfg)| {
         let cmd = CommandBuilder::from(proc_cfg);
 
-        Proc::new(id, proc_cfg.name.clone(), cmd, self.events_tx.clone(), size)
+        Proc::new(id, proc_cfg.name.clone(), cmd, self.upd_tx.clone(), size)
       })
       .collect::<Vec<_>>();
 
@@ -221,36 +237,88 @@ impl App {
     event: Option<crossterm::Result<Event>>,
     keymap: &Keymap,
   ) -> LoopAction {
-    match event {
-      Some(crossterm::Result::Ok(event)) => match event {
-        Event::Key(key) => {
-          if let Some(bound) = keymap.resolve(self.state.scope, &key) {
-            self.handle_event(bound)
-          } else if self.state.scope == Scope::Term {
-            self.handle_event(&AppEvent::SendKey(key))
-          } else {
-            LoopAction::Skip
-          }
-        }
-        Event::Mouse(_) => LoopAction::Skip,
-        Event::Resize(width, height) => {
-          let (width, height) = if cfg!(windows) {
-            crossterm::terminal::size().unwrap()
-          } else {
-            (width, height)
-          };
-
-          let area = AppLayout::new(Rect::new(0, 0, width, height)).term_area();
-          for proc in &mut self.state.procs {
-            proc.resize(area);
-          }
-
-          LoopAction::Render
-        }
-      },
-      _ => {
+    let event = match event {
+      Some(Ok(event)) => event,
+      Some(Err(err)) => {
+        log::warn!("Crossterm input error: {}", err.to_string());
+        return LoopAction::Skip;
+      }
+      None => {
         log::warn!("Crossterm input is None.");
-        LoopAction::Skip
+        return LoopAction::Skip;
+      }
+    };
+
+    {
+      let mut ret: Option<LoopAction> = None;
+      let mut reset_modal = false;
+      if let Some(modal) = &mut self.state.modal {
+        match modal {
+          Modal::AddProc { input } => {
+            match event {
+              Event::Key(KeyEvent {
+                code: KeyCode::Enter,
+                modifiers,
+              }) if modifiers.is_empty() => {
+                reset_modal = true;
+                self
+                  .ev_tx
+                  .send(AppEvent::AddProc(input.value().to_string()))
+                  .unwrap();
+                // Skip because AddProc event will immediately rerender.
+                ret = Some(LoopAction::Skip);
+              }
+              Event::Key(KeyEvent {
+                code: KeyCode::Esc,
+                modifiers,
+              }) if modifiers.is_empty() => {
+                reset_modal = true;
+                ret = Some(LoopAction::Render);
+              }
+              _ => (),
+            }
+
+            let req = tui_input::backend::crossterm::to_input_request(event);
+            if let Some(req) = req {
+              input.handle(req);
+              ret = Some(LoopAction::Render);
+            }
+          }
+        };
+      }
+
+      if reset_modal {
+        self.state.modal = None;
+      }
+      if let Some(ret) = ret {
+        return ret;
+      }
+    }
+
+    match event {
+      Event::Key(key) => {
+        if let Some(bound) = keymap.resolve(self.state.scope, &key) {
+          self.handle_event(bound)
+        } else if self.state.scope == Scope::Term {
+          self.handle_event(&AppEvent::SendKey(key))
+        } else {
+          LoopAction::Skip
+        }
+      }
+      Event::Mouse(_) => LoopAction::Skip,
+      Event::Resize(width, height) => {
+        let (width, height) = if cfg!(windows) {
+          crossterm::terminal::size().unwrap()
+        } else {
+          (width, height)
+        };
+
+        let area = AppLayout::new(Rect::new(0, 0, width, height)).term_area();
+        for proc in &mut self.state.procs {
+          proc.resize(area);
+        }
+
+        LoopAction::Render
       }
     }
   }
@@ -344,6 +412,31 @@ impl App {
           return LoopAction::Render;
         }
         LoopAction::Skip
+      }
+      AppEvent::ShowAddProc => {
+        self.state.modal = Some(Modal::AddProc {
+          input: Input::default(),
+        });
+        LoopAction::Render
+      }
+      AppEvent::AddProc(cmd) => {
+        let proc = Proc::new(
+          self.state.procs.len(),
+          cmd.to_string(),
+          (&ProcConfig {
+            name: cmd.to_string(),
+            cmd: CmdConfig::Shell {
+              shell: cmd.to_string(),
+            },
+            cwd: None,
+            env: None,
+          })
+            .into(),
+          self.upd_tx.clone(),
+          self.terminal.size().unwrap(),
+        );
+        self.state.procs.push(proc);
+        LoopAction::Render
       }
 
       AppEvent::SendKey(key) => {

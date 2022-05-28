@@ -37,6 +37,8 @@ serde_json = { version = "1.0.79", features = ["preserve_order"] }
 tokio = { version = "1", features = ["full"] }
 triggered = "0.1.2"
 tui = "0.18.0"
+tui-input = "0.4.0"
+unicode-segmentation = "1.9.0"
 unicode-width = "0.1.9"
 vt100 = "0.15.1"
 

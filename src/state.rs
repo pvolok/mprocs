@@ -1,3 +1,5 @@
+use tui_input::Input;
+
 use crate::proc::Proc;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -20,6 +22,8 @@ pub struct State {
   pub procs: Vec<Proc>,
   pub selected: usize,
 
+  pub modal: Option<Modal>,
+
   pub quitting: bool,
 }
 
@@ -39,4 +43,8 @@ impl State {
   pub fn all_procs_down(&self) -> bool {
     self.procs.iter().all(|proc| !proc.is_up())
   }
+}
+
+pub enum Modal {
+  AddProc { input: Input },
 }
