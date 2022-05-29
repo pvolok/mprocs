@@ -23,14 +23,15 @@ shows output of each command separately and allows to interact with processes
   - [homebrew (Macos)](#homebrew-macos)
   - [cargo (All platforms)](#cargo-all-platforms)
   - [scoop (Windows)](#scoop-windows)
+  - [AUR (Arch Linux)](#aur-arch-linux)
 - [Usage](#usage)
   - [Config](#config)
     - [$select operator](#select-operator)
   - [Key bindings](#key-bindings)
-  - [Remote control (EXPERIMENTAL)](#remote-control-experimental)
+  - [Remote control](#remote-control)
 
 <!-- Created by https://github.com/ekalinin/github-markdown-toc -->
-<!-- Added by: pvolok, at: Sun May 22 22:04:14 +07 2022 -->
+<!-- Added by: pvolok, at: Mon May 30 00:07:24 +07 2022 -->
 
 <!--te-->
 
@@ -173,25 +174,30 @@ Process output focused:
 
 - `C-a` - Focus processes pane
 
-### Remote control (EXPERIMENTAL)
+### Remote control
 
-**This feature is experimental and likely to be changed.**
+Optionally, _mprocs_ can listen on TCP port for remote commands.
+You have to define remote control server address in `mprocs.yaml`
+(`server: 127.0.0.1:4050`) or via cli argument (`mprocs --server 127.0.0.1:4050`). To send a command to running _mprocs_ instance
+use the **ctl** argument: `mprocs --ctl '{c: quit}'` or `mprocs --ctl '{c: send-key, key: <C-c>}'`.
 
-Optionally, _mprocs_ can listen on TCP port for remote commands. You have to
-define remote control server address in `mprocs.yaml` (`server: 127.0.0.1:4050`) or via cli argument (`mprocs --server 127.0.0.1:4050`). To
-send a command to running _mprocs_ instance use the **ctl** argument: `mprocs --ctl '"Quit"'`.
+Commands are encoded as yaml. Available commands:
 
-Possible commands:
-
-- `"Quit"`
-- `"ForceQuit"`
-- `"ToggleScope"`
-- `"NextProc"`
-- `"PrevProc"`
-- `"StartProc"`
-- `"TermProc"`
-- `"KillProc"`
-- `"RestartProc"`
-- `"ForceRestartProc"`
-- `"ScrollDown"`
-- `"ScrollUp"`
+- `{c: quit}`
+- `{c: force-quit}`
+- `{c: toggle-scope}` - Toggle focus between process list and terminal.
+- `{c: next-proc}`
+- `{c: prev-proc}`
+- `{c: start-proc}`
+- `{c: term-proc}`
+- `{c: kill-proc}`
+- `{c: restart-proc}`
+- `{c: force-restart-proc}`
+- `{c: show-add-proc}`
+- `{c: add-proc, cmd: "<SHELL COMMAND>"}`
+- `{c: show-remove-proc}`
+- `{c: remove-proc, id: "<PROCESS ID>"}`
+- `{c: scrol-down}`
+- `{c: scroll-up}`
+- `{c: send-key, key: "<KEY>"}` - Send key to current process. Key
+  examples: `<C-a>`, `<Enter>`
