@@ -3,6 +3,7 @@ mod config;
 mod ctl;
 mod encode_term;
 mod event;
+mod key;
 mod keymap;
 mod proc;
 mod state;
