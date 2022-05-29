@@ -32,6 +32,7 @@ use crate::{
   ui_add_proc::render_add_proc,
   ui_keymap::render_keymap,
   ui_procs::render_procs,
+  ui_remove_proc::render_remove_proc,
   ui_term::render_term,
 };
 
@@ -170,6 +171,9 @@ impl App {
               Modal::AddProc { input } => {
                 render_add_proc(f.size(), f, input);
               }
+              Modal::RemoveProc { id: _ } => {
+                render_remove_proc(f.size(), f);
+              }
             }
           }
         })?;
@@ -220,11 +224,10 @@ impl App {
       .config
       .procs
       .iter()
-      .enumerate()
-      .map(|(id, proc_cfg)| {
+      .map(|proc_cfg| {
         let cmd = CommandBuilder::from(proc_cfg);
 
-        Proc::new(id, proc_cfg.name.clone(), cmd, self.upd_tx.clone(), size)
+        Proc::new(proc_cfg.name.clone(), cmd, self.upd_tx.clone(), size)
       })
       .collect::<Vec<_>>();
 
@@ -285,6 +288,31 @@ impl App {
             if let Some(req) = req {
               input.handle(req);
               ret = Some(LoopAction::Render);
+            }
+          }
+          Modal::RemoveProc { id } => {
+            match event {
+              Event::Key(KeyEvent {
+                code: KeyCode::Char('y'),
+                modifiers,
+              }) if modifiers.is_empty() => {
+                reset_modal = true;
+                self.ev_tx.send(AppEvent::RemoveProc { id: *id }).unwrap();
+                // Skip because RemoveProc event will immediately rerender.
+                ret = Some(LoopAction::Skip);
+              }
+              Event::Key(KeyEvent {
+                code: KeyCode::Esc,
+                modifiers,
+              })
+              | Event::Key(KeyEvent {
+                code: KeyCode::Char('n'),
+                modifiers,
+              }) if modifiers.is_empty() => {
+                reset_modal = true;
+                ret = Some(LoopAction::Render);
+              }
+              _ => (),
             }
           }
         };
@@ -425,7 +453,6 @@ impl App {
       }
       AppEvent::AddProc { cmd } => {
         let proc = Proc::new(
-          self.state.procs.len(),
           cmd.to_string(),
           (&ProcConfig {
             name: cmd.to_string(),
@@ -440,6 +467,27 @@ impl App {
           self.terminal.size().unwrap(),
         );
         self.state.procs.push(proc);
+        LoopAction::Render
+      }
+      AppEvent::ShowRemoveProc => {
+        let id = self
+          .state
+          .get_current_proc()
+          .map(|proc| if proc.is_up() { None } else { Some(proc.id) })
+          .flatten();
+        match id {
+          Some(id) => {
+            self.state.modal = Some(Modal::RemoveProc { id });
+            LoopAction::Render
+          }
+          None => LoopAction::Skip,
+        }
+      }
+      AppEvent::RemoveProc { id } => {
+        self
+          .state
+          .procs
+          .retain(|proc| proc.is_up() || proc.id != *id);
         LoopAction::Render
       }
 

@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread::{self, spawn};
 use std::time::Duration;
@@ -139,6 +139,8 @@ pub struct Proc {
   pub inst: ProcState,
 }
 
+static NEXT_PROC_ID: AtomicUsize = AtomicUsize::new(1);
+
 #[derive(Debug)]
 pub enum ProcState {
   None,
@@ -155,12 +157,12 @@ pub enum ProcUpdate {
 
 impl Proc {
   pub fn new(
-    id: usize,
     name: String,
     cmd: CommandBuilder,
     tx: UnboundedSender<(usize, ProcUpdate)>,
     size: Rect,
   ) -> Self {
+    let id = NEXT_PROC_ID.fetch_add(1, Ordering::Relaxed);
     let mut proc = Proc {
       id,
       name,

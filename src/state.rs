@@ -47,4 +47,5 @@ impl State {
 
 pub enum Modal {
   AddProc { input: Input },
+  RemoveProc { id: usize },
 }

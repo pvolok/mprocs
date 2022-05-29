@@ -178,6 +178,8 @@ Process list focused:
 - `s` - Start selected process, if it is not running
 - `r` - Soft kill selected process and restart it when it stops
 - `R` - Hard kill selected process and restart it when it stops
+- `a` - Add new process
+- `d` - Remove selected process (process must be stopped first)
 - `k` or `↑` - Select previous process
 - `j` or `↓` - Select next process
 - `C-d` or `page down` - Scroll output down

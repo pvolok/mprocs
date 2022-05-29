@@ -19,6 +19,8 @@ pub enum AppEvent {
   ForceRestartProc,
   ShowAddProc,
   AddProc { cmd: String },
+  ShowRemoveProc,
+  RemoveProc { id: usize },
 
   ScrollDown,
   ScrollUp,

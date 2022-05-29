@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add "Remove process"
 - Change default config path to mprocs.yaml
 - Parse config file as yaml
 
