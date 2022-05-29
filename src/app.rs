@@ -264,7 +264,9 @@ impl App {
                 reset_modal = true;
                 self
                   .ev_tx
-                  .send(AppEvent::AddProc(input.value().to_string()))
+                  .send(AppEvent::AddProc {
+                    cmd: input.value().to_string(),
+                  })
                   .unwrap();
                 // Skip because AddProc event will immediately rerender.
                 ret = Some(LoopAction::Skip);
@@ -302,7 +304,7 @@ impl App {
         if let Some(bound) = keymap.resolve(self.state.scope, &key) {
           self.handle_event(bound)
         } else if self.state.scope == Scope::Term {
-          self.handle_event(&AppEvent::SendKey(key))
+          self.handle_event(&AppEvent::SendKey { key })
         } else {
           LoopAction::Skip
         }
@@ -421,7 +423,7 @@ impl App {
         });
         LoopAction::Render
       }
-      AppEvent::AddProc(cmd) => {
+      AppEvent::AddProc { cmd } => {
         let proc = Proc::new(
           self.state.procs.len(),
           cmd.to_string(),
@@ -441,7 +443,7 @@ impl App {
         LoopAction::Render
       }
 
-      AppEvent::SendKey(key) => {
+      AppEvent::SendKey { key } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           if proc.is_up() {
             let application_cursor_keys = match &proc.inst {

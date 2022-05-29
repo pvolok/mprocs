@@ -1,5 +1,6 @@
 use anyhow::bail;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use serde::{Deserialize, Serialize};
 
 static KEYS: phf::Map<&'static str, KeyCode> = phf::phf_map! {
   "bs" => KeyCode::Backspace,
@@ -119,6 +120,26 @@ impl ToString for Key {
     buf.push('>');
 
     buf
+  }
+}
+
+impl Serialize for Key {
+  fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+  where
+    S: serde::Serializer,
+  {
+    serializer.serialize_str(self.to_string().as_str())
+  }
+}
+
+impl<'de> Deserialize<'de> for Key {
+  fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+  where
+    D: serde::Deserializer<'de>,
+  {
+    let text = String::deserialize(deserializer)?;
+    Key::parse(text.as_str())
+      .map_err(|err| serde::de::Error::custom(err.to_string()))
   }
 }
 

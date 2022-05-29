@@ -92,7 +92,7 @@ impl Default for Keymap {
       AppEvent::ForceRestartProc,
     );
     let ctrlc = Key::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-    keymap.bind_p(ctrlc, AppEvent::SendKey(ctrlc));
+    keymap.bind_p(ctrlc, AppEvent::SendKey { key: ctrlc });
     keymap.bind_p(
       Key::new(KeyCode::Char('a'), KeyModifiers::NONE),
       AppEvent::ShowAddProc,

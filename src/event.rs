@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::key::Key;
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "c", rename_all = "kebab-case")]
 pub enum AppEvent {
   Quit,
   ForceQuit,
@@ -17,11 +18,31 @@ pub enum AppEvent {
   RestartProc,
   ForceRestartProc,
   ShowAddProc,
-  AddProc(String),
+  AddProc { cmd: String },
 
   ScrollDown,
   ScrollUp,
 
-  #[serde(skip)]
-  SendKey(Key),
+  SendKey { key: Key },
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn serialize() {
+    assert_eq!(
+      serde_yaml::to_string(&AppEvent::ForceQuit).unwrap(),
+      "---\nc: force-quit\n"
+    );
+
+    assert_eq!(
+      serde_yaml::to_string(&AppEvent::SendKey {
+        key: Key::parse("<c-a>").unwrap()
+      })
+      .unwrap(),
+      "---\nc: send-key\nkey: \"<C-a>\"\n"
+    );
+  }
 }
