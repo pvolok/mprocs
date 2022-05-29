@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Change default config path to mprocs.yaml
+- Parse config file as yaml
+
 ## 0.2.3 - 2022-05-28
 
 - Add "Add process" feature

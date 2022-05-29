@@ -15,7 +15,7 @@ mod ui_term;
 
 use std::path::Path;
 
-use clap::{arg, command};
+use clap::{arg, command, ArgMatches};
 use config::{CmdConfig, Config, ProcConfig, ServerConfig};
 use ctl::run_ctl;
 use flexi_logger::FileSpec;
@@ -42,23 +42,13 @@ async fn main() -> Result<(), std::io::Error> {
 
 async fn run_app() -> anyhow::Result<()> {
   let matches = command!()
-    .arg(arg!(-c --config [PATH] "Config path").default_value("mprocs.json"))
+    .arg(arg!(-c --config [PATH] "Config path [default: mprocs.yaml]"))
     .arg(arg!(-s --server [PATH] "Remote control server address. Example: 127.0.0.1:4050."))
     .arg(arg!(--ctl [JSON] "Send json encoded command to running mprocs"))
     .arg(arg!([COMMANDS]... "Commands to run (if omitted, commands from config will be run)"))
     .get_matches();
 
-  let mut config = {
-    let config_required = matches.occurrences_of("COMMANDS") == 0
-      || matches.occurrences_of("config") > 0;
-    let config_path = Path::new(matches.value_of("config").unwrap());
-
-    if config_required || config_path.is_file() {
-      Config::from_file(config_path)?
-    } else {
-      Config::default()
-    }
-  };
+  let mut config = load_config(&matches)?;
 
   if let Some(server_addr) = matches.value_of("server") {
     config.server = Some(ServerConfig::from_str(server_addr)?);
@@ -86,4 +76,26 @@ async fn run_app() -> anyhow::Result<()> {
 
   let app = App::from_config_file(config)?;
   app.run().await
+}
+
+fn load_config(matches: &ArgMatches) -> anyhow::Result<Config> {
+  if let Some(path) = matches.value_of("config") {
+    return Config::from_path(path);
+  }
+
+  {
+    let path = "mprocs.yaml";
+    if Path::new(path).is_file() {
+      return Config::from_path(path);
+    }
+  }
+
+  {
+    let path = "mprocs.json";
+    if Path::new(path).is_file() {
+      return Config::from_path(path);
+    }
+  }
+
+  Ok(Config::default())
 }

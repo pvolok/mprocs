@@ -1,4 +1,9 @@
-use std::{env::consts::OS, fs::File, io::BufReader, path::Path, rc::Rc};
+use std::{
+  env::consts::OS,
+  fs::File,
+  io::{BufReader, Read},
+  rc::Rc,
+};
 
 use anyhow::bail;
 use portable_pty::CommandBuilder;
@@ -13,22 +18,22 @@ pub struct Config {
 }
 
 impl Config {
-  pub fn from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Config> {
+  pub fn from_path(path: &str) -> anyhow::Result<Config> {
     // Open the file in read-only mode with buffer.
     let file = match File::open(&path) {
       Ok(file) => file,
       Err(err) => match err.kind() {
         std::io::ErrorKind::NotFound => {
-          return Err(anyhow::anyhow!(
-            "Config file '{}' not found.",
-            path.as_ref().display()
-          ))
+          bail!("Config file '{}' not found.", path);
         }
         _kind => return Err(err.into()),
       },
     };
     let reader = BufReader::new(file);
+    Self::from_reader(reader)
+  }
 
+  pub fn from_reader<R: Read>(reader: R) -> anyhow::Result<Config> {
     let config: Value = serde_yaml::from_reader(reader)?;
     let config = Val::new(&config)?;
     let config = config.as_object()?;
