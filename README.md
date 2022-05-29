@@ -42,6 +42,8 @@ shows output of each command separately and allows to interact with processes
 
 ## Installation
 
+[![Packaging status](https://repology.org/badge/vertical-allrepos/mprocs.svg)](https://repology.org/project/mprocs/versions)
+
 ### Download binary (Linux, Macos, Windows)
 
 [Download](https://github.com/pvolok/mprocs/releases) executable for your
