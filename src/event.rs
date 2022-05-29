@@ -1,5 +1,6 @@
-use crossterm::event::KeyEvent;
 use serde::{Deserialize, Serialize};
+
+use crate::key::Key;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum AppEvent {
@@ -22,5 +23,5 @@ pub enum AppEvent {
   ScrollUp,
 
   #[serde(skip)]
-  SendKey(KeyEvent),
+  SendKey(Key),
 }

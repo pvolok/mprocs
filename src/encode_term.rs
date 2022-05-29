@@ -3,6 +3,8 @@ use std::fmt::Write;
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::key::Key;
+
 pub const CSI: &str = "\x1b[";
 pub const SS3: &str = "\x1bO";
 
@@ -27,15 +29,15 @@ impl Default for KeyCodeEncodeModes {
 
 /// Returns the xterm compatible byte sequence that represents this KeyCode
 /// and Modifier combination.
-pub fn encode_key(key: &KeyEvent, modes: KeyCodeEncodeModes) -> Result<String> {
+pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
   use KeyCode::*;
 
-  let code = key.code;
-  let mods = key.modifiers;
+  let code = key.code().clone();
+  let mods = key.mods().clone();
 
   let mut buf = String::new();
 
-  let code = normalize_shift_to_upper_case(code, mods);
+  let code = normalize_shift_to_upper_case(code, &mods);
   // Normalize the modifier state for Char's that are uppercase; remove
   // the SHIFT modifier so that reduce ambiguity below
   let mods = match code {
@@ -43,7 +45,7 @@ pub fn encode_key(key: &KeyEvent, modes: KeyCodeEncodeModes) -> Result<String> {
       if (c.is_ascii_punctuation() || c.is_ascii_uppercase())
         && mods.contains(KeyModifiers::SHIFT) =>
     {
-      mods.difference(KeyModifiers::SHIFT)
+      mods.clone().difference(KeyModifiers::SHIFT)
     }
     _ => mods,
   };
@@ -348,7 +350,7 @@ fn csi_u_encode(
 /// In fact, this function might be better off if it lived elsewhere.
 pub fn normalize_shift_to_upper_case(
   code: KeyCode,
-  modifiers: KeyModifiers,
+  modifiers: &KeyModifiers,
 ) -> KeyCode {
   if modifiers.contains(KeyModifiers::SHIFT) {
     match code {

@@ -42,10 +42,14 @@ static SPECIAL_CHARS: phf::Map<char, &str> = phf::phf_map! {
   '-' => "Minus",
 };
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Key(KeyEvent);
 
 impl Key {
+  pub fn new(code: KeyCode, mods: KeyModifiers) -> Key {
+    Key::from(KeyEvent::new(code, mods))
+  }
+
   pub fn parse(text: &str) -> anyhow::Result<Key> {
     KeyParser::parse(text)
   }
@@ -56,6 +60,12 @@ impl Key {
 
   pub fn mods(&self) -> &KeyModifiers {
     &self.0.modifiers
+  }
+}
+
+impl From<KeyEvent> for Key {
+  fn from(key_event: KeyEvent) -> Self {
+    Key(key_event)
   }
 }
 
@@ -112,21 +122,20 @@ impl ToString for Key {
   }
 }
 
-struct KeyParser {
-  text: String,
+struct KeyParser<'a> {
+  text: &'a str,
   pos: usize,
 }
 
-impl KeyParser {
+impl KeyParser<'_> {
   fn parse(text: &str) -> anyhow::Result<Key> {
-    let text = text.to_lowercase();
     let mut parser = KeyParser { text, pos: 0 };
 
     parser.expect("<")?;
     let mods = parser.take_mods()?;
     let code = {
       let word = parser.take_word()?;
-      if let Some(code) = KEYS.get(word) {
+      if let Some(code) = KEYS.get(word.to_ascii_lowercase().as_str()) {
         code.clone()
       } else if word.len() == 1 {
         KeyCode::Char(word.chars().next().unwrap())
@@ -173,9 +182,9 @@ impl KeyParser {
     let mut pos = self.pos;
     while pos + 1 < self.text.len() && &self.text[pos + 1..pos + 2] == "-" {
       match &self.text[pos..pos + 1] {
-        "c" => mods = mods.union(KeyModifiers::CONTROL),
-        "s" => mods = mods.union(KeyModifiers::SHIFT),
-        "m" => mods = mods.union(KeyModifiers::ALT),
+        "c" | "C" => mods = mods.union(KeyModifiers::CONTROL),
+        "s" | "S" => mods = mods.union(KeyModifiers::SHIFT),
+        "m" | "M" => mods = mods.union(KeyModifiers::ALT),
         ch => bail!("Wrong key modifier: \"{}\"", ch),
       }
       pos += 2;
@@ -254,6 +263,9 @@ mod tests {
     in_out("<Insert>");
     in_out("<Nul>");
     in_out("<Esc>");
+
+    in_out("<a>");
+    in_out("<A>");
 
     in_out("<C-a>");
     in_out("<C-M-a>");

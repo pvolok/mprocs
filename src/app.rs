@@ -25,6 +25,7 @@ use crate::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
   encode_term::{encode_key, KeyCodeEncodeModes},
   event::AppEvent,
+  key::Key,
   keymap::Keymap,
   proc::{Proc, ProcState, ProcUpdate},
   state::{Modal, Scope, State},
@@ -297,6 +298,7 @@ impl App {
 
     match event {
       Event::Key(key) => {
+        let key = Key::from(key);
         if let Some(bound) = keymap.resolve(self.state.scope, &key) {
           self.handle_event(bound)
         } else if self.state.scope == Scope::Term {
