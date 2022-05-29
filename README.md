@@ -5,7 +5,7 @@ separately.
 
 When you work on a project you very often need the same list of commands to be
 running. For example: `webpack serve`, `jest --watch`, `node src/server.js`.
-With mprocs you can list these command in `mprocs.json` and run all of them by
+With mprocs you can list these command in `mprocs.yaml` and run all of them by
 running `mprocs`. Then you can switch between outputs of running commands and
 interact with them.
 
@@ -90,31 +90,22 @@ yay mprocs-bin
 
 OR
 
-1. Create `mprocs.json` file
+1. Create `mprocs.yaml` file
 2. Run `mprocs` command
 
-Example `mprocs.json`:
+Example `mprocs.yaml`:
 
-```json
-{
-  "procs": {
-    "nvim": {
-      "cmd": ["nvim"]
-    },
-    "server": {
-      "shell": "nodemon server.js"
-    },
-    "webpack": {
-      "shell": "webpack serve"
-    },
-    "tests": {
-      "shell": "jest -w",
-      "env": {
-        "NODE_ENV": "test"
-      }
-    }
-  }
-}
+```yaml
+procs:
+  nvim:
+    cmd: ["nvim"]
+  server:
+    shell: "nodemon server.js"
+  webpack: "webpack serve"
+  tests:
+    shell: "jest -w"
+    env:
+      NODE_ENV: test
 ```
 
 ### Config
@@ -133,37 +124,30 @@ Example `mprocs.json`:
 You can define different values depending on the current operating system.
 To provide different values based on current OS define an object with:
 
-- First field `"$select": "os"`
-- Fields defining values for different OSes: `"macos": "value"`. Possible
+- First field `$select: os`
+- Fields defining values for different OSes: `macos: value`. Possible
   values are listed here:
   https://doc.rust-lang.org/std/env/consts/constant.OS.html.
-- Field `"$else": "default value"` will be matched if no value was defined for
+- Field `$else: default value` will be matched if no value was defined for
   current OS. If current OS is not matched and field `$else` is missing, then
   mprocs will fail to load config.
 
-Example `mprocs.json`:
+Example `mprocs.yaml`:
 
-```json
-{
-  "procs": {
-    "my processs": {
-      "shell": {
-        "$select": "os",
-        "windows": "echo %TEXT%",
-        "$else": "echo $TEXT"
-      },
-      "env": {
-        "TEXT": {
-          "$select": "os",
-          "windows": "Windows",
-          "linux": "Linux",
-          "macos": "Macos",
-          "freebsd": "FreeBSD"
-        }
-      }
-    }
-  }
-}
+```yaml
+procs:
+  my processs:
+    shell:
+      $select: os
+      windows: "echo %TEXT%"
+      $else: "echo $TEXT"
+    env:
+      TEXT:
+        $select: os
+        windows: Windows
+        linux: Linux
+        macos: Macos
+        freebsd: FreeBSD
 ```
 
 ### Key bindings
@@ -194,7 +178,7 @@ Process output focused:
 **This feature is experimental and likely to be changed.**
 
 Optionally, _mprocs_ can listen on TCP port for remote commands. You have to
-define remote control server address in `mprocs.json` (`{"server": "127.0.0.1:4050"}`) or via cli argument (`mprocs --server 127.0.0.1:4050`). To
+define remote control server address in `mprocs.yaml` (`server: 127.0.0.1:4050`) or via cli argument (`mprocs --server 127.0.0.1:4050`). To
 send a command to running _mprocs_ instance use the **ctl** argument: `mprocs --ctl '"Quit"'`.
 
 Possible commands:
