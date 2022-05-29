@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.3.0 - 2022-05-30
+
 - Add "Remove process"
 - Change default config path to mprocs.yaml
 - Parse config file as yaml
