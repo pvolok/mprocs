@@ -2,10 +2,12 @@ cargo-features = ["strip"]
 
 [package]
 name = "mprocs"
-description = "Run multiple processes in parallel and see output"
 version = "0.3.0"
-edition = "2021"
+description = "Run multiple processes in parallel and see output"
+repository = "https://github.com/pvolok/mprocs"
+authors = ["Pavel Volokitin <pavelvolokitin@gmail.com>"]
 license = "MIT"
+edition = "2021"
 
 include = ["/src", "/vendor"]
 
