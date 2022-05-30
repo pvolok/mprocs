@@ -152,7 +152,7 @@ impl App {
     let mut input = EventStream::new();
 
     {
-      let area = AppLayout::new(self.terminal.size().unwrap()).term_area();
+      let area = AppLayout::new(self.terminal.get_frame().size()).term_area();
       self.start_procs(area)?;
     }
 
@@ -464,7 +464,7 @@ impl App {
           })
             .into(),
           self.upd_tx.clone(),
-          self.terminal.size().unwrap(),
+          self.terminal.get_frame().size(),
         );
         self.state.procs.push(proc);
         LoopAction::Render
