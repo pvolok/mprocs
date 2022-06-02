@@ -74,7 +74,7 @@ cargo install mprocs
 ### scoop (Windows)
 
 ```sh
-scoop install https://raw.githubusercontent.com/pvolok/mprocs/master/scoop.json
+scoop install https://raw.githubusercontent.com/pvolok/mprocs/master/scoop/mprocs.json
 ```
 
 ### AUR (Arch Linux)
