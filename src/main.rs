@@ -84,15 +84,7 @@ fn load_config(matches: &ArgMatches) -> anyhow::Result<Config> {
     return Config::from_path(path);
   }
 
-  {
-    let path = "mprocs.yaml";
-    if Path::new(path).is_file() {
-      return Config::from_path(path);
-    }
-  }
-
-  {
-    let path = "mprocs.json";
+  for path in ["mprocs.yaml", "mprocs.yml", "mprocs.json"] {
     if Path::new(path).is_file() {
       return Config::from_path(path);
     }
