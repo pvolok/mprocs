@@ -1,16 +1,9 @@
-use std::{
-  env::consts::OS,
-  fs::File,
-  io::{BufReader, Read},
-  rc::Rc,
-};
-
-use anyhow::bail;
+use indexmap::IndexMap;
 use portable_pty::CommandBuilder;
 use serde::{Deserialize, Serialize};
-
-use indexmap::IndexMap;
 use serde_yaml::Value;
+
+use crate::yaml_val::{value_to_string, Val};
 
 pub struct Config {
   pub procs: Vec<ProcConfig>,
@@ -18,24 +11,8 @@ pub struct Config {
 }
 
 impl Config {
-  pub fn from_path(path: &str) -> anyhow::Result<Config> {
-    // Open the file in read-only mode with buffer.
-    let file = match File::open(&path) {
-      Ok(file) => file,
-      Err(err) => match err.kind() {
-        std::io::ErrorKind::NotFound => {
-          bail!("Config file '{}' not found.", path);
-        }
-        _kind => return Err(err.into()),
-      },
-    };
-    let reader = BufReader::new(file);
-    Self::from_reader(reader)
-  }
-
-  pub fn from_reader<R: Read>(reader: R) -> anyhow::Result<Config> {
-    let config: Value = serde_yaml::from_reader(reader)?;
-    let config = Val::new(&config)?;
+  pub fn from_value(value: &Value) -> anyhow::Result<Config> {
+    let config = Val::new(value)?;
     let config = config.as_object()?;
 
     let procs = if let Some(procs) = config.get(&Value::from("procs")) {
@@ -84,7 +61,7 @@ pub struct ProcConfig {
 
 impl ProcConfig {
   fn from_val(name: String, val: Val) -> anyhow::Result<Option<ProcConfig>> {
-    match val.0 {
+    match val.raw() {
       Value::Null => Ok(None),
       Value::Bool(_) => todo!(),
       Value::Number(_) => todo!(),
@@ -139,7 +116,7 @@ impl ProcConfig {
             let env = env
               .into_iter()
               .map(|(k, v)| {
-                let v = match v.0 {
+                let v = match v.raw() {
                   Value::Null => Ok(None),
                   Value::String(v) => Ok(Some(v.to_owned())),
                   _ => Err(v.error_at("Expected string or null")),
@@ -224,142 +201,5 @@ impl From<&ProcConfig> for CommandBuilder {
     }
 
     cmd
-  }
-}
-
-#[derive(Clone)]
-struct Trace(Option<Rc<Box<(String, Trace)>>>);
-
-impl Trace {
-  pub fn empty() -> Self {
-    Trace(None)
-  }
-
-  pub fn add<T: ToString>(&self, seg: T) -> Self {
-    Trace(Some(Rc::new(Box::new((seg.to_string(), self.clone())))))
-  }
-
-  pub fn to_string(&self) -> String {
-    let mut str = String::new();
-    fn add(buf: &mut String, trace: &Trace) {
-      match &trace.0 {
-        Some(part) => {
-          add(buf, &part.1);
-          buf.push('.');
-          buf.push_str(&part.0);
-        }
-        None => buf.push_str("<config>"),
-      }
-    }
-    add(&mut str, self);
-
-    str
-  }
-}
-
-struct Val<'a>(&'a Value, Trace);
-
-impl<'a> Val<'a> {
-  pub fn new(value: &'a Value) -> anyhow::Result<Self> {
-    Self::create(value, Trace::empty())
-  }
-
-  pub fn create(value: &'a Value, trace: Trace) -> anyhow::Result<Self> {
-    match value {
-      Value::Mapping(map) => {
-        if map
-          .into_iter()
-          .next()
-          .map_or(false, |(k, _)| k.eq("$select"))
-        {
-          let (v, t) = Self::select(map, trace.clone())?;
-          return Self::create(v, t);
-        }
-      }
-      _ => (),
-    }
-    Ok(Val(value, trace))
-  }
-
-  fn select(
-    map: &'a serde_yaml::Mapping,
-    trace: Trace,
-  ) -> anyhow::Result<(&'a Value, Trace)> {
-    if map.get(&Value::from("$select")).unwrap() == "os" {
-      if let Some(v) = map.get(&Value::from(OS)) {
-        return Ok((v, trace.add(OS)));
-      }
-
-      if let Some(v) = map.get(&Value::from("$else")) {
-        return Ok((v, trace.add("$else")));
-      }
-
-      anyhow::bail!(
-        "No matching condition found at {}. Use \"$else\" for default value.",
-        trace.to_string(),
-      )
-    } else {
-      anyhow::bail!("Expected \"os\" at {}", trace.add("$select").to_string())
-    }
-  }
-
-  pub fn error_at<T: AsRef<str>>(&self, msg: T) -> anyhow::Error {
-    anyhow::format_err!("{} at {}", msg.as_ref(), self.1.to_string())
-  }
-
-  pub fn as_str(&self) -> anyhow::Result<&str> {
-    self.0.as_str().ok_or_else(|| {
-      anyhow::format_err!("Expected string at {}", self.1.to_string())
-    })
-  }
-
-  pub fn as_array(&self) -> anyhow::Result<Vec<Val>> {
-    self
-      .0
-      .as_sequence()
-      .ok_or_else(|| {
-        anyhow::format_err!("Expected array at {}", self.1.to_string())
-      })?
-      .iter()
-      .enumerate()
-      .map(|(i, item)| Val::create(item, self.1.add(i)))
-      .collect::<anyhow::Result<Vec<_>>>()
-  }
-
-  pub fn as_object(&self) -> anyhow::Result<IndexMap<Value, Val>> {
-    self
-      .0
-      .as_mapping()
-      .ok_or_else(|| {
-        anyhow::format_err!("Expected object at {}", self.1.to_string())
-      })?
-      .iter()
-      .map(|(k, item)| {
-        #[inline]
-        fn mk_val<'a>(
-          k: &'a Value,
-          item: &'a Value,
-          trace: &'a Trace,
-        ) -> anyhow::Result<Val<'a>> {
-          Ok(Val::create(item, trace.add(value_to_string(k)?))?)
-        }
-        Ok((k.to_owned(), mk_val(k, item, &self.1)?))
-      })
-      .collect::<anyhow::Result<IndexMap<_, _>>>()
-  }
-}
-
-fn value_to_string(value: &Value) -> anyhow::Result<String> {
-  match value {
-    Value::Null => Ok("null".to_string()),
-    Value::Bool(v) => Ok(v.to_string()),
-    Value::Number(v) => Ok(v.to_string()),
-    Value::String(v) => Ok(v.to_string()),
-    Value::Sequence(_v) => {
-      bail!("`value_to_string` is not implemented for arrays.")
-    }
-    Value::Mapping(_v) => {
-      bail!("`value_to_string` is not implemented for objects.")
-    }
   }
 }

@@ -2,16 +2,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::key::Key;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "c", rename_all = "kebab-case")]
 pub enum AppEvent {
   Quit,
   ForceQuit,
 
-  ToggleScope,
+  ToggleFocus,
+  FocusProcs,
+  FocusTerm,
 
   NextProc,
   PrevProc,
+  SelectProc { index: usize },
   StartProc,
   TermProc,
   KillProc,

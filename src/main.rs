@@ -6,6 +6,7 @@ mod event;
 mod key;
 mod keymap;
 mod proc;
+mod settings;
 mod state;
 mod theme;
 mod ui_add_proc;
@@ -13,13 +14,19 @@ mod ui_keymap;
 mod ui_procs;
 mod ui_remove_proc;
 mod ui_term;
+mod yaml_val;
 
 use std::path::Path;
 
+use anyhow::{bail, Result};
 use clap::{arg, command, ArgMatches};
 use config::{CmdConfig, Config, ProcConfig, ServerConfig};
 use ctl::run_ctl;
 use flexi_logger::FileSpec;
+use keymap::Keymap;
+use serde_yaml::Value;
+use settings::Settings;
+use yaml_val::Val;
 
 use crate::app::App;
 
@@ -49,54 +56,97 @@ async fn run_app() -> anyhow::Result<()> {
     .arg(arg!([COMMANDS]... "Commands to run (if omitted, commands from config will be run)"))
     .get_matches();
 
-  let mut config = load_config(&matches)?;
+  let config_value = load_config_value(&matches)
+    .map_err(|e| anyhow::Error::msg(format!("[{}] {}", "config", e)))?;
 
-  if let Some(server_addr) = matches.value_of("server") {
-    config.server = Some(ServerConfig::from_str(server_addr)?);
+  let mut settings = Settings::default();
+
+  // merge ~/.config/mprocs/mprocs.yaml
+  settings.merge_from_xdg().map_err(|e| {
+    anyhow::Error::msg(format!("[{}] {}", "global settings", e))
+  })?;
+  // merge ./mprocs.yaml
+  if let Some(value) = &config_value {
+    settings
+      .merge_value(Val::new(value)?)
+      .map_err(|e| anyhow::Error::msg(format!("[{}] {}", "local config", e)))?;
   }
 
-  if matches.occurrences_of("ctl") > 0 {
-    return run_ctl(matches.value_of("ctl").unwrap(), &config).await;
-  }
+  let mut keymap = Keymap::new();
+  settings.add_to_keymap(&mut keymap)?;
 
-  if let Some(cmds) = matches.values_of("COMMANDS") {
-    let procs = cmds
-      .into_iter()
-      .map(|cmd| ProcConfig {
-        name: cmd.to_owned(),
-        cmd: CmdConfig::Shell {
-          shell: cmd.to_owned(),
-        },
-        env: None,
-        cwd: None,
-      })
-      .collect::<Vec<_>>();
+  let config = {
+    let mut config = if let Some(v) = config_value {
+      Config::from_value(&v)?
+    } else {
+      Config::default()
+    };
 
-    config.procs = procs;
-  }
+    if let Some(server_addr) = matches.value_of("server") {
+      config.server = Some(ServerConfig::from_str(server_addr)?);
+    }
 
-  let app = App::from_config_file(config)?;
+    if matches.occurrences_of("ctl") > 0 {
+      return run_ctl(matches.value_of("ctl").unwrap(), &config).await;
+    }
+
+    if let Some(cmds) = matches.values_of("COMMANDS") {
+      let procs = cmds
+        .into_iter()
+        .map(|cmd| ProcConfig {
+          name: cmd.to_owned(),
+          cmd: CmdConfig::Shell {
+            shell: cmd.to_owned(),
+          },
+          env: None,
+          cwd: None,
+        })
+        .collect::<Vec<_>>();
+
+      config.procs = procs;
+    }
+
+    config
+  };
+
+  let app = App::from_config_file(config, keymap)?;
   app.run().await
 }
 
-fn load_config(matches: &ArgMatches) -> anyhow::Result<Config> {
+fn load_config_value(matches: &ArgMatches) -> Result<Option<Value>> {
   if let Some(path) = matches.value_of("config") {
-    return Config::from_path(path);
+    return Ok(Some(read_value(path)?));
   }
 
   {
     let path = "mprocs.yaml";
     if Path::new(path).is_file() {
-      return Config::from_path(path);
+      return Ok(Some(read_value(path)?));
     }
   }
 
   {
     let path = "mprocs.json";
     if Path::new(path).is_file() {
-      return Config::from_path(path);
+      return Ok(Some(read_value(path)?));
     }
   }
 
-  Ok(Config::default())
+  Ok(None)
+}
+
+fn read_value(path: &str) -> Result<Value> {
+  // Open the file in read-only mode with buffer.
+  let file = match std::fs::File::open(&path) {
+    Ok(file) => file,
+    Err(err) => match err.kind() {
+      std::io::ErrorKind::NotFound => {
+        bail!("Config file '{}' not found.", path);
+      }
+      _kind => return Err(err.into()),
+    },
+  };
+  let reader = std::io::BufReader::new(file);
+  let value: Value = serde_yaml::from_reader(reader)?;
+  Ok(value)
 }

@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, rc::Rc};
 
 use crossterm::{
   event::{Event, EventStream, KeyCode, KeyEvent},
@@ -46,6 +46,7 @@ enum LoopAction {
 
 pub struct App {
   config: Config,
+  keymap: Rc<Keymap>,
   terminal: Term,
   state: State,
   upd_rx: UnboundedReceiver<(usize, ProcUpdate)>,
@@ -55,7 +56,10 @@ pub struct App {
 }
 
 impl App {
-  pub fn from_config_file(config: Config) -> anyhow::Result<Self> {
+  pub fn from_config_file(
+    config: Config,
+    keymap: Keymap,
+  ) -> anyhow::Result<Self> {
     let backend = CrosstermBackend::new(io::stdout());
     let terminal = Terminal::new(backend)?;
 
@@ -75,6 +79,7 @@ impl App {
 
     let app = App {
       config,
+      keymap: Rc::new(keymap),
       terminal,
       state,
       upd_rx,
@@ -179,11 +184,9 @@ impl App {
         })?;
       }
 
-      let keymap = Keymap::default();
-
       let loop_action = select! {
         event = input.next().fuse() => {
-          self.handle_input(event, &keymap)
+          self.handle_input(event)
         }
         event = self.upd_rx.recv().fuse() => {
           if let Some(event) = event {
@@ -239,7 +242,6 @@ impl App {
   fn handle_input(
     &mut self,
     event: Option<crossterm::Result<Event>>,
-    keymap: &Keymap,
   ) -> LoopAction {
     let event = match event {
       Some(Ok(event)) => event,
@@ -329,6 +331,7 @@ impl App {
     match event {
       Event::Key(key) => {
         let key = Key::from(key);
+        let keymap = self.keymap.clone();
         if let Some(bound) = keymap.resolve(self.state.scope, &key) {
           self.handle_event(bound)
         } else if self.state.scope == Scope::Term {
@@ -375,8 +378,16 @@ impl App {
         LoopAction::ForceQuit
       }
 
-      AppEvent::ToggleScope => {
+      AppEvent::ToggleFocus => {
         self.state.scope = self.state.scope.toggle();
+        LoopAction::Render
+      }
+      AppEvent::FocusProcs => {
+        self.state.scope = Scope::Procs;
+        LoopAction::Render
+      }
+      AppEvent::FocusTerm => {
+        self.state.scope = Scope::Term;
         LoopAction::Render
       }
 
@@ -395,6 +406,10 @@ impl App {
           self.state.procs.len() - 1
         };
         self.state.selected = next;
+        LoopAction::Render
+      }
+      AppEvent::SelectProc { index } => {
+        self.state.selected = *index;
         LoopAction::Render
       }
 
