@@ -162,6 +162,14 @@ impl Settings {
       Key::new(KeyCode::PageDown, KeyModifiers::NONE),
       AppEvent::ScrollDown,
     );
+
+    for i in 0..8 {
+      let char = char::from_digit(i + 1, 10).unwrap();
+      s.keymap_add_p(
+        Key::new(KeyCode::Char(char), KeyModifiers::ALT),
+        AppEvent::SelectProc { index: i as usize },
+      );
+    }
   }
 
   fn keymap_add_p(&mut self, key: Key, event: AppEvent) {
