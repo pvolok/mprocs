@@ -26,12 +26,13 @@ shows output of each command separately and allows to interact with processes
   - [AUR (Arch Linux)](#aur-arch-linux)
 - [Usage](#usage)
   - [Config](#config)
+    - [Keymap](#keymap)
     - [$select operator](#select-operator)
-  - [Key bindings](#key-bindings)
+  - [Default keymap](#default-keymap)
   - [Remote control](#remote-control)
 
 <!-- Created by https://github.com/ekalinin/github-markdown-toc -->
-<!-- Added by: pvolok, at: Mon May 30 00:07:24 +07 2022 -->
+<!-- Added by: pvolok, at: Tue Jun  7 01:20:42 +07 2022 -->
 
 <!--te-->
 
@@ -118,9 +119,35 @@ procs:
     be provided).
   - **cmd**: _array<string>_ - Array of command and args to run (only **shell**
     or **cmd** must be provided).
+  - **cwd**: _string_ - Set working directory for the process. Prefix
+    `<CONFIG_DIR>` will be replaced with the path of the directory where the
+    config is located.
   - **env**: _object<string, string|null>_ - Set env variables. Object keys are
     variable names. Assign variable to null, to clear variables inherited from
     parent process.
+
+#### Keymap
+
+Key bindings can be overridden globally in file `~/.config/mprocs/mprocs.yaml`
+or in a local config (`mprocs.yaml` in current directory by default). Keymaps are separate for process list and terminal windows.
+
+There are three keymap levels:
+
+- Default keymaps
+- `~/.config/mprocs/mprocs.yaml`
+- `./mprocs.yaml` (can be overridden by the _-c/--config_ cli arg)
+
+Lower levers override bindings from previous levels. Key bindings from previous
+levels can be cleared by specifying `reset: false` field at the same level as
+keys:
+
+```yaml
+keymap_procs: # keymap when process list is focused
+  <C-q>: { c: toggle-focus }
+keymap_term: # keymap when terminal is focused
+  reset: true
+  <C-q>: { c: toggle-focus }
+```
 
 #### `$select` operator
 
@@ -153,7 +180,7 @@ procs:
         freebsd: FreeBSD
 ```
 
-### Key bindings
+### Default keymap
 
 Process list focused:
 
@@ -169,6 +196,7 @@ Process list focused:
 - `d` - Remove selected process (process must be stopped first)
 - `k` or `↑` - Select previous process
 - `j` or `↓` - Select next process
+- `M-1` - `M-8` - Select process 1-8
 - `C-d` or `page down` - Scroll output down
 - `C-u` or `page up` - Scroll output up
 
@@ -187,9 +215,12 @@ Commands are encoded as yaml. Available commands:
 
 - `{c: quit}`
 - `{c: force-quit}`
-- `{c: toggle-scope}` - Toggle focus between process list and terminal.
+- `{c: toggle-focus}` - Toggle focus between process list and terminal.
+- `{c: focus-procs}` - Focus process list
+- `{c: focus-term}` - Focus process terminal window
 - `{c: next-proc}`
 - `{c: prev-proc}`
+- `{c: select-proc, index: <PROCESS INDEX>}` - Select process by index
 - `{c: start-proc}`
 - `{c: term-proc}`
 - `{c: kill-proc}`
