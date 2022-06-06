@@ -157,7 +157,7 @@ impl App {
     let mut input = EventStream::new();
 
     {
-      let area = AppLayout::new(self.terminal.get_frame().size()).term_area();
+      let area = self.get_term_size();
       self.start_procs(area)?;
     }
 
@@ -479,7 +479,7 @@ impl App {
           })
             .into(),
           self.upd_tx.clone(),
-          self.terminal.get_frame().size(),
+          self.get_term_size(),
         );
         self.state.procs.push(proc);
         LoopAction::Render
@@ -554,6 +554,10 @@ impl App {
       }
       ProcUpdate::Started => LoopAction::Render,
     }
+  }
+
+  fn get_term_size(&mut self) -> Rect {
+    AppLayout::new(self.terminal.get_frame().size()).term_area()
   }
 }
 
