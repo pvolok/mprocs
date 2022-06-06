@@ -20,7 +20,7 @@ use std::path::Path;
 
 use anyhow::{bail, Result};
 use clap::{arg, command, ArgMatches};
-use config::{CmdConfig, Config, ProcConfig, ServerConfig};
+use config::{CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig};
 use ctl::run_ctl;
 use flexi_logger::FileSpec;
 use keymap::Keymap;
@@ -66,7 +66,7 @@ async fn run_app() -> anyhow::Result<()> {
     anyhow::Error::msg(format!("[{}] {}", "global settings", e))
   })?;
   // merge ./mprocs.yaml
-  if let Some(value) = &config_value {
+  if let Some((value, _)) = &config_value {
     settings
       .merge_value(Val::new(value)?)
       .map_err(|e| anyhow::Error::msg(format!("[{}] {}", "local config", e)))?;
@@ -76,8 +76,8 @@ async fn run_app() -> anyhow::Result<()> {
   settings.add_to_keymap(&mut keymap)?;
 
   let config = {
-    let mut config = if let Some(v) = config_value {
-      Config::from_value(&v)?
+    let mut config = if let Some((v, ctx)) = config_value {
+      Config::from_value(&v, &ctx)?
     } else {
       Config::default()
     };
@@ -113,22 +113,33 @@ async fn run_app() -> anyhow::Result<()> {
   app.run().await
 }
 
-fn load_config_value(matches: &ArgMatches) -> Result<Option<Value>> {
+fn load_config_value(
+  matches: &ArgMatches,
+) -> Result<Option<(Value, ConfigContext)>> {
   if let Some(path) = matches.value_of("config") {
-    return Ok(Some(read_value(path)?));
+    return Ok(Some((
+      read_value(path)?,
+      ConfigContext { path: path.into() },
+    )));
   }
 
   {
     let path = "mprocs.yaml";
     if Path::new(path).is_file() {
-      return Ok(Some(read_value(path)?));
+      return Ok(Some((
+        read_value(path)?,
+        ConfigContext { path: path.into() },
+      )));
     }
   }
 
   {
     let path = "mprocs.json";
     if Path::new(path).is_file() {
-      return Ok(Some(read_value(path)?));
+      return Ok(Some((
+        read_value(path)?,
+        ConfigContext { path: path.into() },
+      )));
     }
   }
 
