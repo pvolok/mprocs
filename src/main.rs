@@ -53,7 +53,8 @@ async fn run_app() -> anyhow::Result<()> {
   let matches = command!()
     .arg(arg!(-c --config [PATH] "Config path [default: mprocs.yaml]"))
     .arg(arg!(-s --server [PATH] "Remote control server address. Example: 127.0.0.1:4050."))
-    .arg(arg!(--ctl [JSON] "Send json encoded command to running mprocs"))
+    .arg(arg!(--ctl [YAML] "Send yaml/json encoded command to running mprocs"))
+    .arg(arg!(--names [NAMES] "Names for processes provided by cli arguments. Separated by comma."))
     .arg(arg!([COMMANDS]... "Commands to run (if omitted, commands from config will be run)"))
     .get_matches();
 
@@ -92,10 +93,16 @@ async fn run_app() -> anyhow::Result<()> {
     }
 
     if let Some(cmds) = matches.values_of("COMMANDS") {
+      let names = matches
+        .value_of("names")
+        .map_or_else(|| Vec::new(), |arg| arg.split(",").collect::<Vec<_>>());
       let procs = cmds
         .into_iter()
-        .map(|cmd| ProcConfig {
-          name: cmd.to_owned(),
+        .enumerate()
+        .map(|(i, cmd)| ProcConfig {
+          name: names
+            .get(i)
+            .map_or_else(|| cmd.to_string(), |s| s.to_string()),
           cmd: CmdConfig::Shell {
             shell: cmd.to_owned(),
           },

@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add _--names_ cli argument
 - Add stop field to the process config
 - Add cwd field to the process config
 - Add key bindings for selecting procs by index (`M-1` - `M-8`)
