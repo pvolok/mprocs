@@ -245,6 +245,7 @@ impl Proc {
     }
   }
 
+  #[cfg(not(windows))]
   pub fn stop(&mut self) {
     match self.stop_signal.clone() {
       StopSignal::SIGINT => self.send_signal(libc::SIGINT),
@@ -260,11 +261,17 @@ impl Proc {
   }
 
   #[cfg(windows)]
-  fn send_signal(&self, sig: libc::c_int) {
-    if sig == libc::SIGKILL || sig == libc::SIGTERM {
-      if let ProcState::Some(inst) = &mut self.inst {
-        let _result = inst.killer.kill();
+  pub fn stop(&mut self) {
+    match self.stop_signal.clone() {
+      StopSignal::SIGINT => log::warn!("SIGINT signal is ignored on Windows"),
+      StopSignal::SIGTERM => self.kill(),
+      StopSignal::SIGKILL => self.kill(),
+      StopSignal::SendKeys(keys) => {
+        for key in keys {
+          self.send_key(&key);
+        }
       }
+      StopSignal::HardKill => self.kill(),
     }
   }
 

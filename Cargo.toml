@@ -29,6 +29,7 @@ anyhow = "1.0.44"
 assert_matches = "1.5.0"
 clap = { version = "3.1.8", features = ["cargo"] }
 crossterm = { version = "0.23.2", features = ["event-stream"] }
+dunce = "1.0.2"
 # Excluded "textfilter" feature that depends on regex (~0.7 MiB).
 flexi_logger = { version = "0.22.3", default-features = false, features = [
   "colors",

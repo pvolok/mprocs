@@ -31,9 +31,7 @@ impl Default for Settings {
 
 impl Settings {
   pub fn merge_from_xdg(&mut self) -> Result<()> {
-    let xdg_dirs = xdg::BaseDirectories::with_prefix("mprocs")?;
-    let path = xdg_dirs.get_config_file("mprocs.yaml");
-
+    let path = self.get_xdg_config_path()?;
     match File::open(path) {
       Ok(file) => {
         let reader = BufReader::new(file);
@@ -48,6 +46,20 @@ impl Settings {
     }
 
     Ok(())
+  }
+
+  #[cfg(windows)]
+  fn get_xdg_config_path(&self) -> Result<std::path::PathBuf> {
+    let mut path = std::path::PathBuf::from(std::env::var("LOCALAPPDATA")?);
+    path.push("mprocs/mprocs.yaml");
+    Ok(path)
+  }
+
+  #[cfg(not(windows))]
+  fn get_xdg_config_path(&self) -> Result<std::path::PathBuf> {
+    let xdg_dirs = xdg::BaseDirectories::with_prefix("mprocs")?;
+    let path = xdg_dirs.get_config_file("mprocs.yaml");
+    Ok(path)
   }
 
   pub fn merge_value(&mut self, val: Val) -> Result<()> {

@@ -133,7 +133,7 @@ impl ProcConfig {
             let cwd = cwd.as_str()?;
             let mut buf = OsString::new();
             if let Some(rest) = cwd.strip_prefix("<CONFIG_DIR>") {
-              if let Some(parent) = ctx.path.canonicalize()?.parent() {
+              if let Some(parent) = dunce::canonicalize(&ctx.path)?.parent() {
                 buf.push(parent);
               }
               buf.push(rest);
