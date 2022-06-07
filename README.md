@@ -125,6 +125,8 @@ procs:
   - **env**: _object<string, string|null>_ - Set env variables. Object keys are
     variable names. Assign variable to null, to clear variables inherited from
     parent process.
+  - **stop**: _"SIGINT"|"SIGTERM"|"SIGKILL"|{send-keys: array<key>}|"hard-kill"_ -
+    A way to stop a process (using `x` key or when quitting mprocs).
 
 #### Keymap
 

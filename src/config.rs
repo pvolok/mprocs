@@ -6,7 +6,10 @@ use portable_pty::CommandBuilder;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 
-use crate::yaml_val::{value_to_string, Val};
+use crate::{
+  proc::StopSignal,
+  yaml_val::{value_to_string, Val},
+};
 
 pub struct ConfigContext {
   pub path: PathBuf,
@@ -64,6 +67,8 @@ pub struct ProcConfig {
   pub cmd: CmdConfig,
   pub cwd: Option<OsString>,
   pub env: Option<IndexMap<String, Option<String>>>,
+
+  pub stop: StopSignal,
 }
 
 impl ProcConfig {
@@ -83,6 +88,7 @@ impl ProcConfig {
         },
         cwd: None,
         env: None,
+        stop: StopSignal::default(),
       })),
       Value::Sequence(_) => {
         let cmd = val.as_array()?;
@@ -96,6 +102,7 @@ impl ProcConfig {
           cmd: CmdConfig::Cmd { cmd },
           cwd: None,
           env: None,
+          stop: StopSignal::default(),
         }))
       }
       Value::Mapping(_) => {
@@ -157,11 +164,18 @@ impl ProcConfig {
           None => None,
         };
 
+        let stop_signal = if let Some(val) = map.get(&Value::from("stop")) {
+          serde_yaml::from_value(val.raw().clone())?
+        } else {
+          StopSignal::default()
+        };
+
         Ok(Some(ProcConfig {
           name,
           cmd,
           cwd,
           env,
+          stop: stop_signal,
         }))
       }
     }

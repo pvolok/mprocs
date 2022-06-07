@@ -24,6 +24,7 @@ use config::{CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig};
 use ctl::run_ctl;
 use flexi_logger::FileSpec;
 use keymap::Keymap;
+use proc::StopSignal;
 use serde_yaml::Value;
 use settings::Settings;
 use yaml_val::Val;
@@ -100,6 +101,7 @@ async fn run_app() -> anyhow::Result<()> {
           },
           env: None,
           cwd: None,
+          stop: StopSignal::default(),
         })
         .collect::<Vec<_>>();
 

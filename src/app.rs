@@ -9,7 +9,6 @@ use crossterm::{
   },
 };
 use futures::{future::FutureExt, select, StreamExt};
-use portable_pty::CommandBuilder;
 use tokio::{
   io::AsyncReadExt,
   sync::mpsc::{UnboundedReceiver, UnboundedSender},
@@ -23,11 +22,10 @@ use tui_input::Input;
 
 use crate::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
-  encode_term::{encode_key, KeyCodeEncodeModes},
   event::AppEvent,
   key::Key,
   keymap::Keymap,
-  proc::{Proc, ProcState, ProcUpdate},
+  proc::{Proc, ProcUpdate, StopSignal},
   state::{Modal, Scope, State},
   ui_add_proc::render_add_proc,
   ui_keymap::render_keymap,
@@ -228,9 +226,7 @@ impl App {
       .procs
       .iter()
       .map(|proc_cfg| {
-        let cmd = CommandBuilder::from(proc_cfg);
-
-        Proc::new(proc_cfg.name.clone(), cmd, self.upd_tx.clone(), size)
+        Proc::new(proc_cfg.name.clone(), proc_cfg, self.upd_tx.clone(), size)
       })
       .collect::<Vec<_>>();
 
@@ -364,7 +360,7 @@ impl App {
         self.state.quitting = true;
         for proc in self.state.procs.iter_mut() {
           if proc.is_up() {
-            proc.term();
+            proc.stop();
           }
         }
         LoopAction::Render
@@ -421,7 +417,7 @@ impl App {
       }
       AppEvent::TermProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.term();
+          proc.stop();
         }
         LoopAction::Skip
       }
@@ -433,7 +429,7 @@ impl App {
       }
       AppEvent::RestartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.term();
+          proc.stop();
           proc.to_restart = true;
         }
         LoopAction::Skip
@@ -469,15 +465,15 @@ impl App {
       AppEvent::AddProc { cmd } => {
         let proc = Proc::new(
           cmd.to_string(),
-          (&ProcConfig {
+          &ProcConfig {
             name: cmd.to_string(),
             cmd: CmdConfig::Shell {
               shell: cmd.to_string(),
             },
             cwd: None,
             env: None,
-          })
-            .into(),
+            stop: StopSignal::default(),
+          },
           self.upd_tx.clone(),
           self.get_term_size(),
         );
@@ -508,25 +504,7 @@ impl App {
 
       AppEvent::SendKey { key } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          if proc.is_up() {
-            let application_cursor_keys = match &proc.inst {
-              ProcState::None => unreachable!(),
-              ProcState::Some(inst) => {
-                inst.vt.read().unwrap().screen().application_cursor()
-              }
-              ProcState::Error(_) => unreachable!(),
-            };
-            let encoder = encode_key(
-              key,
-              KeyCodeEncodeModes {
-                enable_csi_u_key_encoding: false,
-                application_cursor_keys,
-                newline_mode: false,
-              },
-            )
-            .unwrap_or_else(|_| "?".to_owned());
-            proc.write_all(encoder.as_bytes());
-          }
+          proc.send_key(key);
         }
         LoopAction::Skip
       }

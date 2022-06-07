@@ -7,9 +7,14 @@ use std::time::Duration;
 use assert_matches::assert_matches;
 use portable_pty::MasterPty;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
+use serde::Deserialize;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::spawn_blocking;
 use tui::layout::Rect;
+
+use crate::config::ProcConfig;
+use crate::encode_term::{encode_key, KeyCodeEncodeModes};
+use crate::key::Key;
 
 pub struct Inst {
   pub vt: VtWrap,
@@ -134,6 +139,8 @@ pub struct Proc {
   pub cmd: CommandBuilder,
   pub size: Rect,
 
+  stop_signal: StopSignal,
+
   pub tx: UnboundedSender<(usize, ProcUpdate)>,
 
   pub inst: ProcState,
@@ -155,10 +162,29 @@ pub enum ProcUpdate {
   Started,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StopSignal {
+  #[serde(rename = "SIGINT")]
+  SIGINT,
+  #[serde(rename = "SIGTERM")]
+  SIGTERM,
+  #[serde(rename = "SIGKILL")]
+  SIGKILL,
+  SendKeys(Vec<Key>),
+  HardKill,
+}
+
+impl Default for StopSignal {
+  fn default() -> Self {
+    StopSignal::SIGTERM
+  }
+}
+
 impl Proc {
   pub fn new(
     name: String,
-    cmd: CommandBuilder,
+    cfg: &ProcConfig,
     tx: UnboundedSender<(usize, ProcUpdate)>,
     size: Rect,
   ) -> Self {
@@ -167,8 +193,10 @@ impl Proc {
       id,
       name,
       to_restart: false,
-      cmd,
+      cmd: cfg.into(),
       size,
+
+      stop_signal: cfg.stop.clone(),
 
       tx,
 
@@ -209,24 +237,6 @@ impl Proc {
     }
   }
 
-  pub fn term(&mut self) {
-    if self.is_up() {
-      if let ProcState::Some(inst) = &mut self.inst {
-        Self::term_impl(inst);
-      }
-    }
-  }
-
-  #[cfg(windows)]
-  fn term_impl(inst: &mut Inst) {
-    let _result = inst.killer.kill();
-  }
-
-  #[cfg(not(windows))]
-  fn term_impl(inst: &mut Inst) {
-    unsafe { libc::kill(inst.pid as i32, libc::SIGTERM) };
-  }
-
   pub fn kill(&mut self) {
     if self.is_up() {
       if let ProcState::Some(inst) = &mut self.inst {
@@ -235,11 +245,69 @@ impl Proc {
     }
   }
 
+  pub fn stop(&mut self) {
+    match self.stop_signal.clone() {
+      StopSignal::SIGINT => self.send_signal(libc::SIGINT),
+      StopSignal::SIGTERM => self.send_signal(libc::SIGTERM),
+      StopSignal::SIGKILL => self.send_signal(libc::SIGKILL),
+      StopSignal::SendKeys(keys) => {
+        for key in keys {
+          self.send_key(&key);
+        }
+      }
+      StopSignal::HardKill => self.kill(),
+    }
+  }
+
+  #[cfg(windows)]
+  fn send_signal(&self, sig: libc::c_int) {
+    if sig == libc::SIGKILL || sig == libc::SIGTERM {
+      if let ProcState::Some(inst) = &mut self.inst {
+        let _result = inst.killer.kill();
+      }
+    }
+  }
+
+  #[cfg(not(windows))]
+  fn send_signal(&mut self, sig: libc::c_int) {
+    if let ProcState::Some(inst) = &self.inst {
+      unsafe { libc::kill(inst.pid as i32, sig) };
+    }
+  }
+
   pub fn resize(&mut self, size: Rect) {
     if let ProcState::Some(inst) = &self.inst {
       inst.resize(&size);
     }
     self.size = size;
+  }
+
+  pub fn send_key(&mut self, key: &Key) {
+    if self.is_up() {
+      let application_cursor_keys = match &self.inst {
+        ProcState::None => unreachable!(),
+        ProcState::Some(inst) => {
+          inst.vt.read().unwrap().screen().application_cursor()
+        }
+        ProcState::Error(_) => unreachable!(),
+      };
+      let encoder = encode_key(
+        key,
+        KeyCodeEncodeModes {
+          enable_csi_u_key_encoding: false,
+          application_cursor_keys,
+          newline_mode: false,
+        },
+      );
+      match encoder {
+        Ok(encoder) => {
+          self.write_all(encoder.as_bytes());
+        }
+        Err(_) => {
+          log::warn!("Failed to encode key: {}", key.to_string());
+        }
+      }
+    }
   }
 
   pub fn write_all(&mut self, bytes: &[u8]) {
