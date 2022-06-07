@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.4.0 - 2022-06-08
+
 - Add _--names_ cli argument
 - Add stop field to the process config
 - Add cwd field to the process config
