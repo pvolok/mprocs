@@ -3,11 +3,12 @@ cargo-features = ["strip"]
 [package]
 name = "mprocs"
 version = "0.4.0"
-description = "Run multiple processes in parallel and see output"
+description = "TUI for running multiple processes"
 repository = "https://github.com/pvolok/mprocs"
 authors = ["Pavel Volokitin <pavelvolokitin@gmail.com>"]
 license = "MIT"
 edition = "2021"
+categories = ["command-line-interface", "command-line-utilities", "development-tools"]
 
 include = ["/src", "/vendor"]
 
