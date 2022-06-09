@@ -140,7 +140,7 @@ There are three keymap levels:
 - `./mprocs.yaml` (can be overridden by the _-c/--config_ cli arg)
 
 Lower levers override bindings from previous levels. Key bindings from previous
-levels can be cleared by specifying `reset: false` field at the same level as
+levels can be cleared by specifying `reset: true` field at the same level as
 keys:
 
 ```yaml
