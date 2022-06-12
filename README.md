@@ -30,9 +30,11 @@ shows output of each command separately and allows to interact with processes
     - [$select operator](#select-operator)
   - [Default keymap](#default-keymap)
   - [Remote control](#remote-control)
+- [FAQ](#faq)
+  - [mprocs vs tmux/screen](#mprocs-vs-tmuxscreen)
 
 <!-- Created by https://github.com/ekalinin/github-markdown-toc -->
-<!-- Added by: pvolok, at: Tue Jun  7 01:20:42 +07 2022 -->
+<!-- Added by: pvolok, at: Mon Jun 13 00:09:23 +07 2022 -->
 
 <!--te-->
 
@@ -236,3 +238,16 @@ Commands are encoded as yaml. Available commands:
 - `{c: scroll-up}`
 - `{c: send-key, key: "<KEY>"}` - Send key to current process. Key
   examples: `<C-a>`, `<Enter>`
+
+## FAQ
+
+### mprocs vs tmux/screen
+
+_mprocs_ is meant to make it easier to run specific commands that you end up
+running repeatedly, such as compilers and test runners. This is in contrast
+with _tmux_, which is usually used to run much more long-lived processes -
+usually a shell - in each window/pane. Another difference is that _tmux_ runs a
+server and a client, which allows the client to detach and reattach later,
+keeping the processes running. _mprocs_ is meant more for finite lifetime
+processes that you keep re-running, but when _mprocs_ ends, so do the processes
+it is running within its windows.
