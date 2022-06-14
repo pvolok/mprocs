@@ -5,7 +5,7 @@ use tui::{
   layout::Rect,
   style::{Color, Modifier, Style},
   text::{Span, Spans},
-  widgets::{Block, BorderType, Borders, List, ListItem, ListState},
+  widgets::{List, ListItem, ListState},
   Frame,
 };
 
@@ -50,13 +50,7 @@ pub fn render_procs(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
   };
 
   let items = List::new(items)
-    .block(
-      Block::default()
-        .title(title)
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(theme.pane_border(active)),
-    )
+    .block(theme.pane(active).title(title))
     .style(Style::default().fg(Color::White));
   frame.render_stateful_widget(items, area, &mut list_state);
 }

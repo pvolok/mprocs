@@ -1,4 +1,7 @@
-use tui::style::{Color, Modifier, Style};
+use tui::{
+  style::{Color, Modifier, Style},
+  widgets::{Block, BorderType, Borders},
+};
 
 pub struct Theme {
   pub procs_item: Style,
@@ -9,18 +12,22 @@ impl Theme {
   pub fn pane_title(&self, active: bool) -> Style {
     let style = Style::default();
     if active {
-      style.fg(Color::White).add_modifier(Modifier::BOLD)
+      style.fg(Color::Reset).add_modifier(Modifier::BOLD)
     } else {
-      style.fg(Color::Gray)
+      style.fg(Color::Reset)
     }
   }
-  pub fn pane_border(&self, active: bool) -> Style {
-    let style = Style::default();
-    if active {
-      style.fg(Color::White)
-    } else {
-      style.fg(Color::Gray)
-    }
+
+  pub fn pane(&self, active: bool) -> Block {
+    let type_ = match active {
+      true => BorderType::Thick,
+      false => BorderType::Plain,
+    };
+
+    Block::default()
+      .borders(Borders::ALL)
+      .border_type(type_)
+      .border_style(Style::default().fg(Color::Reset))
   }
 
   pub fn get_procs_item(&self, active: bool) -> Style {
@@ -35,7 +42,7 @@ impl Theme {
 impl Default for Theme {
   fn default() -> Self {
     Self {
-      procs_item: Style::default(),
+      procs_item: Style::default().fg(Color::Reset),
       procs_item_active: Style::default().bg(Color::Indexed(240)),
     }
   }

@@ -3,9 +3,8 @@ use std::io;
 use tui::{
   backend::CrosstermBackend,
   layout::Rect,
-  style::{Color, Style},
   text::Span,
-  widgets::{Block, BorderType, Borders, Clear, Paragraph},
+  widgets::{Clear, Paragraph},
   Frame,
 };
 use tui_input::Input;
@@ -25,12 +24,9 @@ pub fn render_add_proc(
   let x = (area.width / 2).saturating_sub(20).max(1);
   let w = 39.min(area.width.saturating_sub(3));
 
-  let block = Block::default()
-    .title(Span::styled("Add process", theme.pane_title(true)))
-    .borders(Borders::ALL)
-    .border_style(theme.pane_border(true))
-    .border_type(BorderType::Rounded)
-    .style(Style::default().bg(Color::Black));
+  let block = theme
+    .pane(true)
+    .title(Span::styled("Add process", theme.pane_title(true)));
   frame.render_widget(block, Rect::new(x - 1, y - 1, 42, 3).intersection(area));
 
   let left_trim = input.cursor().saturating_sub(w as usize);

@@ -3,8 +3,7 @@ use std::io;
 use tui::{
   backend::CrosstermBackend,
   layout::Rect,
-  style::{Color, Style},
-  widgets::{Block, BorderType, Borders, Clear, Paragraph},
+  widgets::{Clear, Paragraph},
   Frame,
 };
 
@@ -18,11 +17,7 @@ pub fn render_remove_proc(area: Rect, frame: &mut Frame<Backend>) {
   let y = area.height / 2;
   let x = (area.width / 2).saturating_sub(20).max(1);
 
-  let block = Block::default()
-    .borders(Borders::ALL)
-    .border_style(theme.pane_border(true))
-    .border_type(BorderType::Rounded)
-    .style(Style::default().bg(Color::Black));
+  let block = theme.pane(true);
   frame.render_widget(block, Rect::new(x - 1, y - 1, 42, 3).intersection(area));
 
   let txt = Paragraph::new("Remove process? (y/n)");

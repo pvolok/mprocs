@@ -6,7 +6,7 @@ use tui::{
   layout::{Margin, Rect},
   style::{Color, Style},
   text::{Span, Spans, Text},
-  widgets::{Block, BorderType, Borders, Paragraph},
+  widgets::{Clear, Paragraph},
   Frame,
 };
 
@@ -25,12 +25,10 @@ pub fn render_keymap(
 ) {
   let theme = Theme::default();
 
-  let block = Block::default()
-    .title(Span::styled("Help", theme.pane_title(false)))
-    .borders(Borders::ALL)
-    .border_style(theme.pane_border(false))
-    .border_type(BorderType::Rounded)
-    .style(Style::default().bg(Color::Black));
+  let block = theme
+    .pane(false)
+    .title(Span::styled("Help", theme.pane_title(false)));
+  frame.render_widget(Clear, area);
   frame.render_widget(block, area);
 
   let items = match state.scope {
