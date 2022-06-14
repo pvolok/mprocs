@@ -80,8 +80,12 @@ impl Settings {
 
         for (key, event) in keymap {
           let key = Key::parse(value_to_string(&key)?.as_str())?;
-          let event: AppEvent = serde_yaml::from_value(event.raw().clone())?;
-          into.insert(key, event);
+          if event.raw().is_null() {
+            into.shift_remove(&key);
+          } else {
+            let event: AppEvent = serde_yaml::from_value(event.raw().clone())?;
+            into.insert(key, event);
+          }
         }
       }
       Ok(())

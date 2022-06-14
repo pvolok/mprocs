@@ -148,6 +148,7 @@ keys:
 ```yaml
 keymap_procs: # keymap when process list is focused
   <C-q>: { c: toggle-focus }
+  <C-a>: null # unbind key
 keymap_term: # keymap when terminal is focused
   reset: true
   <C-q>: { c: toggle-focus }
