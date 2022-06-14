@@ -429,15 +429,23 @@ impl App {
       }
       AppEvent::RestartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.stop();
-          proc.to_restart = true;
+          if proc.is_up() {
+            proc.stop();
+            proc.to_restart = true;
+          } else {
+            proc.start();
+          }
         }
         LoopAction::Skip
       }
       AppEvent::ForceRestartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.kill();
-          proc.to_restart = true;
+          if proc.is_up() {
+            proc.kill();
+            proc.to_restart = true;
+          } else {
+            proc.start();
+          }
         }
         LoopAction::Skip
       }
