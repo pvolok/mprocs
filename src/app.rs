@@ -356,6 +356,18 @@ impl App {
 
   fn handle_event(&mut self, event: &AppEvent) -> LoopAction {
     match event {
+      AppEvent::Batch { cmds } => {
+        let mut ret = LoopAction::Skip;
+        for cmd in cmds {
+          match self.handle_event(cmd) {
+            LoopAction::Render => ret = LoopAction::Render,
+            LoopAction::Skip => (),
+            LoopAction::ForceQuit => return LoopAction::ForceQuit,
+          };
+        }
+        ret
+      }
+
       AppEvent::Quit => {
         self.state.quitting = true;
         for proc in self.state.procs.iter_mut() {

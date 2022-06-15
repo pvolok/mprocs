@@ -152,6 +152,11 @@ keymap_procs: # keymap when process list is focused
 keymap_term: # keymap when terminal is focused
   reset: true
   <C-q>: { c: toggle-focus }
+  <C-j>:
+    c: batch
+    cmds:
+      - {c: focus-procs}
+      - {c: next-proc}
 ```
 
 #### `$select` operator
@@ -239,6 +244,7 @@ Commands are encoded as yaml. Available commands:
 - `{c: scroll-up}`
 - `{c: send-key, key: "<KEY>"}` - Send key to current process. Key
   examples: `<C-a>`, `<Enter>`
+- `{c: batch, cmds: [{c: focus-procs}, …]}` - Send multiple commands
 
 ## FAQ
 

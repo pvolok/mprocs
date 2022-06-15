@@ -5,6 +5,8 @@ use crate::key::Key;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "c", rename_all = "kebab-case")]
 pub enum AppEvent {
+  Batch { cmds: Vec<AppEvent> },
+
   Quit,
   ForceQuit,
 
