@@ -1,6 +1,8 @@
 ## Unreleased
 
-- Unbind key bindings
+- Zoom mode
+- Support batching commands
+- Allow passing `null` to clear key bindings
 
 ## 0.4.0 - 2022-06-08
 
