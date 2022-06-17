@@ -18,6 +18,10 @@ use crate::{
 type Backend = CrosstermBackend<io::Stdout>;
 
 pub fn render_procs(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
+  if area.width <= 2 {
+    return;
+  }
+
   let theme = Theme::default();
   let theme = &theme;
 

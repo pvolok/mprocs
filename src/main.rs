@@ -14,6 +14,7 @@ mod ui_keymap;
 mod ui_procs;
 mod ui_remove_proc;
 mod ui_term;
+mod ui_zoom_tip;
 mod yaml_val;
 
 use std::path::Path;

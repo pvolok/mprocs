@@ -37,6 +37,10 @@ impl Theme {
       self.procs_item
     }
   }
+
+  pub fn zoom_tip(&self) -> Style {
+    Style::default().fg(Color::Black).bg(Color::Yellow)
+  }
 }
 
 impl Default for Theme {

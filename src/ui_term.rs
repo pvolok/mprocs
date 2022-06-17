@@ -23,7 +23,10 @@ type Backend = CrosstermBackend<io::Stdout>;
 pub fn render_term(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
   let theme = Theme::default();
 
-  let active = state.scope == Scope::Term;
+  let active = match state.scope {
+    Scope::Procs => false,
+    Scope::Term | Scope::TermZoom => true,
+  };
 
   if let Some(proc) = state.get_current_proc() {
     let block = theme

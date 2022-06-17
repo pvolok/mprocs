@@ -209,6 +209,7 @@ Process list focused:
 - `M-1` - `M-8` - Select process 1-8
 - `C-d` or `page down` - Scroll output down
 - `C-u` or `page up` - Scroll output up
+- `z` - Zoom into terminal window
 
 Process output focused:
 
@@ -228,6 +229,7 @@ Commands are encoded as yaml. Available commands:
 - `{c: toggle-focus}` - Toggle focus between process list and terminal.
 - `{c: focus-procs}` - Focus process list
 - `{c: focus-term}` - Focus process terminal window
+- `{c: zoom}` - Zoom into terminal window
 - `{c: next-proc}`
 - `{c: prev-proc}`
 - `{c: select-proc, index: <PROCESS INDEX>}` - Select process by index

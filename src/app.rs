@@ -32,6 +32,7 @@ use crate::{
   ui_procs::render_procs,
   ui_remove_proc::render_remove_proc,
   ui_term::render_term,
+  ui_zoom_tip::render_zoom_tip,
 };
 
 type Term = Terminal<CrosstermBackend<io::Stdout>>;
@@ -154,20 +155,33 @@ impl App {
   async fn main_loop(mut self) -> anyhow::Result<()> {
     let mut input = EventStream::new();
 
-    {
-      let area = self.get_term_size();
+    let mut last_term_size = {
+      let area = self.get_layout().term_area();
       self.start_procs(area)?;
-    }
+      (area.width, area.height)
+    };
 
     let mut render_needed = true;
     loop {
       if render_needed {
         self.terminal.draw(|f| {
-          let layout = AppLayout::new(f.size());
+          let layout = AppLayout::new(f.size(), self.state.scope.is_zoomed());
+
+          {
+            let term_area = layout.term_area();
+            let term_size = (term_area.width, term_area.height);
+            if last_term_size != term_size {
+              last_term_size = term_size;
+              for proc in &mut self.state.procs {
+                proc.resize(term_area);
+              }
+            }
+          }
 
           render_procs(layout.procs, f, &mut self.state);
           render_term(layout.term, f, &mut self.state);
           render_keymap(layout.keymap, f, &mut self.state);
+          render_zoom_tip(layout.zoom_banner, f);
 
           if let Some(modal) = &mut self.state.modal {
             match modal {
@@ -330,10 +344,13 @@ impl App {
         let keymap = self.keymap.clone();
         if let Some(bound) = keymap.resolve(self.state.scope, &key) {
           self.handle_event(bound)
-        } else if self.state.scope == Scope::Term {
-          self.handle_event(&AppEvent::SendKey { key })
         } else {
-          LoopAction::Skip
+          match self.state.scope {
+            Scope::Procs => LoopAction::Skip,
+            Scope::Term | Scope::TermZoom => {
+              self.handle_event(&AppEvent::SendKey { key })
+            }
+          }
         }
       }
       Event::Mouse(_) => LoopAction::Skip,
@@ -344,7 +361,11 @@ impl App {
           (width, height)
         };
 
-        let area = AppLayout::new(Rect::new(0, 0, width, height)).term_area();
+        let area = AppLayout::new(
+          Rect::new(0, 0, width, height),
+          self.state.scope.is_zoomed(),
+        )
+        .term_area();
         for proc in &mut self.state.procs {
           proc.resize(area);
         }
@@ -396,6 +417,10 @@ impl App {
       }
       AppEvent::FocusTerm => {
         self.state.scope = Scope::Term;
+        LoopAction::Render
+      }
+      AppEvent::Zoom => {
+        self.state.scope = Scope::TermZoom;
         LoopAction::Render
       }
 
@@ -495,7 +520,7 @@ impl App {
             stop: StopSignal::default(),
           },
           self.upd_tx.clone(),
-          self.get_term_size(),
+          self.get_layout().term_area(),
         );
         self.state.procs.push(proc);
         LoopAction::Render
@@ -554,8 +579,11 @@ impl App {
     }
   }
 
-  fn get_term_size(&mut self) -> Rect {
-    AppLayout::new(self.terminal.get_frame().size()).term_area()
+  fn get_layout(&mut self) -> AppLayout {
+    AppLayout::new(
+      self.terminal.get_frame().size(),
+      self.state.scope.is_zoomed(),
+    )
   }
 }
 
@@ -563,23 +591,32 @@ struct AppLayout {
   procs: Rect,
   term: Rect,
   keymap: Rect,
+  zoom_banner: Rect,
 }
 
 impl AppLayout {
-  pub fn new(area: Rect) -> Self {
+  pub fn new(area: Rect, zoom: bool) -> Self {
+    let keymap_h = if zoom { 0 } else { 3 };
+    let procs_w = if zoom { 0 } else { 30 };
+    let zoom_banner_h = if zoom { 1 } else { 0 };
     let top_bot = Layout::default()
       .direction(Direction::Vertical)
-      .constraints([Constraint::Min(1), Constraint::Length(3)])
+      .constraints([Constraint::Min(1), Constraint::Length(keymap_h)])
       .split(area);
     let chunks = Layout::default()
       .direction(Direction::Horizontal)
-      .constraints([Constraint::Length(30), Constraint::Min(2)].as_ref())
+      .constraints([Constraint::Length(procs_w), Constraint::Min(2)].as_ref())
       .split(top_bot[0]);
+    let term_zoom = Layout::default()
+      .direction(Direction::Vertical)
+      .constraints([Constraint::Length(zoom_banner_h), Constraint::Min(1)])
+      .split(chunks[1]);
 
     Self {
       procs: chunks[0],
-      term: chunks[1],
+      term: term_zoom[1],
       keymap: top_bot[1],
+      zoom_banner: term_zoom[0],
     }
   }
 

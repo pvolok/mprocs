@@ -6,6 +6,7 @@ use crate::proc::Proc;
 pub enum Scope {
   Procs,
   Term,
+  TermZoom,
 }
 
 impl Scope {
@@ -13,6 +14,15 @@ impl Scope {
     match self {
       Scope::Procs => Scope::Term,
       Scope::Term => Scope::Procs,
+      Scope::TermZoom => Scope::Procs,
+    }
+  }
+
+  pub fn is_zoomed(&self) -> bool {
+    match self {
+      Scope::Procs => false,
+      Scope::Term => false,
+      Scope::TermZoom => true,
     }
   }
 }

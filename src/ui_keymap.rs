@@ -44,6 +44,7 @@ pub fn render_keymap(
     Scope::Term => {
       vec![(KeyCode::Char('a'), KeyModifiers::CONTROL, "Toggle focus")]
     }
+    Scope::TermZoom => Vec::new(),
   };
   let line = items
     .into_iter()

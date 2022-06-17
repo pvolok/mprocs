@@ -179,6 +179,11 @@ impl Settings {
       AppEvent::ScrollDown,
     );
 
+    s.keymap_add_p(
+      Key::new(KeyCode::Char('z'), KeyModifiers::NONE),
+      AppEvent::Zoom,
+    );
+
     for i in 0..8 {
       let char = char::from_digit(i + 1, 10).unwrap();
       s.keymap_add_p(

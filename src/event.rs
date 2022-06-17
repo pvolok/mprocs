@@ -13,6 +13,7 @@ pub enum AppEvent {
   ToggleFocus,
   FocusProcs,
   FocusTerm,
+  Zoom,
 
   NextProc,
   PrevProc,

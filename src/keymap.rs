@@ -26,7 +26,7 @@ impl Keymap {
   pub fn resolve(&self, scope: Scope, key: &Key) -> Option<&AppEvent> {
     let map = match scope {
       Scope::Procs => &self.procs,
-      Scope::Term => &self.term,
+      Scope::Term | Scope::TermZoom => &self.term,
     };
     map.get(key)
   }
