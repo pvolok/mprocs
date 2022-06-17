@@ -1,8 +1,8 @@
 {
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Run multiple processes in parallel",
   "homepage": "https://github.com/pvolok/mprocs",
-  "url": "https://github.com/pvolok/mprocs/releases/download/v0.4.0/mprocs-0.4.0-win64.zip",
-  "hash": "48bd6c110ca2d37ce1c47110698889eafdce30b785ffdb1872252318f2470041",
+  "url": "https://github.com/pvolok/mprocs/releases/download/v0.4.1/mprocs-0.4.1-win64.zip",
+  "hash": "f86ab23bd348387107bc77d14b1e4dd3c7ace070b63bf5832cc2cc8265d94108",
   "bin": "mprocs.exe"
 }
