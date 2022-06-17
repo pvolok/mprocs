@@ -21,6 +21,10 @@ use crate::{
 type Backend = CrosstermBackend<io::Stdout>;
 
 pub fn render_term(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
+  if area.width < 3 || area.height < 3 {
+    return;
+  }
+
   let theme = Theme::default();
 
   let active = match state.scope {

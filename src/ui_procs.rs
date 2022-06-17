@@ -83,7 +83,9 @@ fn create_proc_item<'a>(
   };
 
   let mut name = proc.name.clone();
-  let name_max = width as usize - mark.width() - status.width();
+  let name_max = (width as usize)
+    .saturating_sub(mark.width())
+    .saturating_sub(status.width());
   let name_len = name.chars().count();
   if name_len > name_max {
     name.truncate(

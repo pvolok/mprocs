@@ -38,11 +38,11 @@ impl Debug for Inst {
 pub type VtWrap = Arc<RwLock<vt100::Parser>>;
 
 impl Inst {
-  pub fn spawn(
+  fn spawn(
     id: usize,
     cmd: CommandBuilder,
     tx: UnboundedSender<(usize, ProcUpdate)>,
-    size: &Rect,
+    size: &Size,
   ) -> anyhow::Result<Self> {
     let vt = vt100::Parser::new(size.height, size.width, 1000);
     let vt = Arc::new(RwLock::new(vt));
@@ -114,7 +114,7 @@ impl Inst {
     Ok(inst)
   }
 
-  pub fn resize(&self, size: &Rect) {
+  fn resize(&self, size: &Size) {
     let rows = size.height;
     let cols = size.width;
 
@@ -137,7 +137,7 @@ pub struct Proc {
   pub name: String,
   pub to_restart: bool,
   pub cmd: CommandBuilder,
-  pub size: Rect,
+  size: Size,
 
   stop_signal: StopSignal,
 
@@ -189,6 +189,7 @@ impl Proc {
     size: Rect,
   ) -> Self {
     let id = NEXT_PROC_ID.fetch_add(1, Ordering::Relaxed);
+    let size = Size::new(size);
     let mut proc = Proc {
       id,
       name,
@@ -283,6 +284,7 @@ impl Proc {
   }
 
   pub fn resize(&mut self, size: Rect) {
+    let size = Size::new(size);
     if let ProcState::Some(inst) = &self.inst {
       inst.resize(&size);
     }
@@ -350,6 +352,20 @@ impl Proc {
         vt.screen().size().0 as usize / 2,
       );
       vt.set_scrollback(pos);
+    }
+  }
+}
+
+struct Size {
+  width: u16,
+  height: u16,
+}
+
+impl Size {
+  fn new(rect: Rect) -> Size {
+    Size {
+      width: rect.width.max(3),
+      height: rect.height.max(3),
     }
   }
 }
