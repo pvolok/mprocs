@@ -25,6 +25,21 @@ tar -czvf release/mprocs-$VERSION-linux64.tar.gz \
   -C release/mprocs-$VERSION-linux64 \
   mprocs
 
+# Aarch64
+
+mkdir -p release/mprocs-$VERSION-aarch64
+
+TARGET_CC=aarch64-none-elf-gcc \
+RUSTFLAGS="-C linker=aarch64-none-elf-gcc" \
+cargo build --release --target=aarch64-unknown-linux-musl
+
+cp target/aarch64-unknown-linux-musl/release/mprocs \
+  release/mprocs-$VERSION-aarch64/mprocs
+
+tar -czvf release/mprocs-$VERSION-aarch64.tar.gz \
+  -C release/mprocs-$VERSION-aarch64 \
+  mprocs
+
 # Macos
 
 mkdir -p release/mprocs-$VERSION-macos64
