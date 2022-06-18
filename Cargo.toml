@@ -8,7 +8,17 @@ repository = "https://github.com/pvolok/mprocs"
 authors = ["Pavel Volokitin <pavelvolokitin@gmail.com>"]
 license = "MIT"
 edition = "2021"
-categories = ["command-line-interface", "command-line-utilities", "development-tools"]
+categories = [
+  "command-line-interface",
+  "command-line-utilities",
+  "development-tools"
+]
+keywords = [
+  "cli",
+  "terminal",
+  "tui",
+  "utility"
+]
 
 include = ["/src", "/vendor"]
 
