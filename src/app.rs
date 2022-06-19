@@ -1,7 +1,10 @@
 use std::{io, rc::Rc};
 
 use crossterm::{
-  event::{Event, EventStream, KeyCode, KeyEvent},
+  event::{
+    DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode,
+    KeyEvent, MouseButton, MouseEventKind,
+  },
   execute,
   terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen,
@@ -29,7 +32,7 @@ use crate::{
   state::{Modal, Scope, State},
   ui_add_proc::render_add_proc,
   ui_keymap::render_keymap,
-  ui_procs::render_procs,
+  ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
   ui_remove_proc::render_remove_proc,
   ui_term::render_term,
   ui_zoom_tip::render_zoom_tip,
@@ -93,6 +96,7 @@ impl App {
   pub async fn run(self) -> anyhow::Result<()> {
     enable_raw_mode()?;
     execute!(io::stdout(), EnterAlternateScreen)?;
+    execute!(io::stdout(), EnableMouseCapture)?;
 
     let (exit_trigger, exit_listener) = triggered::trigger();
 
@@ -146,8 +150,9 @@ impl App {
       let _ = server_thread.await;
     }
 
-    disable_raw_mode()?;
+    execute!(io::stdout(), DisableMouseCapture)?;
     execute!(io::stdout(), LeaveAlternateScreen)?;
+    disable_raw_mode()?;
 
     result
   }
@@ -353,7 +358,46 @@ impl App {
           }
         }
       }
-      Event::Mouse(_) => LoopAction::Skip,
+      Event::Mouse(mev) => {
+        match mev.kind {
+          MouseEventKind::Down(btn) => match btn {
+            MouseButton::Left => {
+              let layout = self.get_layout();
+              if let Some(index) = procs_get_clicked_index(
+                layout.procs,
+                mev.column,
+                mev.row,
+                &self.state,
+              ) {
+                self.state.selected = index;
+                return LoopAction::Render;
+              }
+            }
+            MouseButton::Right | MouseButton::Middle => (),
+          },
+          MouseEventKind::Up(_) => (),
+          MouseEventKind::Drag(_) => (),
+          MouseEventKind::Moved => (),
+          MouseEventKind::ScrollDown => {
+            if procs_check_hit(self.get_layout().procs, mev.column, mev.row) {
+              if self.state.selected < self.state.procs.len().saturating_sub(1)
+              {
+                self.state.selected += 1;
+                return LoopAction::Render;
+              }
+            }
+          }
+          MouseEventKind::ScrollUp => {
+            if procs_check_hit(self.get_layout().procs, mev.column, mev.row) {
+              if self.state.selected > 0 {
+                self.state.selected -= 1;
+                return LoopAction::Render;
+              }
+            }
+          }
+        }
+        LoopAction::Skip
+      }
       Event::Resize(width, height) => {
         let (width, height) = if cfg!(windows) {
           crossterm::terminal::size().unwrap()

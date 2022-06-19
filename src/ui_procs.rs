@@ -2,7 +2,7 @@ use std::io;
 
 use tui::{
   backend::CrosstermBackend,
-  layout::Rect,
+  layout::{Margin, Rect},
   style::{Color, Modifier, Style},
   text::{Span, Spans},
   widgets::{List, ListItem, ListState},
@@ -104,4 +104,32 @@ fn create_proc_item<'a>(
 
   ListItem::new(Spans::from(vec![mark, name, status]))
     .style(theme.get_procs_item(is_cur))
+}
+
+pub fn procs_get_clicked_index(
+  area: Rect,
+  x: u16,
+  y: u16,
+  state: &State,
+) -> Option<usize> {
+  let inner = area.inner(&Margin {
+    vertical: 1,
+    horizontal: 1,
+  });
+  if procs_check_hit(area, x, y) {
+    let index = y - inner.y;
+    let scroll = (state.selected + 1).saturating_sub(inner.height as usize);
+    let index = index as usize + scroll;
+    if index < state.procs.len() {
+      return Some(index as usize);
+    }
+  }
+  None
+}
+
+pub fn procs_check_hit(area: Rect, x: u16, y: u16) -> bool {
+  area.x < x
+    && area.x + area.width > x + 1
+    && area.y < y
+    && area.y + area.height > y + 1
 }
