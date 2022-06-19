@@ -142,3 +142,10 @@ fn conv_color(color: vt100::Color) -> Option<tui::style::Color> {
     vt100::Color::Rgb(r, g, b) => Some(tui::style::Color::Rgb(r, g, b)),
   }
 }
+
+pub fn term_check_hit(area: Rect, x: u16, y: u16) -> bool {
+  area.x < x
+    && area.x + area.width > x + 1
+    && area.y < y
+    && area.y + area.height > y + 1
+}

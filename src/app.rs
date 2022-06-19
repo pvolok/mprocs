@@ -34,7 +34,7 @@ use crate::{
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
   ui_remove_proc::render_remove_proc,
-  ui_term::render_term,
+  ui_term::{render_term, term_check_hit},
   ui_zoom_tip::render_zoom_tip,
 };
 
@@ -359,44 +359,59 @@ impl App {
         }
       }
       Event::Mouse(mev) => {
-        match mev.kind {
-          MouseEventKind::Down(btn) => match btn {
-            MouseButton::Left => {
-              let layout = self.get_layout();
-              if let Some(index) = procs_get_clicked_index(
-                layout.procs,
-                mev.column,
-                mev.row,
-                &self.state,
-              ) {
-                self.state.selected = index;
-                return LoopAction::Render;
-              }
+        if mev.kind == MouseEventKind::Moved {
+          return LoopAction::Skip;
+        }
+
+        let layout = self.get_layout();
+        if term_check_hit(layout.term_area(), mev.column, mev.row) {
+          match (self.state.scope, mev.kind) {
+            (Scope::Procs, MouseEventKind::Down(_)) => {
+              self.state.scope = Scope::Term
             }
-            MouseButton::Right | MouseButton::Middle => (),
-          },
-          MouseEventKind::Up(_) => (),
-          MouseEventKind::Drag(_) => (),
-          MouseEventKind::Moved => (),
-          MouseEventKind::ScrollDown => {
-            if procs_check_hit(self.get_layout().procs, mev.column, mev.row) {
+            _ => (),
+          }
+          if let Some(proc) = self.state.get_current_proc_mut() {
+            proc.handle_mouse(mev, layout.term_area());
+          }
+        } else if procs_check_hit(layout.procs, mev.column, mev.row) {
+          match (self.state.scope, mev.kind) {
+            (Scope::Term, MouseEventKind::Down(_)) => {
+              self.state.scope = Scope::Procs
+            }
+            _ => (),
+          }
+          match mev.kind {
+            MouseEventKind::Down(btn) => match btn {
+              MouseButton::Left => {
+                if let Some(index) = procs_get_clicked_index(
+                  layout.procs,
+                  mev.column,
+                  mev.row,
+                  &self.state,
+                ) {
+                  self.state.selected = index;
+                }
+              }
+              MouseButton::Right | MouseButton::Middle => (),
+            },
+            MouseEventKind::Up(_) => (),
+            MouseEventKind::Drag(_) => (),
+            MouseEventKind::Moved => (),
+            MouseEventKind::ScrollDown => {
               if self.state.selected < self.state.procs.len().saturating_sub(1)
               {
                 self.state.selected += 1;
-                return LoopAction::Render;
               }
             }
-          }
-          MouseEventKind::ScrollUp => {
-            if procs_check_hit(self.get_layout().procs, mev.column, mev.row) {
+            MouseEventKind::ScrollUp => {
               if self.state.selected > 0 {
                 self.state.selected -= 1;
-                return LoopAction::Render;
               }
             }
           }
         }
-        LoopAction::Skip
+        LoopAction::Render
       }
       Event::Resize(width, height) => {
         let (width, height) = if cfg!(windows) {

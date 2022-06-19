@@ -1,7 +1,9 @@
 use std::fmt::Write;
 
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{
+  KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
 use crate::key::Key;
 
@@ -397,4 +399,43 @@ pub fn print_key(key: KeyEvent) -> String {
   }
 
   return buf;
+}
+
+pub fn encode_mouse_event(mev: MouseEvent) -> String {
+  let mut buf = String::new();
+  buf.push_str("\x1b[<");
+
+  match mev.kind {
+    MouseEventKind::Down(btn) | MouseEventKind::Up(btn) => match btn {
+      MouseButton::Left => buf.push('0'),
+      MouseButton::Right => buf.push('1'),
+      MouseButton::Middle => buf.push('2'),
+    },
+    MouseEventKind::Drag(btn) => match btn {
+      MouseButton::Left => buf.push_str("32"),
+      MouseButton::Right => buf.push_str("33"),
+      MouseButton::Middle => buf.push_str("34"),
+    },
+    MouseEventKind::Moved => {
+      // TODO
+      return "".to_string();
+    }
+    MouseEventKind::ScrollDown => buf.push_str("64"),
+    MouseEventKind::ScrollUp => buf.push_str("65"),
+  }
+  buf.push(';');
+  buf.push_str((mev.column + 1).to_string().as_str());
+  buf.push(';');
+  buf.push_str((mev.row + 1).to_string().as_str());
+
+  buf.push(match mev.kind {
+    MouseEventKind::Down(_) => 'M',
+    MouseEventKind::Up(_) => 'm',
+    MouseEventKind::Drag(_) => 'M',
+    MouseEventKind::Moved => todo!(),
+    MouseEventKind::ScrollDown => 'M',
+    MouseEventKind::ScrollUp => 'M',
+  });
+
+  buf
 }

@@ -5,15 +5,17 @@ use std::thread::{self, spawn};
 use std::time::Duration;
 
 use assert_matches::assert_matches;
+use crossterm::event::{MouseEvent, MouseEventKind};
 use portable_pty::MasterPty;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
 use serde::Deserialize;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::spawn_blocking;
 use tui::layout::Rect;
+use vt100::MouseProtocolMode;
 
 use crate::config::ProcConfig;
-use crate::encode_term::{encode_key, KeyCodeEncodeModes};
+use crate::encode_term::{encode_key, encode_mouse_event, KeyCodeEncodeModes};
 use crate::key::Key;
 
 pub struct Inst {
@@ -354,6 +356,41 @@ impl Proc {
         vt.screen().size().0 as usize / 2,
       );
       vt.set_scrollback(pos);
+    }
+  }
+
+  pub fn handle_mouse(&mut self, event: MouseEvent, term_area: Rect) {
+    if let ProcState::Some(inst) = &mut self.inst {
+      let mut vt = inst.vt.write().unwrap();
+      match vt.screen().mouse_protocol_mode() {
+        MouseProtocolMode::None => match event.kind {
+          MouseEventKind::Down(_) => (),
+          MouseEventKind::Up(_) => (),
+          MouseEventKind::Drag(_) => (),
+          MouseEventKind::Moved => (),
+          MouseEventKind::ScrollDown => {
+            let pos = usize::saturating_sub(vt.screen().scrollback(), 5);
+            vt.set_scrollback(pos);
+          }
+          MouseEventKind::ScrollUp => {
+            let pos = usize::saturating_add(vt.screen().scrollback(), 5);
+            vt.set_scrollback(pos);
+          }
+        },
+        MouseProtocolMode::Press
+        | MouseProtocolMode::PressRelease
+        | MouseProtocolMode::ButtonMotion
+        | MouseProtocolMode::AnyMotion => {
+          let ev = MouseEvent {
+            kind: event.kind,
+            column: event.column - term_area.x,
+            row: event.row - term_area.y,
+            modifiers: event.modifiers,
+          };
+          let seq = encode_mouse_event(ev);
+          let _r = inst.master.write_all(seq.as_bytes());
+        }
+      }
     }
   }
 }

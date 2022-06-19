@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add mouse support
 - Add autostart field to the process config
 
 ## 0.4.1 - 2022-06-17
