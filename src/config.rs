@@ -67,6 +67,7 @@ pub struct ProcConfig {
   pub cmd: CmdConfig,
   pub cwd: Option<OsString>,
   pub env: Option<IndexMap<String, Option<String>>>,
+  pub autostart: bool,
 
   pub stop: StopSignal,
 }
@@ -88,6 +89,7 @@ impl ProcConfig {
         },
         cwd: None,
         env: None,
+        autostart: true,
         stop: StopSignal::default(),
       })),
       Value::Sequence(_) => {
@@ -102,6 +104,7 @@ impl ProcConfig {
           cmd: CmdConfig::Cmd { cmd },
           cwd: None,
           env: None,
+          autostart: true,
           stop: StopSignal::default(),
         }))
       }
@@ -164,6 +167,10 @@ impl ProcConfig {
           None => None,
         };
 
+        let autostart = map
+          .get(&Value::from("autostart"))
+          .map_or(Ok(true), |v| v.as_bool())?;
+
         let stop_signal = if let Some(val) = map.get(&Value::from("stop")) {
           serde_yaml::from_value(val.raw().clone())?
         } else {
@@ -175,6 +182,7 @@ impl ProcConfig {
           cmd,
           cwd,
           env,
+          autostart,
           stop: stop_signal,
         }))
       }

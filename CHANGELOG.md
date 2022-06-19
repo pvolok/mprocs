@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add autostart field to the process config
+
 ## 0.4.1 - 2022-06-17
 
 - Zoom mode

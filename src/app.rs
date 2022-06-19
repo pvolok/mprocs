@@ -517,6 +517,7 @@ impl App {
             },
             cwd: None,
             env: None,
+            autostart: true,
             stop: StopSignal::default(),
           },
           self.upd_tx.clone(),

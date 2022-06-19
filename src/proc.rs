@@ -204,7 +204,9 @@ impl Proc {
       inst: ProcState::None,
     };
 
-    proc.spawn_new_inst();
+    if cfg.autostart {
+      proc.spawn_new_inst();
+    }
 
     proc
   }

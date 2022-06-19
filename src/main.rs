@@ -109,6 +109,7 @@ async fn run_app() -> anyhow::Result<()> {
           },
           env: None,
           cwd: None,
+          autostart: true,
           stop: StopSignal::default(),
         })
         .collect::<Vec<_>>();
