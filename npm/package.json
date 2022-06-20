@@ -1,6 +1,6 @@
 {
   "name": "mprocs",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Run multiple processes in parallel",
   "license": "MIT",
   "repository": "github:pvolok/mprocs",
