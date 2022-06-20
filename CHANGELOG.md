@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.5.0 - 2022-06-20
+
 - Add command for scrolling by N lines (`C-e`/`C-y`)
 - Add mouse support
 - Add autostart field to the process config

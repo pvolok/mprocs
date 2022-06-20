@@ -127,6 +127,7 @@ procs:
   - **env**: _object<string, string|null>_ - Set env variables. Object keys are
     variable names. Assign variable to null, to clear variables inherited from
     parent process.
+  - **autostart**: _bool_ - Start process when mprocs starts. Default: _true_.
   - **stop**: _"SIGINT"|"SIGTERM"|"SIGKILL"|{send-keys: array<key>}|"hard-kill"_ -
     A way to stop a process (using `x` key or when quitting mprocs).
 
@@ -155,8 +156,8 @@ keymap_term: # keymap when terminal is focused
   <C-j>:
     c: batch
     cmds:
-      - {c: focus-procs}
-      - {c: next-proc}
+      - { c: focus-procs }
+      - { c: next-proc }
 ```
 
 #### `$select` operator
@@ -209,6 +210,8 @@ Process list focused:
 - `M-1` - `M-8` - Select process 1-8
 - `C-d` or `page down` - Scroll output down
 - `C-u` or `page up` - Scroll output up
+- `C-e` - Scroll output down by 3 lines
+- `C-y` - Scroll output up by 3 lines
 - `z` - Zoom into terminal window
 
 Process output focused:
@@ -244,6 +247,8 @@ Commands are encoded as yaml. Available commands:
 - `{c: remove-proc, id: "<PROCESS ID>"}`
 - `{c: scrol-down}`
 - `{c: scroll-up}`
+- `{c: scrol-down-lines, n: <COUNT>}`
+- `{c: scroll-up, n: <COUNT>}`
 - `{c: send-key, key: "<KEY>"}` - Send key to current process. Key
   examples: `<C-a>`, `<Enter>`
 - `{c: batch, cmds: [{c: focus-procs}, …]}` - Send multiple commands
