@@ -337,6 +337,22 @@ impl Proc {
     }
   }
 
+  pub fn scroll_up_lines(&mut self, n: usize) {
+    if let ProcState::Some(inst) = &mut self.inst {
+      let mut vt = inst.vt.write().unwrap();
+      let pos = usize::saturating_add(vt.screen().scrollback(), n);
+      vt.set_scrollback(pos);
+    }
+  }
+
+  pub fn scroll_down_lines(&mut self, n: usize) {
+    if let ProcState::Some(inst) = &mut self.inst {
+      let mut vt = inst.vt.write().unwrap();
+      let pos = usize::saturating_sub(vt.screen().scrollback(), n);
+      vt.set_scrollback(pos);
+    }
+  }
+
   pub fn scroll_up(&mut self) {
     if let ProcState::Some(inst) = &mut self.inst {
       let mut vt = inst.vt.write().unwrap();

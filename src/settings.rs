@@ -166,6 +166,14 @@ impl Settings {
       AppEvent::ShowRemoveProc,
     );
 
+    s.keymap_add_p(
+      Key::new(KeyCode::Char('y'), KeyModifiers::CONTROL),
+      AppEvent::ScrollUpLines { n: 3 },
+    );
+    s.keymap_add_p(
+      Key::new(KeyCode::Char('e'), KeyModifiers::CONTROL),
+      AppEvent::ScrollDownLines { n: 3 },
+    );
     let ctrlu = Key::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
     s.keymap_add_p(ctrlu, AppEvent::ScrollUp);
     s.keymap_add_p(

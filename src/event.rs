@@ -28,6 +28,8 @@ pub enum AppEvent {
   ShowRemoveProc,
   RemoveProc { id: usize },
 
+  ScrollDownLines { n: usize },
+  ScrollUpLines { n: usize },
   ScrollDown,
   ScrollUp,
 

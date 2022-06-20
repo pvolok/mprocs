@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add command for scrolling by N lines (`C-e`/`C-y`)
 - Add mouse support
 - Add autostart field to the process config
 

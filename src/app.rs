@@ -546,6 +546,20 @@ impl App {
         LoopAction::Skip
       }
 
+      AppEvent::ScrollUpLines { n } => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.scroll_up_lines(*n);
+          return LoopAction::Render;
+        }
+        LoopAction::Skip
+      }
+      AppEvent::ScrollDownLines { n } => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.scroll_down_lines(*n);
+          return LoopAction::Render;
+        }
+        LoopAction::Skip
+      }
       AppEvent::ScrollUp => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.scroll_up();
