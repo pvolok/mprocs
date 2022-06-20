@@ -248,7 +248,7 @@ Commands are encoded as yaml. Available commands:
 - `{c: scrol-down}`
 - `{c: scroll-up}`
 - `{c: scrol-down-lines, n: <COUNT>}`
-- `{c: scroll-up, n: <COUNT>}`
+- `{c: scroll-up-lines, n: <COUNT>}`
 - `{c: send-key, key: "<KEY>"}` - Send key to current process. Key
   examples: `<C-a>`, `<Enter>`
 - `{c: batch, cmds: [{c: focus-procs}, …]}` - Send multiple commands
