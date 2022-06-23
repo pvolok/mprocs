@@ -93,7 +93,8 @@ impl App {
     Ok(app)
   }
 
-  pub async fn run(self) -> anyhow::Result<()> {
+  pub async fn run(mut self) -> anyhow::Result<()> {
+    self.terminal.clear()?;
     enable_raw_mode()?;
     execute!(io::stdout(), EnterAlternateScreen)?;
     execute!(io::stdout(), EnableMouseCapture)?;
