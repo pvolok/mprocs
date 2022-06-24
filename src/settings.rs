@@ -9,6 +9,7 @@ use crate::{
   event::AppEvent,
   key::Key,
   keymap::Keymap,
+  state::Scope,
   yaml_val::{value_to_string, Val},
 };
 
@@ -30,6 +31,17 @@ impl Default for Settings {
 }
 
 impl Settings {
+  pub fn default_keys(&self, scope: Scope, app_event: &AppEvent) -> Vec<&Key> {
+    let map = match scope {
+      Scope::Procs => &self.keymap_procs,
+      Scope::Term | Scope::TermZoom => &self.keymap_term,
+    };
+    map
+      .iter()
+      .filter_map(|(k, v)| if v == app_event { Some(k) } else { None })
+      .collect()
+  }
+
   pub fn merge_from_xdg(&mut self) -> Result<()> {
     let path = self.get_xdg_config_path()?;
     match File::open(path) {

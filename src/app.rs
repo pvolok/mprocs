@@ -186,7 +186,7 @@ impl App {
 
           render_procs(layout.procs, f, &mut self.state);
           render_term(layout.term, f, &mut self.state);
-          render_keymap(layout.keymap, f, &mut self.state);
+          render_keymap(layout.keymap, f, &mut self.state, self.keymap.clone());
           render_zoom_tip(layout.zoom_banner, f);
 
           if let Some(modal) = &mut self.state.modal {

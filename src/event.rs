@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::key::Key;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "c", rename_all = "kebab-case")]
 pub enum AppEvent {
   Batch { cmds: Vec<AppEvent> },
