@@ -94,9 +94,9 @@ impl App {
   }
 
   pub async fn run(mut self) -> anyhow::Result<()> {
-    self.terminal.clear()?;
     enable_raw_mode()?;
     execute!(io::stdout(), EnterAlternateScreen)?;
+    self.terminal.clear()?;
     execute!(io::stdout(), EnableMouseCapture)?;
 
     let (exit_trigger, exit_listener) = triggered::trigger();
