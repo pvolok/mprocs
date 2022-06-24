@@ -9,7 +9,7 @@ With mprocs you can list these command in `mprocs.yaml` and run all of them by
 running `mprocs`. Then you can switch between outputs of running commands and
 interact with them.
 
-It is simmilar to
+It is similar to
 [concurrently](https://github.com/open-cli-tools/concurrently) but _mprocs_
 shows output of each command separately and allows to interact with processes
 (you can even work in _vim_ inside _mprocs_).

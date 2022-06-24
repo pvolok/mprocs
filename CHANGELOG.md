@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Clears the terminal before the first render.
+
 ## 0.5.0 - 2022-06-20
 
 - Add command for scrolling by N lines (`C-e`/`C-y`)
