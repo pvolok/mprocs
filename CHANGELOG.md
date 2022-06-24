@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Clears the terminal before the first render.
+- Display keybindings which are customized by the user
 
 ## 0.5.0 - 2022-06-20
 
