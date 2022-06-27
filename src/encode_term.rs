@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use anyhow::Result;
 use crossterm::event::{
-  KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+  KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 
 use crate::key::Key;
@@ -364,20 +364,20 @@ pub fn normalize_shift_to_upper_case(
   }
 }
 
-pub fn print_key(key: KeyEvent) -> String {
+pub fn print_key(key: &Key) -> String {
   let mut buf = String::new();
 
-  if key.modifiers.contains(KeyModifiers::CONTROL) {
+  if key.mods().contains(KeyModifiers::CONTROL) {
     buf.push_str("C-");
   }
-  if key.modifiers.contains(KeyModifiers::SHIFT) {
+  if key.mods().contains(KeyModifiers::SHIFT) {
     buf.push_str("S-");
   }
-  if key.modifiers.contains(KeyModifiers::ALT) {
+  if key.mods().contains(KeyModifiers::ALT) {
     buf.push_str("M-");
   }
 
-  match key.code {
+  match key.code() {
     KeyCode::Backspace => buf.push_str("Backspace"),
     KeyCode::Enter => buf.push_str("Enter"),
     KeyCode::Left => buf.push_str("Left"),
@@ -393,7 +393,7 @@ pub fn print_key(key: KeyEvent) -> String {
     KeyCode::Delete => buf.push_str("Del"),
     KeyCode::Insert => buf.push_str("Ins"),
     KeyCode::F(n) => buf.push_str(&format!("F{}", n)),
-    KeyCode::Char(ch) => buf.push(ch),
+    KeyCode::Char(ch) => buf.push(*ch),
     KeyCode::Null => buf.push_str("Null"),
     KeyCode::Esc => buf.push_str("Esc"),
   }

@@ -1,6 +1,5 @@
 use std::io;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui::{
   backend::CrosstermBackend,
   layout::{Margin, Rect},
@@ -12,6 +11,8 @@ use tui::{
 
 use crate::{
   encode_term::print_key,
+  event::AppEvent,
+  keymap::Keymap,
   state::{Scope, State},
   theme::Theme,
 };
@@ -22,6 +23,7 @@ pub fn render_keymap(
   area: Rect,
   frame: &mut Frame<Backend>,
   state: &mut State,
+  keymap: &Keymap,
 ) {
   let theme = Theme::default();
 
@@ -33,28 +35,28 @@ pub fn render_keymap(
 
   let items = match state.scope {
     Scope::Procs => vec![
-      (KeyCode::Char('a'), KeyModifiers::CONTROL, "Toggle focus"),
-      (KeyCode::Char('q'), KeyModifiers::NONE, "Quit"),
-      (KeyCode::Char('j'), KeyModifiers::NONE, "Next"),
-      (KeyCode::Char('k'), KeyModifiers::NONE, "Prev"),
-      (KeyCode::Char('s'), KeyModifiers::NONE, "Start"),
-      (KeyCode::Char('x'), KeyModifiers::NONE, "Stop"),
-      (KeyCode::Char('r'), KeyModifiers::NONE, "Restart"),
+      AppEvent::ToggleFocus,
+      AppEvent::Quit,
+      AppEvent::NextProc,
+      AppEvent::PrevProc,
+      AppEvent::StartProc,
+      AppEvent::TermProc,
+      AppEvent::RestartProc,
     ],
     Scope::Term => {
-      vec![(KeyCode::Char('a'), KeyModifiers::CONTROL, "Toggle focus")]
+      vec![AppEvent::ToggleFocus]
     }
     Scope::TermZoom => Vec::new(),
   };
   let line = items
     .into_iter()
-    .map(|(code, mods, desc)| (KeyEvent::new(code, mods), desc))
-    .map(|(key, desc)| {
+    .filter_map(|event| Some((keymap.resolve_key(state.scope, &event)?, event)))
+    .map(|(key, event)| {
       vec![
         Span::raw(" <"),
         Span::styled(print_key(key), Style::default().fg(Color::Yellow)),
         Span::raw(": "),
-        Span::raw(desc),
+        Span::raw(event.desc()),
         Span::raw("> "),
       ]
     })

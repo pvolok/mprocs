@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::key::Key;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(tag = "c", rename_all = "kebab-case")]
 pub enum AppEvent {
   Batch { cmds: Vec<AppEvent> },
@@ -34,6 +34,49 @@ pub enum AppEvent {
   ScrollUp,
 
   SendKey { key: Key },
+}
+
+impl AppEvent {
+  pub fn desc(&self) -> String {
+    match self {
+      AppEvent::Batch { cmds: _ } => "Send multiple events".to_string(),
+      AppEvent::Quit => "Quit".to_string(),
+      AppEvent::ForceQuit => "Force quit".to_string(),
+      AppEvent::ToggleFocus => "Toggle focus".to_string(),
+      AppEvent::FocusProcs => "Focus proccess list".to_string(),
+      AppEvent::FocusTerm => "Focus terminal".to_string(),
+      AppEvent::Zoom => "Zoom into terminal".to_string(),
+      AppEvent::NextProc => "Next".to_string(),
+      AppEvent::PrevProc => "Prev".to_string(),
+      AppEvent::SelectProc { index } => format!("Select process #{}", index),
+      AppEvent::StartProc => "Start".to_string(),
+      AppEvent::TermProc => "Stop".to_string(),
+      AppEvent::KillProc => "Kill".to_string(),
+      AppEvent::RestartProc => "Restart".to_string(),
+      AppEvent::ForceRestartProc => "Force restart".to_string(),
+      AppEvent::ShowAddProc => "New process dialog".to_string(),
+      AppEvent::AddProc { cmd } => format!("New process `{}`", cmd),
+      AppEvent::ShowRemoveProc => "Remove process dialog".to_string(),
+      AppEvent::RemoveProc { id } => format!("Remove process by id {}", id),
+      AppEvent::ScrollDownLines { n } => {
+        format!("Scroll down {} {}", n, lines_str(*n))
+      }
+      AppEvent::ScrollUpLines { n } => {
+        format!("Scroll up {} {}", n, lines_str(*n))
+      }
+      AppEvent::ScrollDown => "Scroll down".to_string(),
+      AppEvent::ScrollUp => "Scroll up".to_string(),
+      AppEvent::SendKey { key } => format!("Send {} key", key.to_string()),
+    }
+  }
+}
+
+fn lines_str(n: usize) -> &'static str {
+  if n == 1 {
+    "line"
+  } else {
+    "lines"
+  }
 }
 
 #[cfg(test)]
