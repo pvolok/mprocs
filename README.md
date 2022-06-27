@@ -117,10 +117,10 @@ procs:
 ### Config
 
 - **procs**: _object_ - Processes to run.
-  - **shell**: _string_ - Shell command to run (only **shell** or **cmd** must
-    be provided).
-  - **cmd**: _array<string>_ - Array of command and args to run (only **shell**
-    or **cmd** must be provided).
+  - **shell**: _string_ - Shell command to run (exactly one of **shell** or
+    **cmd** must be provided).
+  - **cmd**: _array<string>_ - Array of command and args to run (exactly one of
+    **shell** or **cmd** must be provided).
   - **cwd**: _string_ - Set working directory for the process. Prefix
     `<CONFIG_DIR>` will be replaced with the path of the directory where the
     config is located.
@@ -128,7 +128,8 @@ procs:
     variable names. Assign variable to null, to clear variables inherited from
     parent process.
   - **autostart**: _bool_ - Start process when mprocs starts. Default: _true_.
-  - **stop**: _"SIGINT"|"SIGTERM"|"SIGKILL"|{send-keys: array<key>}|"hard-kill"_ -
+  - **stop**: _"SIGINT"|"SIGTERM"|"SIGKILL"|{send-keys:
+    array<key>}|"hard-kill"_ -
     A way to stop a process (using `x` key or when quitting mprocs).
 
 #### Keymap
