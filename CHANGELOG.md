@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Keymap help now uses actual keys (respecting config)
 - Clears the terminal before the first render.
 
 ## 0.5.0 - 2022-06-20
