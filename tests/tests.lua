@@ -34,3 +34,18 @@ test("next proc", function()
   proc:send_str("q")
   proc:wait()
 end)
+
+test("select by mouse", function()
+  local proc = vt.start('cargo r -- "echo one" "echo two" "echo three"')
+
+  local mark = "•"
+
+  proc:wait_text(" echo three")
+
+  proc:click({x = 1, y = 3})
+
+  proc:wait_text(mark .. "echo three")
+
+  proc:send_str("q")
+  proc:wait()
+end)
