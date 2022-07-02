@@ -91,6 +91,7 @@ yay mprocs-bin
 ```
 
 ### MPR (Debian/Ubuntu)
+
 ```sh
 git clone 'https://mpr.makedeb.org/mprocs'
 cd mprocs/
