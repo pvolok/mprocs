@@ -5,6 +5,7 @@ mod encode_term;
 mod event;
 mod key;
 mod keymap;
+mod package_json;
 mod proc;
 mod settings;
 mod state;
@@ -25,6 +26,7 @@ use config::{CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig};
 use ctl::run_ctl;
 use flexi_logger::FileSpec;
 use keymap::Keymap;
+use package_json::load_npm_procs;
 use proc::StopSignal;
 use serde_yaml::Value;
 use settings::Settings;
@@ -56,6 +58,7 @@ async fn run_app() -> anyhow::Result<()> {
     .arg(arg!(-s --server [PATH] "Remote control server address. Example: 127.0.0.1:4050."))
     .arg(arg!(--ctl [YAML] "Send yaml/json encoded command to running mprocs"))
     .arg(arg!(--names [NAMES] "Names for processes provided by cli arguments. Separated by comma."))
+    .arg(arg!(--npm "Run scripts from package.json. Scripts are not started by default."))
     .arg(arg!([COMMANDS]... "Commands to run (if omitted, commands from config will be run)"))
     .get_matches();
 
@@ -114,6 +117,9 @@ async fn run_app() -> anyhow::Result<()> {
         })
         .collect::<Vec<_>>();
 
+      config.procs = procs;
+    } else if matches.is_present("npm") {
+      let procs = load_npm_procs()?;
       config.procs = procs;
     }
 

@@ -194,6 +194,17 @@ procs:
         freebsd: FreeBSD
 ```
 
+#### Running scripts from package.json
+
+If you run _mprocs_ with an `--npm` argument, it will load scripts from
+`package.json`. But the scripts are not run by default, and you can launch
+desired scripts manually.
+
+```sh
+# Run mprocs with scripts from package.json
+mprocs --npm
+```
+
 ### Default keymap
 
 Process list focused:
