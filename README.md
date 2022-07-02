@@ -90,6 +90,13 @@ yay mprocs
 yay mprocs-bin
 ```
 
+### MPR (Debian/Ubuntu)
+```sh
+git clone 'https://mpr.makedeb.org/mprocs'
+cd mprocs/
+makedeb -si
+```
+
 ## Usage
 
 1. Run `mprocs cmd1 cmd2 …` (example: `mprocs "yarn test -w" "webpack serve"`)
