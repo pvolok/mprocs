@@ -127,6 +127,8 @@ procs:
   - **env**: _object<string, string|null>_ - Set env variables. Object keys are
     variable names. Assign variable to null, to clear variables inherited from
     parent process.
+  - **add_path**: _string|array<string>_ - Add entries to the _PATH_
+    environment variable.
   - **autostart**: _bool_ - Start process when mprocs starts. Default: _true_.
   - **stop**: _"SIGINT"|"SIGTERM"|"SIGKILL"|{send-keys:
     array<key>}|"hard-kill"_ -

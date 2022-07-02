@@ -1,6 +1,6 @@
 use std::{ffi::OsString, path::PathBuf};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use indexmap::IndexMap;
 use portable_pty::CommandBuilder;
 use serde::{Deserialize, Serialize};
@@ -165,6 +165,43 @@ impl ProcConfig {
             Some(env)
           }
           None => None,
+        };
+        let env = match map.get(&Value::from("add_path")) {
+          Some(add_path) => {
+            let extra_paths = match add_path.raw() {
+              Value::String(path) => vec![path.as_str()],
+              Value::Sequence(paths) => paths
+                .into_iter()
+                .filter_map(|path| path.as_str())
+                .collect::<Vec<_>>(),
+              _ => {
+                bail!(add_path.error_at("Expected string or array"));
+              }
+            };
+            let mut paths = std::env::var_os("PATH").map_or_else(
+              || Vec::new(),
+              |path_var| {
+                std::env::split_paths(&path_var)
+                  .map(|p| p.to_string_lossy().to_string())
+                  .collect::<Vec<_>>()
+              },
+            );
+            for p in extra_paths {
+              paths.push(p.to_string());
+            }
+            let path_var =
+              std::env::join_paths(paths)?.to_string_lossy().to_string();
+            let env = if let Some(mut env) = env {
+              env.insert("PATH".to_string(), Some(path_var));
+              env
+            } else {
+              let mut env = IndexMap::with_capacity(1);
+              env.insert("PATH".to_string(), Some(path_var));
+              env
+            };
+            Some(env)
+          }
+          None => env,
         };
 
         let autostart = map
