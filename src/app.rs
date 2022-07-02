@@ -391,7 +391,7 @@ impl App {
                   mev.row,
                   &self.state,
                 ) {
-                  self.state.selected = index;
+                  self.state.select_proc(index);
                 }
               }
               MouseButton::Right | MouseButton::Middle => (),
@@ -402,12 +402,14 @@ impl App {
             MouseEventKind::ScrollDown => {
               if self.state.selected < self.state.procs.len().saturating_sub(1)
               {
-                self.state.selected += 1;
+                let index = self.state.selected + 1;
+                self.state.select_proc(index);
               }
             }
             MouseEventKind::ScrollUp => {
               if self.state.selected > 0 {
-                self.state.selected -= 1;
+                let index = self.state.selected - 1;
+                self.state.select_proc(index);
               }
             }
           }
@@ -489,7 +491,7 @@ impl App {
         if next >= self.state.procs.len() {
           next = 0;
         }
-        self.state.selected = next;
+        self.state.select_proc(next);
         LoopAction::Render
       }
       AppEvent::PrevProc => {
@@ -498,11 +500,11 @@ impl App {
         } else {
           self.state.procs.len() - 1
         };
-        self.state.selected = next;
+        self.state.select_proc(next);
         LoopAction::Render
       }
       AppEvent::SelectProc { index } => {
-        self.state.selected = *index;
+        self.state.select_proc(*index);
         LoopAction::Render
       }
 
@@ -634,10 +636,13 @@ impl App {
   fn handle_proc_update(&mut self, event: (usize, ProcUpdate)) -> LoopAction {
     match event.1 {
       ProcUpdate::Render => {
-        if let Some(proc) = self.state.get_current_proc().as_ref() {
-          if proc.id == event.0 {
-            return LoopAction::Render;
+        let cur_proc_id =
+          self.state.get_current_proc().map_or(usize::MAX, |p| p.id);
+        if let Some(proc) = self.state.get_proc_mut(event.0) {
+          if proc.id != cur_proc_id {
+            proc.changed = true;
           }
+          return LoopAction::Render;
         }
         LoopAction::Skip
       }

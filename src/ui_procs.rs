@@ -100,7 +100,14 @@ fn create_proc_item<'a>(
       name.push(' ');
     }
   }
-  let name = Span::raw(name);
+
+  let name_style = Style::default();
+  let name_style = if proc.changed {
+    name_style.add_modifier(Modifier::BOLD)
+  } else {
+    name_style
+  };
+  let name = Span::styled(name, name_style);
 
   ListItem::new(Spans::from(vec![mark, name, status]))
     .style(theme.get_procs_item(is_cur))

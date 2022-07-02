@@ -46,6 +46,13 @@ impl State {
     self.procs.get_mut(self.selected)
   }
 
+  pub fn select_proc(&mut self, index: usize) {
+    self.selected = index;
+    if let Some(proc) = self.procs.get_mut(index) {
+      proc.changed = false;
+    }
+  }
+
   pub fn get_proc_mut(&mut self, id: usize) -> Option<&mut Proc> {
     self.procs.iter_mut().find(|proc| proc.id == id)
   }

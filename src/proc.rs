@@ -138,6 +138,7 @@ pub struct Proc {
   pub id: usize,
   pub name: String,
   pub to_restart: bool,
+  pub changed: bool,
   pub cmd: CommandBuilder,
   size: Size,
 
@@ -196,6 +197,7 @@ impl Proc {
       id,
       name,
       to_restart: false,
+      changed: false,
       cmd: cfg.into(),
       size,
 

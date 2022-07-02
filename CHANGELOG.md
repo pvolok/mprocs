@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Highlight changed unselected processes
 - Keymap help now uses actual keys (respecting config)
 - Clears the terminal before the first render.
 
