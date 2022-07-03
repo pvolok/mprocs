@@ -2,7 +2,7 @@ cargo-features = ["strip"]
 
 [package]
 name = "mprocs"
-version = "0.5.0"
+version = "0.5.1"
 description = "TUI for running multiple processes"
 repository = "https://github.com/pvolok/mprocs"
 authors = ["Pavel Volokitin <pavelvolokitin@gmail.com>"]
