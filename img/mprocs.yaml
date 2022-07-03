@@ -1,0 +1,9 @@
+procs:
+  nvim: nvim
+  server: echo "Listening on port 8080" && sleep 10
+  webpack:
+    shell: echo webpack
+    autostart: false
+  tests:
+    shell: echo tests
+    autostart: false

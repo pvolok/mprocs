@@ -128,19 +128,19 @@ impl Settings {
       AppEvent::ForceQuit,
     );
     s.keymap_add_p(
-      Key::new(KeyCode::Char('j'), KeyModifiers::NONE),
-      AppEvent::NextProc,
-    );
-    s.keymap_add_p(
       Key::new(KeyCode::Down, KeyModifiers::NONE),
       AppEvent::NextProc,
     );
     s.keymap_add_p(
-      Key::new(KeyCode::Char('k'), KeyModifiers::NONE),
-      AppEvent::PrevProc,
+      Key::new(KeyCode::Char('j'), KeyModifiers::NONE),
+      AppEvent::NextProc,
     );
     s.keymap_add_p(
       Key::new(KeyCode::Up, KeyModifiers::NONE),
+      AppEvent::PrevProc,
+    );
+    s.keymap_add_p(
+      Key::new(KeyCode::Char('k'), KeyModifiers::NONE),
       AppEvent::PrevProc,
     );
     s.keymap_add_p(

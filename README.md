@@ -24,24 +24,26 @@ shows output of each command separately and allows to interact with processes
   - [cargo (All platforms)](#cargo-all-platforms)
   - [scoop (Windows)](#scoop-windows)
   - [AUR (Arch Linux)](#aur-arch-linux)
+  - [MPR (Debian/Ubuntu)](#mpr-debianubuntu)
 - [Usage](#usage)
   - [Config](#config)
     - [Keymap](#keymap)
     - [$select operator](#select-operator)
+    - [Running scripts from package.json](#running-scripts-from-packagejson)
   - [Default keymap](#default-keymap)
   - [Remote control](#remote-control)
 - [FAQ](#faq)
   - [mprocs vs tmux/screen](#mprocs-vs-tmuxscreen)
 
 <!-- Created by https://github.com/ekalinin/github-markdown-toc -->
-<!-- Added by: pvolok, at: Mon Jun 13 00:09:23 +07 2022 -->
+<!-- Added by: pvolok, at: Sun Jul  3 22:53:57 +07 2022 -->
 
 <!--te-->
 
 ## Screenshots
 
-<img src="img/screenshot1.png" width="889" height="564" />
-<img src="img/screenshot2.png" width="889" height="564" />
+<img src="img/screenshot1.png" width="900" height="645" />
+<img src="img/screenshot2.png" width="900" height="645" />
 
 ## Installation
 
