@@ -8,6 +8,7 @@ use serde_yaml::Value;
 
 use crate::{
   proc::StopSignal,
+  settings::Settings,
   yaml_val::{value_to_string, Val},
 };
 
@@ -18,10 +19,15 @@ pub struct ConfigContext {
 pub struct Config {
   pub procs: Vec<ProcConfig>,
   pub server: Option<ServerConfig>,
+  pub hide_keymap_window: bool,
 }
 
 impl Config {
-  pub fn from_value(value: &Value, ctx: &ConfigContext) -> Result<Config> {
+  pub fn from_value(
+    value: &Value,
+    ctx: &ConfigContext,
+    settings: &Settings,
+  ) -> Result<Config> {
     let config = Val::new(value)?;
     let config = config.as_object()?;
 
@@ -47,17 +53,20 @@ impl Config {
       None
     };
 
-    let config = Config { procs, server };
+    let config = Config {
+      procs,
+      server,
+      hide_keymap_window: settings.hide_keymap_window,
+    };
 
     Ok(config)
   }
-}
 
-impl Default for Config {
-  fn default() -> Self {
+  pub fn make_default(settings: &Settings) -> Self {
     Self {
       procs: Vec::new(),
       server: None,
+      hide_keymap_window: settings.hide_keymap_window,
     }
   }
 }

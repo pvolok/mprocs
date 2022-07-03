@@ -16,6 +16,7 @@ use crate::{
 pub struct Settings {
   keymap_procs: IndexMap<Key, AppEvent>,
   keymap_term: IndexMap<Key, AppEvent>,
+  pub hide_keymap_window: bool,
 }
 
 impl Default for Settings {
@@ -23,6 +24,7 @@ impl Default for Settings {
     let mut settings = Self {
       keymap_procs: Default::default(),
       keymap_term: Default::default(),
+      hide_keymap_window: false,
     };
     settings.add_defaults();
     settings
@@ -95,6 +97,12 @@ impl Settings {
       obj.get(&Value::from("keymap_procs")),
     )?;
     add_keys(&mut self.keymap_term, obj.get(&Value::from("keymap_term")))?;
+
+    if let Some(hide_keymap_window) =
+      obj.get(&Value::from("hide_keymap_window"))
+    {
+      self.hide_keymap_window = hide_keymap_window.as_bool()?;
+    }
 
     Ok(())
   }

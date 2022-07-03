@@ -83,9 +83,9 @@ async fn run_app() -> anyhow::Result<()> {
 
   let config = {
     let mut config = if let Some((v, ctx)) = config_value {
-      Config::from_value(&v, &ctx)?
+      Config::from_value(&v, &ctx, &settings)?
     } else {
-      Config::default()
+      Config::make_default(&settings)
     };
 
     if let Some(server_addr) = matches.value_of("server") {

@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add `hide_keymap_window` to settings
 - Add `--npm` argument
 - Add `add_path` to proc config
 - Highlight changed unselected processes

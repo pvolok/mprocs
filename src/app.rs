@@ -171,7 +171,11 @@ impl App {
     loop {
       if render_needed {
         self.terminal.draw(|f| {
-          let layout = AppLayout::new(f.size(), self.state.scope.is_zoomed());
+          let layout = AppLayout::new(
+            f.size(),
+            self.state.scope.is_zoomed(),
+            &self.config,
+          );
 
           {
             let term_area = layout.term_area();
@@ -426,6 +430,7 @@ impl App {
         let area = AppLayout::new(
           Rect::new(0, 0, width, height),
           self.state.scope.is_zoomed(),
+          &self.config,
         )
         .term_area();
         for proc in &mut self.state.procs {
@@ -663,6 +668,7 @@ impl App {
     AppLayout::new(
       self.terminal.get_frame().size(),
       self.state.scope.is_zoomed(),
+      &self.config,
     )
   }
 }
@@ -675,8 +681,12 @@ struct AppLayout {
 }
 
 impl AppLayout {
-  pub fn new(area: Rect, zoom: bool) -> Self {
-    let keymap_h = if zoom { 0 } else { 3 };
+  pub fn new(area: Rect, zoom: bool, config: &Config) -> Self {
+    let keymap_h = if zoom || config.hide_keymap_window {
+      0
+    } else {
+      3
+    };
     let procs_w = if zoom { 0 } else { 30 };
     let zoom_banner_h = if zoom { 1 } else { 0 };
     let top_bot = Layout::default()
