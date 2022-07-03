@@ -1,4 +1,4 @@
-use std::{ffi::OsString, path::PathBuf};
+use std::{ffi::OsString, path::PathBuf, str::FromStr};
 
 use anyhow::{bail, Result};
 use indexmap::IndexMap;
@@ -187,16 +187,20 @@ impl ProcConfig {
                 bail!(add_path.error_at("Expected string or array"));
               }
             };
+            let extra_paths = extra_paths
+              .into_iter()
+              .map(|p| PathBuf::from_str(p).map_err(anyhow::Error::from))
+              .collect::<Result<Vec<_>>>()?;
             let mut paths = std::env::var_os("PATH").map_or_else(
               || Vec::new(),
               |path_var| {
                 std::env::split_paths(&path_var)
-                  .map(|p| p.to_string_lossy().to_string())
+                  .map(|p| p.into_os_string())
                   .collect::<Vec<_>>()
               },
             );
             for p in extra_paths {
-              paths.push(p.to_string());
+              paths.push(p.into_os_string());
             }
             let path_var =
               std::env::join_paths(paths)?.to_string_lossy().to_string();
