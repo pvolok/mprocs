@@ -64,10 +64,10 @@ npm install -g mprocs
 yarn global add mprocs
 ```
 
-### homebrew (Macos)
+### homebrew (Macos, Linux)
 
 ```sh
-brew install pvolok/mprocs/mprocs
+brew install mprocs
 ```
 
 ### cargo (All platforms)
