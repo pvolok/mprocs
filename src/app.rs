@@ -31,6 +31,7 @@ use crate::{
   proc::{Proc, ProcUpdate, StopSignal},
   state::{Modal, Scope, State},
   ui_add_proc::render_add_proc,
+  ui_confirm_quit::render_confirm_quit,
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
   ui_remove_proc::render_remove_proc,
@@ -201,6 +202,9 @@ impl App {
               Modal::RemoveProc { id: _ } => {
                 render_remove_proc(f.size(), f);
               }
+              Modal::Quit => {
+                render_confirm_quit(f.size(), f);
+              }
             }
           }
         })?;
@@ -337,6 +341,28 @@ impl App {
               _ => (),
             }
           }
+          Modal::Quit => match event {
+            Event::Key(KeyEvent {
+              code: KeyCode::Char('y'),
+              modifiers,
+            }) if modifiers.is_empty() => {
+              reset_modal = true;
+              self.ev_tx.send(AppEvent::Quit).unwrap();
+              ret = Some(LoopAction::Skip);
+            }
+            Event::Key(KeyEvent {
+              code: KeyCode::Esc,
+              modifiers,
+            })
+            | Event::Key(KeyEvent {
+              code: KeyCode::Char('n'),
+              modifiers,
+            }) if modifiers.is_empty() => {
+              reset_modal = true;
+              ret = Some(LoopAction::Render);
+            }
+            _ => (),
+          },
         };
       }
 
@@ -456,6 +482,15 @@ impl App {
         ret
       }
 
+      AppEvent::QuitOrAsk => {
+        let have_running = self.state.procs.iter().any(|p| p.is_up());
+        if have_running {
+          self.state.modal = Some(Modal::Quit);
+        } else {
+          self.state.quitting = true;
+        }
+        LoopAction::Render
+      }
       AppEvent::Quit => {
         self.state.quitting = true;
         for proc in self.state.procs.iter_mut() {

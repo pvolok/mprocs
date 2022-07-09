@@ -11,6 +11,7 @@ mod settings;
 mod state;
 mod theme;
 mod ui_add_proc;
+mod ui_confirm_quit;
 mod ui_keymap;
 mod ui_procs;
 mod ui_remove_proc;

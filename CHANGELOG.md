@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Add quit confirmation dialog
+
+## 0.6.0 - 2022-07-04
+
 - Add `hide_keymap_window` to settings
 - Add `--npm` argument
 - Add `add_path` to proc config

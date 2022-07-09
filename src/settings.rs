@@ -121,7 +121,7 @@ impl Settings {
 
     s.keymap_add_p(
       Key::new(KeyCode::Char('q'), KeyModifiers::NONE),
-      AppEvent::Quit,
+      AppEvent::QuitOrAsk,
     );
     s.keymap_add_p(
       Key::new(KeyCode::Char('Q'), KeyModifiers::SHIFT),

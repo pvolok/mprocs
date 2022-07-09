@@ -7,6 +7,7 @@ use crate::key::Key;
 pub enum AppEvent {
   Batch { cmds: Vec<AppEvent> },
 
+  QuitOrAsk,
   Quit,
   ForceQuit,
 
@@ -40,7 +41,8 @@ impl AppEvent {
   pub fn desc(&self) -> String {
     match self {
       AppEvent::Batch { cmds: _ } => "Send multiple events".to_string(),
-      AppEvent::Quit => "Quit".to_string(),
+      AppEvent::QuitOrAsk => "Quit".to_string(),
+      AppEvent::Quit => "Quit (without dialog)".to_string(),
       AppEvent::ForceQuit => "Force quit".to_string(),
       AppEvent::ToggleFocus => "Toggle focus".to_string(),
       AppEvent::FocusProcs => "Focus proccess list".to_string(),

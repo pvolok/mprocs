@@ -251,7 +251,9 @@ use the **ctl** argument: `mprocs --ctl '{c: quit}'` or `mprocs --ctl '{c: send-
 
 Commands are encoded as yaml. Available commands:
 
-- `{c: quit}`
+- `{c: quit-or-ask}` - Stop processes and quit. If any processes are running,
+  show a confirmation dialog.
+- `{c: quit}` - Stop processes and quit. Does not show confirm dialog.
 - `{c: force-quit}`
 - `{c: toggle-focus}` - Toggle focus between process list and terminal.
 - `{c: focus-procs}` - Focus process list
@@ -273,8 +275,8 @@ Commands are encoded as yaml. Available commands:
 - `{c: scroll-up}`
 - `{c: scrol-down-lines, n: <COUNT>}`
 - `{c: scroll-up-lines, n: <COUNT>}`
-- `{c: send-key, key: "<KEY>"}` - Send key to current process. Key
-  examples: `<C-a>`, `<Enter>`
+- `{c: send-key, key: "<KEY>"}` - Send key to current process. Key examples:
+  `<C-a>`, `<Enter>`
 - `{c: batch, cmds: [{c: focus-procs}, …]}` - Send multiple commands
 
 ## FAQ
