@@ -7,11 +7,14 @@ pub struct Keymap {
   pub rev_procs: HashMap<AppEvent, Key>,
   pub term: HashMap<Key, AppEvent>,
   pub rev_term: HashMap<AppEvent, Key>,
+  pub copy: HashMap<Key, AppEvent>,
+  pub rev_copy: HashMap<AppEvent, Key>,
 }
 
 pub enum KeymapGroup {
   Procs,
   Term,
+  Copy,
 }
 
 impl Keymap {
@@ -21,6 +24,8 @@ impl Keymap {
       rev_procs: HashMap::new(),
       term: HashMap::new(),
       rev_term: HashMap::new(),
+      copy: HashMap::new(),
+      rev_copy: HashMap::new(),
     }
   }
 
@@ -28,6 +33,7 @@ impl Keymap {
     let (map, rev_map) = match group {
       KeymapGroup::Procs => (&mut self.procs, &mut self.rev_procs),
       KeymapGroup::Term => (&mut self.term, &mut self.rev_term),
+      KeymapGroup::Copy => (&mut self.copy, &mut self.rev_copy),
     };
     map.insert(key.clone(), event.clone());
     rev_map.insert(event, key);
@@ -41,10 +47,15 @@ impl Keymap {
     self.bind(KeymapGroup::Term, key, event);
   }
 
-  pub fn resolve(&self, scope: Scope, key: &Key) -> Option<&AppEvent> {
-    let map = match scope {
-      Scope::Procs => &self.procs,
-      Scope::Term | Scope::TermZoom => &self.term,
+  pub fn bind_c(&mut self, key: Key, event: AppEvent) {
+    self.bind(KeymapGroup::Copy, key, event);
+  }
+
+  pub fn resolve(&self, group: KeymapGroup, key: &Key) -> Option<&AppEvent> {
+    let map = match group {
+      KeymapGroup::Procs => &self.procs,
+      KeymapGroup::Term => &self.term,
+      KeymapGroup::Copy => &self.copy,
     };
     map.get(key)
   }

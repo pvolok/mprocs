@@ -420,8 +420,8 @@ pub fn encode_mouse_event(mev: MouseEvent) -> String {
       // TODO
       return "".to_string();
     }
-    MouseEventKind::ScrollDown => buf.push_str("64"),
-    MouseEventKind::ScrollUp => buf.push_str("65"),
+    MouseEventKind::ScrollDown => buf.push_str("65"),
+    MouseEventKind::ScrollUp => buf.push_str("64"),
   }
   buf.push(';');
   buf.push_str((mev.column + 1).to_string().as_str());

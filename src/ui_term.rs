@@ -1,7 +1,4 @@
-use std::{
-  io,
-  sync::{Arc, RwLock},
-};
+use std::io;
 
 use tui::{
   backend::CrosstermBackend,
@@ -13,7 +10,7 @@ use tui::{
 };
 
 use crate::{
-  proc::ProcState,
+  proc::{CopyMode, Pos, ProcState},
   state::{Scope, State},
   theme::Theme,
 };
@@ -42,7 +39,30 @@ pub fn render_term(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
     match &proc.inst {
       ProcState::None => (),
       ProcState::Some(inst) => {
-        let term = UiTerm::new(inst.vt.clone());
+        let vt = inst.vt.read().unwrap();
+        let (screen, cursor) = match &proc.copy_mode {
+          CopyMode::None(_) => {
+            let screen = vt.screen();
+            let cursor = if screen.hide_cursor() {
+              None
+            } else {
+              let cursor = screen.cursor_position();
+              Some((area.x + 1 + cursor.1, area.y + 1 + cursor.0))
+            };
+            (screen, cursor)
+          }
+          CopyMode::Start(screen, pos) | CopyMode::Range(screen, _, pos) => {
+            let y = area.y as i32 + 1 + (pos.y + screen.scrollback() as i32);
+            let cursor = if y >= 0 {
+              Some((area.x + 1 + pos.x as u16, y as u16))
+            } else {
+              None
+            };
+            (screen, cursor)
+          }
+        };
+
+        let term = UiTerm::new(screen, &proc.copy_mode);
         frame.render_widget(
           term,
           area.inner(&Margin {
@@ -52,11 +72,8 @@ pub fn render_term(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
         );
 
         if active {
-          let vt = inst.vt.read().unwrap();
-          let screen = vt.screen();
-          let cursor = screen.cursor_position();
-          if !screen.hide_cursor() {
-            frame.set_cursor(area.x + 1 + cursor.1, area.y + 1 + cursor.0);
+          if let Some(cursor) = cursor {
+            frame.set_cursor(cursor.0, cursor.1);
           }
         }
       }
@@ -74,20 +91,20 @@ pub fn render_term(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
   }
 }
 
-pub struct UiTerm {
-  vt: Arc<RwLock<vt100::Parser>>,
+pub struct UiTerm<'a> {
+  screen: &'a vt100::Screen,
+  copy_mode: &'a CopyMode,
 }
 
-impl UiTerm {
-  pub fn new(vt: Arc<RwLock<vt100::Parser>>) -> Self {
-    UiTerm { vt }
+impl<'a> UiTerm<'a> {
+  pub fn new(screen: &'a vt100::Screen, copy_mode: &'a CopyMode) -> Self {
+    UiTerm { screen, copy_mode }
   }
 }
 
-impl Widget for UiTerm {
+impl Widget for UiTerm<'_> {
   fn render(self, area: Rect, buf: &mut tui::buffer::Buffer) {
-    let vt = self.vt.read().unwrap();
-    let screen = vt.screen();
+    let screen = self.screen;
 
     for row in 0..area.height {
       for col in 0..area.width {
@@ -100,9 +117,30 @@ impl Widget for UiTerm {
             mods.set(Modifier::REVERSED, cell.inverse());
             mods.set(Modifier::UNDERLINED, cell.underline());
 
+            let copy_mode = match self.copy_mode {
+              CopyMode::None(_) => None,
+              CopyMode::Start(_, start) => Some((start, start)),
+              CopyMode::Range(_, start, end) => Some((start, end)),
+            };
+            let (fg, bg) = match copy_mode {
+              Some((start, end))
+                if Pos::within(
+                  start,
+                  end,
+                  &Pos {
+                    y: (row as i32) - screen.scrollback() as i32,
+                    x: col as i32,
+                  },
+                ) =>
+              {
+                (Some(Color::Black), Some(Color::Cyan))
+              }
+              _ => (conv_color(cell.fgcolor()), conv_color(cell.bgcolor())),
+            };
+
             let style = Style {
-              fg: conv_color(cell.fgcolor()),
-              bg: conv_color(cell.bgcolor()),
+              fg,
+              bg,
               add_modifier: mods,
               sub_modifier: Modifier::empty(),
             };
@@ -144,8 +182,8 @@ fn conv_color(color: vt100::Color) -> Option<tui::style::Color> {
 }
 
 pub fn term_check_hit(area: Rect, x: u16, y: u16) -> bool {
-  area.x < x
-    && area.x + area.width > x + 1
-    && area.y < y
-    && area.y + area.height > y + 1
+  area.x <= x
+    && area.x + area.width >= x + 1
+    && area.y <= y
+    && area.y + area.height >= y + 1
 }

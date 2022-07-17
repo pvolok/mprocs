@@ -32,6 +32,52 @@ impl Grid {
     }
   }
 
+  pub fn get_selected_text(
+    &self,
+    low_x: i32,
+    low_y: i32,
+    high_x: i32,
+    high_y: i32,
+  ) -> String {
+    let scrollback_len = self.scrollback.len();
+    let lines = self
+      .scrollback
+      .iter()
+      .skip((scrollback_len as i32 + low_y.min(0)) as usize)
+      .take(((high_y + 1).min(0) - low_y.min(0)) as usize)
+      .chain(
+        self
+          .rows
+          .iter()
+          .skip(low_y.max(0) as usize)
+          .take(((high_y + 1).max(0) - low_y.max(0)) as usize),
+      )
+      .enumerate();
+
+    let mut contents = String::new();
+
+    let lines_len = high_y - low_y + 1;
+    for (i, row) in lines {
+      let i = i as i32;
+      let start = if i == 0 { low_x } else { 0 };
+
+      let width = row.cols() as i32;
+      let width = if i == lines_len - 1 {
+        width.min(high_x + 1)
+      } else {
+        width
+      };
+      let width = width - start;
+
+      row.write_contents(&mut contents, start as u16, width as u16, false);
+      if i != lines_len - 1 {
+        contents.push('\n');
+      }
+    }
+
+    contents
+  }
+
   pub fn allocate_rows(&mut self) {
     if self.rows.is_empty() {
       self.rows.extend(

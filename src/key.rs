@@ -62,11 +62,22 @@ impl Key {
   pub fn mods(&self) -> &KeyModifiers {
     &self.0.modifiers
   }
+
+  pub fn set_mods(mut self, mods: KeyModifiers) -> Self {
+    self.0.modifiers = mods;
+    self
+  }
 }
 
 impl From<KeyEvent> for Key {
   fn from(key_event: KeyEvent) -> Self {
     Key(key_event)
+  }
+}
+
+impl From<KeyCode> for Key {
+  fn from(code: KeyCode) -> Self {
+    Key::new(code, KeyModifiers::NONE)
   }
 }
 

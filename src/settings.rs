@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use serde_yaml::Value;
 
 use crate::{
-  event::AppEvent,
+  event::{AppEvent, CopyMove},
   key::Key,
   keymap::Keymap,
   yaml_val::{value_to_string, Val},
@@ -16,6 +16,7 @@ use crate::{
 pub struct Settings {
   keymap_procs: IndexMap<Key, AppEvent>,
   keymap_term: IndexMap<Key, AppEvent>,
+  keymap_copy: IndexMap<Key, AppEvent>,
   pub hide_keymap_window: bool,
 }
 
@@ -24,6 +25,7 @@ impl Default for Settings {
     let mut settings = Self {
       keymap_procs: Default::default(),
       keymap_term: Default::default(),
+      keymap_copy: Default::default(),
       hide_keymap_window: false,
     };
     settings.add_defaults();
@@ -118,6 +120,10 @@ impl Settings {
       Key::new(KeyCode::Char('a'), KeyModifiers::CONTROL),
       AppEvent::ToggleFocus,
     );
+    s.keymap_add_c(
+      Key::new(KeyCode::Char('a'), KeyModifiers::CONTROL),
+      AppEvent::ToggleFocus,
+    );
 
     s.keymap_add_p(
       Key::new(KeyCode::Char('q'), KeyModifiers::NONE),
@@ -174,30 +180,38 @@ impl Settings {
       AppEvent::ShowRemoveProc,
     );
 
-    s.keymap_add_p(
-      Key::new(KeyCode::Char('y'), KeyModifiers::CONTROL),
-      AppEvent::ScrollUpLines { n: 3 },
-    );
-    s.keymap_add_p(
-      Key::new(KeyCode::Char('e'), KeyModifiers::CONTROL),
-      AppEvent::ScrollDownLines { n: 3 },
-    );
-    let ctrlu = Key::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
-    s.keymap_add_p(ctrlu, AppEvent::ScrollUp);
-    s.keymap_add_p(
-      Key::new(KeyCode::PageUp, KeyModifiers::NONE),
-      AppEvent::ScrollUp,
-    );
-    let ctrld = Key::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
-    s.keymap_add_p(ctrld, AppEvent::ScrollDown);
-    s.keymap_add_p(
-      Key::new(KeyCode::PageDown, KeyModifiers::NONE),
-      AppEvent::ScrollDown,
-    );
+    // Scrolling in TERM and COPY modes
+    for map in [&mut s.keymap_procs, &mut s.keymap_copy] {
+      map.insert(
+        Key::new(KeyCode::Char('y'), KeyModifiers::CONTROL),
+        AppEvent::ScrollUpLines { n: 3 },
+      );
+      map.insert(
+        Key::new(KeyCode::Char('e'), KeyModifiers::CONTROL),
+        AppEvent::ScrollDownLines { n: 3 },
+      );
+      let ctrlu = Key::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
+      map.insert(ctrlu, AppEvent::ScrollUp);
+      map.insert(
+        Key::new(KeyCode::PageUp, KeyModifiers::NONE),
+        AppEvent::ScrollUp,
+      );
+      let ctrld = Key::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
+      map.insert(ctrld, AppEvent::ScrollDown);
+      map.insert(
+        Key::new(KeyCode::PageDown, KeyModifiers::NONE),
+        AppEvent::ScrollDown,
+      );
+    }
 
     s.keymap_add_p(
       Key::new(KeyCode::Char('z'), KeyModifiers::NONE),
       AppEvent::Zoom,
+    );
+
+    s.keymap_add_p(
+      Key::new(KeyCode::Char('v'), KeyModifiers::NONE),
+      AppEvent::CopyModeEnter,
     );
 
     for i in 0..8 {
@@ -206,6 +220,22 @@ impl Settings {
         Key::new(KeyCode::Char(char), KeyModifiers::ALT),
         AppEvent::SelectProc { index: i as usize },
       );
+    }
+
+    s.keymap_add_c(KeyCode::Esc.into(), AppEvent::CopyModeLeave);
+    s.keymap_add_c(KeyCode::Char('v').into(), AppEvent::CopyModeEnd);
+    s.keymap_add_c(KeyCode::Char('c').into(), AppEvent::CopyModeCopy);
+    for code in [KeyCode::Up, KeyCode::Char('k')] {
+      s.keymap_add_c(code.into(), AppEvent::CopyModeMove(CopyMove::Up));
+    }
+    for code in [KeyCode::Right, KeyCode::Char('l')] {
+      s.keymap_add_c(code.into(), AppEvent::CopyModeMove(CopyMove::Right));
+    }
+    for code in [KeyCode::Down, KeyCode::Char('j')] {
+      s.keymap_add_c(code.into(), AppEvent::CopyModeMove(CopyMove::Down));
+    }
+    for code in [KeyCode::Left, KeyCode::Char('h')] {
+      s.keymap_add_c(code.into(), AppEvent::CopyModeMove(CopyMove::Left));
     }
   }
 
@@ -217,12 +247,19 @@ impl Settings {
     self.keymap_term.insert(key, event);
   }
 
+  fn keymap_add_c(&mut self, key: Key, event: AppEvent) {
+    self.keymap_copy.insert(key, event);
+  }
+
   pub fn add_to_keymap(&self, keymap: &mut Keymap) -> Result<()> {
     for (key, event) in &self.keymap_procs {
       keymap.bind_p(key.clone(), event.clone());
     }
     for (key, event) in &self.keymap_term {
       keymap.bind_t(key.clone(), event.clone());
+    }
+    for (key, event) in &self.keymap_copy {
+      keymap.bind_c(key.clone(), event.clone());
     }
 
     Ok(())

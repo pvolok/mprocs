@@ -83,6 +83,16 @@ pub struct Screen {
 }
 
 impl Screen {
+  pub fn get_selected_text(
+    &self,
+    low_x: i32,
+    low_y: i32,
+    high_x: i32,
+    high_y: i32,
+  ) -> String {
+    self.grid().get_selected_text(low_x, low_y, high_x, high_y)
+  }
+
   pub(crate) fn new(size: crate::grid::Size, scrollback_len: usize) -> Self {
     let mut grid = crate::grid::Grid::new(size, scrollback_len);
     grid.allocate_rows();
@@ -132,7 +142,11 @@ impl Screen {
     self.grid().scrollback()
   }
 
-  pub(crate) fn set_scrollback(&mut self, rows: usize) {
+  pub fn scrollback_len(&self) -> usize {
+    self.grid().scrollback_len()
+  }
+
+  pub fn set_scrollback(&mut self, rows: usize) {
     self.grid_mut().set_scrollback(rows);
   }
 

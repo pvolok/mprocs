@@ -25,10 +25,10 @@ use tui_input::Input;
 
 use crate::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
-  event::AppEvent,
+  event::{AppEvent, CopyMove},
   key::Key,
-  keymap::Keymap,
-  proc::{Proc, ProcUpdate, StopSignal},
+  keymap::{Keymap, KeymapGroup},
+  proc::{CopyMode, Pos, Proc, ProcState, ProcUpdate, StopSignal},
   state::{Modal, Scope, State},
   ui_add_proc::render_add_proc,
   ui_confirm_quit::render_confirm_quit,
@@ -378,7 +378,21 @@ impl App {
       Event::Key(key) => {
         let key = Key::from(key);
         let keymap = self.keymap.clone();
-        if let Some(bound) = keymap.resolve(self.state.scope, &key) {
+        let group = match self.state.scope {
+          Scope::Procs => KeymapGroup::Procs,
+          Scope::Term | Scope::TermZoom => {
+            match self.state.get_current_proc() {
+              Some(proc) => match proc.copy_mode {
+                CopyMode::None(_) => KeymapGroup::Term,
+                CopyMode::Start(_, _) | CopyMode::Range(_, _, _) => {
+                  KeymapGroup::Copy
+                }
+              },
+              None => KeymapGroup::Term,
+            }
+          }
+        };
+        if let Some(bound) = keymap.resolve(group, &key) {
           self.handle_event(bound)
         } else {
           match self.state.scope {
@@ -605,14 +619,14 @@ impl App {
       }
       AppEvent::ScrollUp => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.scroll_up();
+          proc.scroll_half_screen_up();
           return LoopAction::Render;
         }
         LoopAction::Skip
       }
       AppEvent::ScrollDown => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.scroll_down();
+          proc.scroll_half_screen_down();
           return LoopAction::Render;
         }
         LoopAction::Skip
@@ -661,6 +675,105 @@ impl App {
           .state
           .procs
           .retain(|proc| proc.is_up() || proc.id != *id);
+        LoopAction::Render
+      }
+
+      AppEvent::CopyModeEnter => {
+        let switched = match self.state.get_current_proc_mut() {
+          Some(proc) => match &mut proc.inst {
+            ProcState::None => false,
+            ProcState::Some(inst) => {
+              let screen = inst.vt.read().unwrap().screen().clone();
+              let y = (screen.size().0 - 1) as i32;
+              proc.copy_mode = CopyMode::Start(screen, Pos { y, x: 0 });
+              true
+            }
+            ProcState::Error(_) => false,
+          },
+          None => false,
+        };
+        if switched {
+          self.state.scope = Scope::Term;
+        }
+        LoopAction::Render
+      }
+      AppEvent::CopyModeLeave => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.copy_mode = CopyMode::None(None);
+        }
+        LoopAction::Render
+      }
+      AppEvent::CopyModeMove(dir) => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          match &proc.inst {
+            ProcState::None => (),
+            ProcState::Some(inst) => {
+              let vt = inst.vt.read().unwrap();
+              let screen = vt.screen();
+              match &mut proc.copy_mode {
+                CopyMode::None(_) => (),
+                CopyMode::Start(_, pos_) | CopyMode::Range(_, _, pos_) => {
+                  match dir {
+                    CopyMove::Up => {
+                      if pos_.y > -(screen.scrollback_len() as i32) {
+                        pos_.y -= 1
+                      }
+                    }
+                    CopyMove::Right => {
+                      if pos_.x + 1 < screen.size().1 as i32 {
+                        pos_.x += 1
+                      }
+                    }
+                    CopyMove::Left => {
+                      if pos_.x > 0 {
+                        pos_.x -= 1
+                      }
+                    }
+                    CopyMove::Down => {
+                      if pos_.y + 1 < screen.size().0 as i32 {
+                        pos_.y += 1
+                      }
+                    }
+                  };
+                }
+              }
+            }
+            ProcState::Error(_) => (),
+          }
+        }
+        LoopAction::Render
+      }
+      AppEvent::CopyModeEnd => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.copy_mode = match std::mem::take(&mut proc.copy_mode) {
+            CopyMode::Start(screen, start) => {
+              CopyMode::Range(screen, start.clone(), start)
+            }
+            other => other,
+          };
+        }
+        LoopAction::Render
+      }
+      AppEvent::CopyModeCopy => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          if let CopyMode::Range(screen, start, end) = &proc.copy_mode {
+            let (low, high) = Pos::to_low_high(start, end);
+            let text = screen.get_selected_text(low.x, low.y, high.x, high.y);
+            let ctx: Result<clipboard::ClipboardContext, _> =
+              clipboard::ClipboardProvider::new();
+            match ctx {
+              Ok(mut ctx) => {
+                match clipboard::ClipboardProvider::set_contents(&mut ctx, text)
+                {
+                  Ok(()) => (),
+                  Err(err) => log::warn!("Failed to copy: {}", err),
+                }
+              }
+              Err(err) => log::warn!("Failed to get clipboard: {}", err),
+            }
+          }
+          proc.copy_mode = CopyMode::None(None);
+        }
         LoopAction::Render
       }
 

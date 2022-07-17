@@ -34,6 +34,12 @@ pub enum AppEvent {
   ScrollDown,
   ScrollUp,
 
+  CopyModeEnter,
+  CopyModeLeave,
+  CopyModeMove(CopyMove),
+  CopyModeEnd,
+  CopyModeCopy,
+
   SendKey { key: Key },
 }
 
@@ -68,6 +74,11 @@ impl AppEvent {
       }
       AppEvent::ScrollDown => "Scroll down".to_string(),
       AppEvent::ScrollUp => "Scroll up".to_string(),
+      AppEvent::CopyModeEnter => "Enter copy mode".to_string(),
+      AppEvent::CopyModeLeave => "Leave copy mode".to_string(),
+      AppEvent::CopyModeMove(_) => "Move selection cursor".to_string(),
+      AppEvent::CopyModeEnd => "Select end position".to_string(),
+      AppEvent::CopyModeCopy => "Copy selected text".to_string(),
       AppEvent::SendKey { key } => format!("Send {} key", key.to_string()),
     }
   }
@@ -79,6 +90,14 @@ fn lines_str(n: usize) -> &'static str {
   } else {
     "lines"
   }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub enum CopyMove {
+  Up,
+  Right,
+  Left,
+  Down,
 }
 
 #[cfg(test)]
