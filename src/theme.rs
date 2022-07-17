@@ -27,7 +27,7 @@ impl Theme {
     Block::default()
       .borders(Borders::ALL)
       .border_type(type_)
-      .border_style(Style::default().fg(Color::Reset))
+      .border_style(Style::default().fg(Color::Reset).bg(Color::Reset))
   }
 
   pub fn get_procs_item(&self, active: bool) -> Style {

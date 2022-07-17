@@ -36,7 +36,7 @@ pub fn render_keymap(
   let items = match state.scope {
     Scope::Procs => vec![
       AppEvent::ToggleFocus,
-      AppEvent::Quit,
+      AppEvent::QuitOrAsk,
       AppEvent::NextProc,
       AppEvent::PrevProc,
       AppEvent::StartProc,

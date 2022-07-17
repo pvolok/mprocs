@@ -125,14 +125,8 @@ impl Settings {
       AppEvent::ToggleFocus,
     );
 
-    s.keymap_add_p(
-      Key::new(KeyCode::Char('q'), KeyModifiers::NONE),
-      AppEvent::QuitOrAsk,
-    );
-    s.keymap_add_p(
-      Key::new(KeyCode::Char('Q'), KeyModifiers::SHIFT),
-      AppEvent::ForceQuit,
-    );
+    s.keymap_add_p(KeyCode::Char('q').into(), AppEvent::QuitOrAsk);
+    s.keymap_add_p(KeyCode::Char('Q').into(), AppEvent::ForceQuit);
     s.keymap_add_p(
       Key::new(KeyCode::Down, KeyModifiers::NONE),
       AppEvent::NextProc,
