@@ -99,6 +99,7 @@ impl Settings {
       obj.get(&Value::from("keymap_procs")),
     )?;
     add_keys(&mut self.keymap_term, obj.get(&Value::from("keymap_term")))?;
+    add_keys(&mut self.keymap_copy, obj.get(&Value::from("keymap_copy")))?;
 
     if let Some(hide_keymap_window) =
       obj.get(&Value::from("hide_keymap_window"))
