@@ -30,6 +30,13 @@ impl Theme {
       .border_style(Style::default().fg(Color::Reset).bg(Color::Reset))
   }
 
+  pub fn copy_mode_label(&self) -> Style {
+    Style::default()
+      .fg(Color::Black)
+      .bg(Color::Yellow)
+      .add_modifier(Modifier::BOLD)
+  }
+
   pub fn get_procs_item(&self, active: bool) -> Style {
     if active {
       self.procs_item_active

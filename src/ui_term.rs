@@ -4,7 +4,7 @@ use tui::{
   backend::CrosstermBackend,
   layout::{Margin, Rect},
   style::{Color, Modifier, Style},
-  text::{Span, Text},
+  text::{Span, Spans, Text},
   widgets::{Clear, Paragraph, Widget, Wrap},
   Frame,
 };
@@ -30,9 +30,17 @@ pub fn render_term(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
   };
 
   if let Some(proc) = state.get_current_proc() {
-    let block = theme
-      .pane(active)
-      .title(Span::styled("Terminal", theme.pane_title(active)));
+    let mut title = Vec::with_capacity(4);
+    title.push(Span::styled("Terminal", theme.pane_title(active)));
+    match proc.copy_mode {
+      CopyMode::None(_) => (),
+      CopyMode::Start(_, _) | CopyMode::Range(_, _, _) => {
+        title.push(Span::raw(" "));
+        title.push(Span::styled("COPY MODE", theme.copy_mode_label()));
+      }
+    };
+
+    let block = theme.pane(active).title(Spans::from(title));
     frame.render_widget(Clear, area);
     frame.render_widget(block, area);
 
