@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add copy mode
 - Add quit confirmation dialog
 
 ## 0.6.0 - 2022-07-04
