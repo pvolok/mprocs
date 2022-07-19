@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{event::AppEvent, key::Key, state::Scope};
+use crate::{event::AppEvent, key::Key};
 
 pub struct Keymap {
   pub procs: HashMap<Key, AppEvent>,
@@ -11,6 +11,7 @@ pub struct Keymap {
   pub rev_copy: HashMap<AppEvent, Key>,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum KeymapGroup {
   Procs,
   Term,
@@ -60,10 +61,15 @@ impl Keymap {
     map.get(key)
   }
 
-  pub fn resolve_key(&self, scope: Scope, event: &AppEvent) -> Option<&Key> {
-    let rev_map = match scope {
-      Scope::Procs => &self.rev_procs,
-      Scope::Term | Scope::TermZoom => &self.rev_term,
+  pub fn resolve_key(
+    &self,
+    group: KeymapGroup,
+    event: &AppEvent,
+  ) -> Option<&Key> {
+    let rev_map = match group {
+      KeymapGroup::Procs => &self.rev_procs,
+      KeymapGroup::Term => &self.rev_term,
+      KeymapGroup::Copy => &self.rev_copy,
     };
     rev_map.get(event)
   }

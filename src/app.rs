@@ -27,7 +27,7 @@ use crate::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
   event::{AppEvent, CopyMove},
   key::Key,
-  keymap::{Keymap, KeymapGroup},
+  keymap::Keymap,
   proc::{CopyMode, Pos, Proc, ProcState, ProcUpdate, StopSignal},
   state::{Modal, Scope, State},
   ui_add_proc::render_add_proc,
@@ -378,20 +378,7 @@ impl App {
       Event::Key(key) => {
         let key = Key::from(key);
         let keymap = self.keymap.clone();
-        let group = match self.state.scope {
-          Scope::Procs => KeymapGroup::Procs,
-          Scope::Term | Scope::TermZoom => {
-            match self.state.get_current_proc() {
-              Some(proc) => match proc.copy_mode {
-                CopyMode::None(_) => KeymapGroup::Term,
-                CopyMode::Start(_, _) | CopyMode::Range(_, _, _) => {
-                  KeymapGroup::Copy
-                }
-              },
-              None => KeymapGroup::Term,
-            }
-          }
-        };
+        let group = self.state.get_keymap_group();
         if let Some(bound) = keymap.resolve(group, &key) {
           self.handle_event(bound)
         } else {

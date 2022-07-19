@@ -12,8 +12,8 @@ use tui::{
 use crate::{
   encode_term::print_key,
   event::AppEvent,
-  keymap::Keymap,
-  state::{Scope, State},
+  keymap::{Keymap, KeymapGroup},
+  state::State,
   theme::Theme,
 };
 
@@ -33,8 +33,9 @@ pub fn render_keymap(
   frame.render_widget(Clear, area);
   frame.render_widget(block, area);
 
-  let items = match state.scope {
-    Scope::Procs => vec![
+  let group = state.get_keymap_group();
+  let items = match group {
+    KeymapGroup::Procs => vec![
       AppEvent::ToggleFocus,
       AppEvent::QuitOrAsk,
       AppEvent::NextProc,
@@ -43,14 +44,16 @@ pub fn render_keymap(
       AppEvent::TermProc,
       AppEvent::RestartProc,
     ],
-    Scope::Term => {
-      vec![AppEvent::ToggleFocus]
-    }
-    Scope::TermZoom => Vec::new(),
+    KeymapGroup::Term => vec![AppEvent::ToggleFocus],
+    KeymapGroup::Copy => vec![
+      AppEvent::CopyModeEnd,
+      AppEvent::CopyModeCopy,
+      AppEvent::CopyModeLeave,
+    ],
   };
   let line = items
     .into_iter()
-    .filter_map(|event| Some((keymap.resolve_key(state.scope, &event)?, event)))
+    .filter_map(|event| Some((keymap.resolve_key(group, &event)?, event)))
     .map(|(key, event)| {
       vec![
         Span::raw(" <"),

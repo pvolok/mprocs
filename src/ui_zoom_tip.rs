@@ -5,7 +5,11 @@ use tui::{
   Frame,
 };
 
-use crate::{event::AppEvent, keymap::Keymap, state::Scope, theme::Theme};
+use crate::{
+  event::AppEvent,
+  keymap::{Keymap, KeymapGroup},
+  theme::Theme,
+};
 
 type Backend = CrosstermBackend<io::Stdout>;
 
@@ -23,7 +27,7 @@ pub fn render_zoom_tip(
   ];
   let key = events
     .into_iter()
-    .find_map(|event| keymap.resolve_key(Scope::TermZoom, &event));
+    .find_map(|event| keymap.resolve_key(KeymapGroup::Term, &event));
 
   let line = if let Some(key) = key {
     Text::from(format!(" To exit zoom mode press {}", key.to_string()))
