@@ -94,6 +94,16 @@ impl<'a> Val<'a> {
     })
   }
 
+  pub fn as_usize(&self) -> anyhow::Result<usize> {
+    self
+      .0
+      .as_u64()
+      .ok_or_else(|| {
+        anyhow::format_err!("Expected int at {}", self.1.to_string())
+      })
+      .map(|x| x as usize)
+  }
+
   pub fn as_str(&self) -> anyhow::Result<&str> {
     self.0.as_str().ok_or_else(|| {
       anyhow::format_err!("Expected string at {}", self.1.to_string())

@@ -18,6 +18,7 @@ pub struct Settings {
   keymap_term: IndexMap<Key, AppEvent>,
   keymap_copy: IndexMap<Key, AppEvent>,
   pub hide_keymap_window: bool,
+  pub mouse_scroll_speed: usize,
 }
 
 impl Default for Settings {
@@ -27,6 +28,7 @@ impl Default for Settings {
       keymap_term: Default::default(),
       keymap_copy: Default::default(),
       hide_keymap_window: false,
+      mouse_scroll_speed: 5,
     };
     settings.add_defaults();
     settings
@@ -105,6 +107,12 @@ impl Settings {
       obj.get(&Value::from("hide_keymap_window"))
     {
       self.hide_keymap_window = hide_keymap_window.as_bool()?;
+    }
+
+    if let Some(mouse_scroll_speed) =
+      obj.get(&Value::from("mouse_scroll_speed"))
+    {
+      self.mouse_scroll_speed = mouse_scroll_speed.as_usize()?;
     }
 
     Ok(())

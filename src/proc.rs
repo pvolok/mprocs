@@ -14,7 +14,7 @@ use tokio::task::spawn_blocking;
 use tui::layout::Rect;
 use vt100::MouseProtocolMode;
 
-use crate::config::ProcConfig;
+use crate::config::{Config, ProcConfig};
 use crate::encode_term::{encode_key, encode_mouse_event, KeyCodeEncodeModes};
 use crate::key::Key;
 
@@ -395,7 +395,12 @@ impl Proc {
     self.scroll_down_lines(self.size.height as usize / 2);
   }
 
-  pub fn handle_mouse(&mut self, event: MouseEvent, term_area: Rect) {
+  pub fn handle_mouse(
+    &mut self,
+    event: MouseEvent,
+    term_area: Rect,
+    config: &Config,
+  ) {
     let copy_mode = match self.copy_mode {
       CopyMode::None(_) => false,
       CopyMode::Start(_, _) | CopyMode::Range(_, _, _) => true,
@@ -445,13 +450,13 @@ impl Proc {
         MouseEventKind::ScrollDown => match &mut self.copy_mode {
           CopyMode::None(_) => unreachable!(),
           CopyMode::Start(screen, _) | CopyMode::Range(screen, _, _) => {
-            Self::scroll_screen_down(screen, 5);
+            Self::scroll_screen_down(screen, config.mouse_scroll_speed);
           }
         },
         MouseEventKind::ScrollUp => match &mut self.copy_mode {
           CopyMode::None(_) => unreachable!(),
           CopyMode::Start(screen, _) | CopyMode::Range(screen, _, _) => {
-            Self::scroll_screen_up(screen, 5);
+            Self::scroll_screen_up(screen, config.mouse_scroll_speed);
           }
         },
       }
@@ -493,10 +498,16 @@ impl Proc {
             MouseEventKind::Drag(_) => (),
             MouseEventKind::Moved => (),
             MouseEventKind::ScrollDown => {
-              Self::scroll_vt_down(&mut inst.vt.write().unwrap(), 5);
+              Self::scroll_vt_down(
+                &mut inst.vt.write().unwrap(),
+                config.mouse_scroll_speed,
+              );
             }
             MouseEventKind::ScrollUp => {
-              Self::scroll_vt_up(&mut inst.vt.write().unwrap(), 5);
+              Self::scroll_vt_up(
+                &mut inst.vt.write().unwrap(),
+                config.mouse_scroll_speed,
+              );
             }
           },
           MouseProtocolMode::Press

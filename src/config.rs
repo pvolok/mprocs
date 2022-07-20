@@ -20,6 +20,7 @@ pub struct Config {
   pub procs: Vec<ProcConfig>,
   pub server: Option<ServerConfig>,
   pub hide_keymap_window: bool,
+  pub mouse_scroll_speed: usize,
 }
 
 impl Config {
@@ -57,6 +58,7 @@ impl Config {
       procs,
       server,
       hide_keymap_window: settings.hide_keymap_window,
+      mouse_scroll_speed: settings.mouse_scroll_speed,
     };
 
     Ok(config)
@@ -67,6 +69,7 @@ impl Config {
       procs: Vec::new(),
       server: None,
       hide_keymap_window: settings.hide_keymap_window,
+      mouse_scroll_speed: settings.mouse_scroll_speed,
     }
   }
 }

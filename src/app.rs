@@ -404,7 +404,7 @@ impl App {
             _ => (),
           }
           if let Some(proc) = self.state.get_current_proc_mut() {
-            proc.handle_mouse(mev, layout.term_area());
+            proc.handle_mouse(mev, layout.term_area(), &self.config);
           }
         } else if procs_check_hit(layout.procs, mev.column, mev.row) {
           match (self.state.scope, mev.kind) {
