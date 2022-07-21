@@ -690,7 +690,7 @@ impl App {
         }
         LoopAction::Render
       }
-      AppEvent::CopyModeMove(dir) => {
+      AppEvent::CopyModeMove { dir } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           match &proc.inst {
             ProcState::None => (),

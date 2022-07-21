@@ -1,4 +1,4 @@
-use std::{fs::File, io::BufReader};
+use std::{fs::File, io::BufReader, path::PathBuf};
 
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -37,35 +37,44 @@ impl Default for Settings {
 
 impl Settings {
   pub fn merge_from_xdg(&mut self) -> Result<()> {
-    let path = self.get_xdg_config_path()?;
-    match File::open(path) {
-      Ok(file) => {
-        let reader = BufReader::new(file);
-        let settings_value: Value = serde_yaml::from_reader(reader)?;
-        let settings_val = Val::new(&settings_value)?;
-        self.merge_value(settings_val)?;
+    if let Some(path) = self.get_xdg_config_path() {
+      match File::open(path) {
+        Ok(file) => {
+          let reader = BufReader::new(file);
+          let settings_value: Value = serde_yaml::from_reader(reader)?;
+          let settings_val = Val::new(&settings_value)?;
+          self.merge_value(settings_val)?;
+        }
+        Err(err) => match err.kind() {
+          std::io::ErrorKind::NotFound => (),
+          _ => return Err(err.into()),
+        },
       }
-      Err(err) => match err.kind() {
-        std::io::ErrorKind::NotFound => (),
-        _ => return Err(err.into()),
-      },
     }
 
     Ok(())
   }
 
+  fn get_xdg_config_path(&self) -> Option<std::path::PathBuf> {
+    if let Ok(path) = std::env::var("XDG_CONFIG_HOME") {
+      Some(PathBuf::from(path))
+    } else {
+      self.get_xdg_config_path_default()
+    }
+  }
+
   #[cfg(windows)]
-  fn get_xdg_config_path(&self) -> Result<std::path::PathBuf> {
-    let mut path = std::path::PathBuf::from(std::env::var("LOCALAPPDATA")?);
+  fn get_xdg_config_path_default(&self) -> Option<PathBuf> {
+    let mut path = PathBuf::from(std::env::var("APPDATA")?);
     path.push("mprocs/mprocs.yaml");
-    Ok(path)
+    Some(path)
   }
 
   #[cfg(not(windows))]
-  fn get_xdg_config_path(&self) -> Result<std::path::PathBuf> {
-    let xdg_dirs = xdg::BaseDirectories::with_prefix("mprocs")?;
-    let path = xdg_dirs.get_config_file("mprocs.yaml");
-    Ok(path)
+  fn get_xdg_config_path_default(&self) -> Option<PathBuf> {
+    let mut path = PathBuf::from(std::env::var_os("HOME")?);
+    path.push(".config/mprocs/mprocs.yaml");
+    Some(path)
   }
 
   pub fn merge_value(&mut self, val: Val) -> Result<()> {
@@ -229,16 +238,31 @@ impl Settings {
     s.keymap_add_c(KeyCode::Char('v').into(), AppEvent::CopyModeEnd);
     s.keymap_add_c(KeyCode::Char('c').into(), AppEvent::CopyModeCopy);
     for code in [KeyCode::Up, KeyCode::Char('k')] {
-      s.keymap_add_c(code.into(), AppEvent::CopyModeMove(CopyMove::Up));
+      s.keymap_add_c(code.into(), AppEvent::CopyModeMove { dir: CopyMove::Up });
     }
     for code in [KeyCode::Right, KeyCode::Char('l')] {
-      s.keymap_add_c(code.into(), AppEvent::CopyModeMove(CopyMove::Right));
+      s.keymap_add_c(
+        code.into(),
+        AppEvent::CopyModeMove {
+          dir: CopyMove::Right,
+        },
+      );
     }
     for code in [KeyCode::Down, KeyCode::Char('j')] {
-      s.keymap_add_c(code.into(), AppEvent::CopyModeMove(CopyMove::Down));
+      s.keymap_add_c(
+        code.into(),
+        AppEvent::CopyModeMove {
+          dir: CopyMove::Down,
+        },
+      );
     }
     for code in [KeyCode::Left, KeyCode::Char('h')] {
-      s.keymap_add_c(code.into(), AppEvent::CopyModeMove(CopyMove::Left));
+      s.keymap_add_c(
+        code.into(),
+        AppEvent::CopyModeMove {
+          dir: CopyMove::Left,
+        },
+      );
     }
   }
 

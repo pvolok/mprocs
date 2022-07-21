@@ -126,7 +126,14 @@ procs:
 
 ### Config
 
-- **procs**: _object_ - Processes to run.
+There are two kinds of configs: global and local. _Global_ config is loaded
+from `~/.config/mprocs/mprocs.yaml` (or
+`C:\Users\Alice\AppData\Roaming\mprocs\mprocs.yaml` on Windows). _Local_ config
+is loaded from `mprocs.yaml` from current directory (or set via cli argument:
+`mprocs --config ./cfg/mprocs.yaml`). Settings in the _local_ config override
+settings the _global_.
+
+- **procs**: _object_ - Processes to run. Only allowed in local config.
   - **shell**: _string_ - Shell command to run (exactly one of **shell** or
     **cmd** must be provided).
   - **cmd**: _array<string>_ - Array of command and args to run (exactly one of
@@ -143,11 +150,22 @@ procs:
   - **stop**: _"SIGINT"|"SIGTERM"|"SIGKILL"|{send-keys:
     array<key>}|"hard-kill"_ -
     A way to stop a process (using `x` key or when quitting mprocs).
+- **hide_keymap_window**: _bool_ - Hide the pane at the bottom of the screen
+  showing key bindings.
+- **mouse_scroll_speed**: _integer_ - Number of lines to scrollper one mouse
+  scroll.
+- **keymap_procs**: _object_ - Key bindings for process list. See
+  [Keymap](#keymap).
+- **keymap_term**: _object_ - Key bindings for terminal window. See
+  [Keymap](#keymap).
+- **keymap_copy**: _object_ - Key bindings for copy mode. See
+  [Keymap](#keymap).
 
 #### Keymap
 
-Key bindings can be overridden globally in file `~/.config/mprocs/mprocs.yaml`
-or in a local config (`mprocs.yaml` in current directory by default). Keymaps are separate for process list and terminal windows.
+Default key bindings can be overridden in config using _keymap_procs_,
+_keymap_term_, or _keymap_copy_ fields. Available commands are documented in
+the [Remote control](#remote-control) section.
 
 There are three keymap levels:
 
@@ -157,7 +175,7 @@ There are three keymap levels:
 
 Lower levers override bindings from previous levels. Key bindings from previous
 levels can be cleared by specifying `reset: true` field at the same level as
-keys:
+keys.
 
 ```yaml
 keymap_procs: # keymap when process list is focused
@@ -175,8 +193,9 @@ keymap_term: # keymap when terminal is focused
 
 #### `$select` operator
 
-You can define different values depending on the current operating system.
-To provide different values based on current OS define an object with:
+You can define different values depending on the current operating system. Any
+value in config can be wrapped with a _$select_ operator. To provide different
+values based on current OS define an object with:
 
 - First field `$select: os`
 - Fields defining values for different OSes: `macos: value`. Possible
@@ -237,10 +256,26 @@ Process list focused:
 - `C-e` - Scroll output down by 3 lines
 - `C-y` - Scroll output up by 3 lines
 - `z` - Zoom into terminal window
+- `v` - Enter copy mode
 
 Process output focused:
 
 - `C-a` - Focus processes pane
+
+Copy mode:
+
+- `v` - Start selecting end point
+- `c` - Copy selected text
+- `Esc` - Leave copy mode
+- `C-a` - Focus processes pane
+- `C-d` or `page down` - Scroll output down
+- `C-u` or `page up` - Scroll output up
+- `C-e` - Scroll output down by 3 lines
+- `C-y` - Scroll output up by 3 lines
+- `h` or `↑` - Move cursor up
+- `l` or `→` - Move cursor right
+- `j` or `↓` - Move cursor down
+- `h` or `←` - Move cursor left
 
 ### Remote control
 
@@ -275,6 +310,13 @@ Commands are encoded as yaml. Available commands:
 - `{c: scroll-up}`
 - `{c: scrol-down-lines, n: <COUNT>}`
 - `{c: scroll-up-lines, n: <COUNT>}`
+- `{c: copy-mode-enter}` - Enter copy mode
+- `{c: copy-mode-leave}` - Leave copy mode
+- `{c: copy-mode-move, dir: <DIRECTION> }` - Move starting or ending position
+  of the selection. Available directions: `up/right/down/left`.
+- `{c: copy-mode-end}` - Start selecting end point of the selection.
+- `{c: copy-mode-copy}` - Copy selected text to the clipboard and leave copy
+  mode.
 - `{c: send-key, key: "<KEY>"}` - Send key to current process. Key examples:
   `<C-a>`, `<Enter>`
 - `{c: batch, cmds: [{c: focus-procs}, …]}` - Send multiple commands

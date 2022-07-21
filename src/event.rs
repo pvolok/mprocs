@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 
 use crate::key::Key;
@@ -36,7 +38,7 @@ pub enum AppEvent {
 
   CopyModeEnter,
   CopyModeLeave,
-  CopyModeMove(CopyMove),
+  CopyModeMove { dir: CopyMove },
   CopyModeEnd,
   CopyModeCopy,
 
@@ -76,7 +78,9 @@ impl AppEvent {
       AppEvent::ScrollUp => "Scroll up".to_string(),
       AppEvent::CopyModeEnter => "Enter copy mode".to_string(),
       AppEvent::CopyModeLeave => "Leave copy mode".to_string(),
-      AppEvent::CopyModeMove(_) => "Move selection cursor".to_string(),
+      AppEvent::CopyModeMove { dir } => {
+        format!("Move selection cursor {}", dir)
+      }
       AppEvent::CopyModeEnd => "Select end position".to_string(),
       AppEvent::CopyModeCopy => "Copy selected text".to_string(),
       AppEvent::SendKey { key } => format!("Send {} key", key.to_string()),
@@ -98,6 +102,18 @@ pub enum CopyMove {
   Right,
   Left,
   Down,
+}
+
+impl Display for CopyMove {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let str = match self {
+      CopyMove::Up => "up",
+      CopyMove::Right => "right",
+      CopyMove::Left => "left",
+      CopyMove::Down => "down",
+    };
+    f.write_str(str)
+  }
 }
 
 #[cfg(test)]
