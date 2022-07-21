@@ -19,6 +19,7 @@ pub struct Settings {
   keymap_copy: IndexMap<Key, AppEvent>,
   pub hide_keymap_window: bool,
   pub mouse_scroll_speed: usize,
+  pub proc_list_width: usize,
 }
 
 impl Default for Settings {
@@ -29,6 +30,7 @@ impl Default for Settings {
       keymap_copy: Default::default(),
       hide_keymap_window: false,
       mouse_scroll_speed: 5,
+      proc_list_width: 30,
     };
     settings.add_defaults();
     settings
@@ -122,6 +124,10 @@ impl Settings {
       obj.get(&Value::from("mouse_scroll_speed"))
     {
       self.mouse_scroll_speed = mouse_scroll_speed.as_usize()?;
+    }
+
+    if let Some(proc_list_width) = obj.get(&Value::from("proc_list_width")) {
+      self.proc_list_width = proc_list_width.as_usize()?;
     }
 
     Ok(())

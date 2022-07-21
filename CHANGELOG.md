@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Add copy mode
+- Add `procs_list_width` to settings
 - Add mouse scroll config
 - Add quit confirmation dialog
 

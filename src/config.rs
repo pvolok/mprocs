@@ -21,6 +21,7 @@ pub struct Config {
   pub server: Option<ServerConfig>,
   pub hide_keymap_window: bool,
   pub mouse_scroll_speed: usize,
+  pub proc_list_width: usize,
 }
 
 impl Config {
@@ -59,6 +60,7 @@ impl Config {
       server,
       hide_keymap_window: settings.hide_keymap_window,
       mouse_scroll_speed: settings.mouse_scroll_speed,
+      proc_list_width: settings.proc_list_width,
     };
 
     Ok(config)
@@ -70,6 +72,7 @@ impl Config {
       server: None,
       hide_keymap_window: settings.hide_keymap_window,
       mouse_scroll_speed: settings.mouse_scroll_speed,
+      proc_list_width: settings.proc_list_width,
     }
   }
 }

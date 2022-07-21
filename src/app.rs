@@ -822,7 +822,11 @@ impl AppLayout {
     } else {
       3
     };
-    let procs_w = if zoom { 0 } else { 30 };
+    let procs_w = if zoom {
+      0
+    } else {
+      config.proc_list_width as u16
+    };
     let zoom_banner_h = if zoom { 1 } else { 0 };
     let top_bot = Layout::default()
       .direction(Direction::Vertical)

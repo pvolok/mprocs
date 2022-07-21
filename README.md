@@ -154,6 +154,7 @@ settings the _global_.
   showing key bindings.
 - **mouse_scroll_speed**: _integer_ - Number of lines to scrollper one mouse
   scroll.
+- **proc_list_width**: _integer_ - Process list window width.
 - **keymap_procs**: _object_ - Key bindings for process list. See
   [Keymap](#keymap).
 - **keymap_term**: _object_ - Key bindings for terminal window. See
