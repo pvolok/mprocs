@@ -67,7 +67,7 @@ impl Settings {
 
   #[cfg(windows)]
   fn get_xdg_config_path_default(&self) -> Option<PathBuf> {
-    let mut path = PathBuf::from(std::env::var("APPDATA")?);
+    let mut path = PathBuf::from(std::env::var_os("APPDATA")?);
     path.push("mprocs/mprocs.yaml");
     Some(path)
   }
