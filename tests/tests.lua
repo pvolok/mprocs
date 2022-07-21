@@ -31,7 +31,7 @@ test("next proc", function()
   proc:wait_text("hello !")
 
   proc:send_key("<C-a>")
-  proc:send_str("q")
+  proc:send_str("qy")
   proc:wait()
 end)
 
