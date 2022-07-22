@@ -36,8 +36,8 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0.44"
 assert_matches = "1.5.0"
+base64 = "0.13.0"
 clap = { version = "3.1.8", features = ["cargo"] }
-clipboard = "0.5.0"
 crossterm = { version = "0.23.2", features = ["event-stream"] }
 dunce = "1.0.2"
 # Excluded "textfilter" feature that depends on regex (~0.7 MiB).

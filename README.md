@@ -334,3 +334,12 @@ server and a client, which allows the client to detach and reattach later,
 keeping the processes running. _mprocs_ is meant more for finite lifetime
 processes that you keep re-running, but when _mprocs_ ends, so do the processes
 it is running within its windows.
+
+### Copying doesn't work in tmux
+
+Tmux doesn't have escape sequences for copying enabled by default. To enable it
+add the following to `~/.tmux.conf`:
+
+```
+set -g set-clipboard on
+```

@@ -746,18 +746,11 @@ impl App {
           if let CopyMode::Range(screen, start, end) = &proc.copy_mode {
             let (low, high) = Pos::to_low_high(start, end);
             let text = screen.get_selected_text(low.x, low.y, high.x, high.y);
-            let ctx: Result<clipboard::ClipboardContext, _> =
-              clipboard::ClipboardProvider::new();
-            match ctx {
-              Ok(mut ctx) => {
-                match clipboard::ClipboardProvider::set_contents(&mut ctx, text)
-                {
-                  Ok(()) => (),
-                  Err(err) => log::warn!("Failed to copy: {}", err),
-                }
-              }
-              Err(err) => log::warn!("Failed to get clipboard: {}", err),
-            }
+
+            let mut stdout = std::io::stdout().lock();
+            use std::io::Write;
+            let _r =
+              write!(&mut stdout, "\x1b]52;;{}\x07", base64::encode(&text));
           }
           proc.copy_mode = CopyMode::None(None);
         }
