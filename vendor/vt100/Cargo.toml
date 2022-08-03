@@ -1,12 +1,11 @@
 [package]
-name = "vt100"
-version = "0.15.1"
-authors = ["Jesse Luehrs <doy@tozt.net>"]
+name = "mprocs-vt100"
+version = "0.1.0"
 edition = "2021"
 
-description = "Library for parsing terminal data"
-homepage = "https://github.com/doy/vt100-rust"
-repository = "https://github.com/doy/vt100-rust"
+description = "Fork of vt100 for mprocs"
+homepage = "https://github.com/pvolok/mprocs"
+repository = "https://github.com/pvolok/mprocs"
 readme = "README.md"
 keywords = ["terminal", "vt100"]
 categories = ["command-line-interface", "encoding"]

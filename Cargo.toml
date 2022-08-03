@@ -1,25 +1,3 @@
-[package]
-name = "mprocs"
-version = "0.6.1"
-description = "TUI for running multiple processes"
-repository = "https://github.com/pvolok/mprocs"
-authors = ["Pavel Volokitin <pavelvolokitin@gmail.com>"]
-license = "MIT"
-edition = "2021"
-categories = [
-  "command-line-interface",
-  "command-line-utilities",
-  "development-tools"
-]
-keywords = [
-  "cli",
-  "terminal",
-  "tui",
-  "utility"
-]
-
-include = ["/src", "/vendor"]
-
 [profile.release]
 strip = "symbols"
 opt-level = "z"   # optimize for binary size
@@ -27,39 +5,8 @@ lto = true        # link time optimization
 panic = "abort"
 codegen-units = 1
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[[bin]]
-name = "mprocs"
-path = "src/main.rs"
-
-[dependencies]
-anyhow = "1.0.44"
-assert_matches = "1.5.0"
-base64 = "0.13.0"
-clap = { version = "3.1.8", features = ["cargo"] }
-crossterm = { version = "0.23.2", features = ["event-stream"] }
-dunce = "1.0.2"
-# Excluded "textfilter" feature that depends on regex (~0.7 MiB).
-flexi_logger = { version = "0.22.3", default-features = false, features = [
-  "colors",
-] }
-futures = { version = "0.3.21" }
-indexmap = { version = "1.8.0", features = ["serde"] }
-libc = "0.2.120"
-log = "0.4.14"
-phf = { version = "0.10.1", features = ["macros"] }
-portable-pty = "0.7.0"
-serde = { version = "1.0.136", features = ["derive"] }
-serde_yaml = "0.8.24"
-tokio = { version = "1", features = ["full"] }
-triggered = "0.1.2"
-tui = "0.18.0"
-tui-input = "0.4.0"
-unicode-segmentation = "1.9.0"
-unicode-width = "0.1.9"
-vt100 = "0.15.1"
-xdg = "2.4.1"
-
-[patch.crates-io]
-vt100 = { path = "vendor/vt100" }
+[workspace]
+members = [
+  "src",
+  "vendor/vt100",
+]
