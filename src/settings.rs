@@ -70,7 +70,7 @@ impl Settings {
 
   #[cfg(windows)]
   fn get_xdg_config_dir(&self) -> Option<PathBuf> {
-    let mut path = PathBuf::from(std::env::var_os("APPDATA")?);
+    let path = PathBuf::from(std::env::var_os("APPDATA")?);
     Some(path)
   }
 
