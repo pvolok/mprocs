@@ -58,24 +58,30 @@ impl Settings {
   }
 
   fn get_xdg_config_path(&self) -> Option<std::path::PathBuf> {
-    if let Ok(path) = std::env::var("XDG_CONFIG_HOME") {
-      Some(PathBuf::from(path))
+    let mut buf = if let Ok(path) = std::env::var("XDG_CONFIG_HOME") {
+      PathBuf::from(path)
     } else {
-      self.get_xdg_config_path_default()
-    }
+      self.get_xdg_config_dir()?
+    };
+    buf.push("mprocs/mprocs.yaml");
+
+    Some(buf)
   }
 
   #[cfg(windows)]
-  fn get_xdg_config_path_default(&self) -> Option<PathBuf> {
+  fn get_xdg_config_dir(&self) -> Option<PathBuf> {
     let mut path = PathBuf::from(std::env::var_os("APPDATA")?);
-    path.push("mprocs/mprocs.yaml");
     Some(path)
   }
 
   #[cfg(not(windows))]
-  fn get_xdg_config_path_default(&self) -> Option<PathBuf> {
-    let mut path = PathBuf::from(std::env::var_os("HOME")?);
-    path.push(".config/mprocs/mprocs.yaml");
+  fn get_xdg_config_dir(&self) -> Option<PathBuf> {
+    use std::ffi::OsString;
+
+    let mut path = PathBuf::from(
+      std::env::var_os("HOME").unwrap_or_else(|| OsString::from("/")),
+    );
+    path.push(".config");
     Some(path)
   }
 
