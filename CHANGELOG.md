@@ -1,5 +1,11 @@
 ## Unreleased
 
+## 0.6.2 - 2022-08-09
+
+- Fix global mprocs.yaml path when XDG_CONFIG_HOME env var is defined
+
+## 0.6.1 - 2022-07-22
+
 - Add copy mode
 - Add `procs_list_width` to settings
 - Add mouse scroll config
