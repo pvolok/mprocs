@@ -12,6 +12,9 @@ categories = ["command-line-interface", "encoding"]
 license = "MIT"
 include = ["src/**/*", "LICENSE", "README.md", "CHANGELOG.md"]
 
+[lib]
+name = "vt100"
+
 [dependencies]
 itoa = "1.0.1"
 log = "0.4.14"
