@@ -272,18 +272,7 @@ impl From<&ProcConfig> for CommandBuilder {
         cmd.args(tail);
         cmd
       }
-      CmdConfig::Shell { shell } => {
-        if cfg!(target_os = "windows") {
-          let mut cmd = CommandBuilder::new("cmd");
-          cmd.args(["/C", &shell]);
-          cmd
-        } else {
-          let mut cmd = CommandBuilder::new("sh");
-          cmd.arg("-c");
-          cmd.arg(&shell);
-          cmd
-        }
-      }
+      CmdConfig::Shell { shell } => CommandBuilder::from_shell(shell),
     };
 
     if let Some(env) = &cfg.env {

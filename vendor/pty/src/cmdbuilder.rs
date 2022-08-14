@@ -159,6 +159,7 @@ fn get_base_env() -> BTreeMap<OsString, EnvEntry> {
 #[cfg_attr(feature = "serde_support", derive(Serialize, Deserialize))]
 pub struct CommandBuilder {
   args: Vec<OsString>,
+  raw_arg: Option<OsString>,
   envs: BTreeMap<OsString, EnvEntry>,
   cwd: Option<OsString>,
   #[cfg(unix)]
@@ -172,6 +173,7 @@ impl CommandBuilder {
   pub fn new<S: AsRef<OsStr>>(program: S) -> Self {
     Self {
       args: vec![program.as_ref().to_owned()],
+      raw_arg: Default::default(),
       envs: get_base_env(),
       cwd: None,
       #[cfg(unix)]
@@ -184,12 +186,31 @@ impl CommandBuilder {
   pub fn from_argv(args: Vec<OsString>) -> Self {
     Self {
       args,
+      raw_arg: Default::default(),
       envs: get_base_env(),
       cwd: None,
       #[cfg(unix)]
       umask: None,
       controlling_tty: true,
     }
+  }
+
+  #[cfg(windows)]
+  pub fn from_shell(shell: &str) -> Self {
+    let mut cmd =
+      Self::from_argv(vec!["cmd.exe".into(), "/S".into(), "/C".into()]);
+    cmd.raw_arg = Some(shell.into());
+
+    cmd
+  }
+
+  #[cfg(not(windows))]
+  pub fn from_shell(shell: &str) -> Self {
+    portable_pty::CommandBuilder::from_argv(vec![
+      "/bin/sh".into(),
+      "-c".into(),
+      shell.into(),
+    ])
   }
 
   /// Set whether we should set the pty as the controlling terminal.
@@ -211,6 +232,7 @@ impl CommandBuilder {
   pub fn new_default_prog() -> Self {
     Self {
       args: vec![],
+      raw_arg: Default::default(),
       envs: get_base_env(),
       cwd: None,
       #[cfg(unix)]
@@ -631,6 +653,10 @@ impl CommandBuilder {
         arg
       );
       Self::append_quoted(arg, &mut cmdline);
+    }
+    if let Some(raw_arg) = &self.raw_arg {
+      cmdline.push(' ' as u16);
+      cmdline.append(&mut raw_arg.encode_wide().collect::<Vec<_>>());
     }
     // Ensure that the command line is nul terminated too!
     cmdline.push(0);
