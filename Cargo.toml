@@ -8,5 +8,6 @@ codegen-units = 1
 [workspace]
 members = [
   "src",
+  "vendor/pty",
   "vendor/vt100",
 ]
