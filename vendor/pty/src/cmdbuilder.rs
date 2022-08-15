@@ -206,7 +206,7 @@ impl CommandBuilder {
 
   #[cfg(not(windows))]
   pub fn from_shell(shell: &str) -> Self {
-    portable_pty::CommandBuilder::from_argv(vec![
+    crate::CommandBuilder::from_argv(vec![
       "/bin/sh".into(),
       "-c".into(),
       shell.into(),
