@@ -1,4 +1,5 @@
 mod app;
+mod clipboard;
 mod config;
 mod ctl;
 mod encode_term;

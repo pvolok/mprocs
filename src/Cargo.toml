@@ -31,6 +31,7 @@ anyhow = "1.0.44"
 assert_matches = "1.5.0"
 base64 = "0.13.0"
 clap = { version = "3.1.8", features = ["cargo"] }
+clipboard-win = "4.4.2"
 crossterm = { version = "0.23.2", features = ["event-stream"] }
 dunce = "1.0.2"
 # Excluded "textfilter" feature that depends on regex (~0.7 MiB).
@@ -39,6 +40,7 @@ flexi_logger = { version = "0.22.3", default-features = false, features = [
 ] }
 futures = { version = "0.3.21" }
 indexmap = { version = "1.8.0", features = ["serde"] }
+lazy_static = "1.4.0"
 libc = "0.2.120"
 log = "0.4.14"
 phf = { version = "0.10.1", features = ["macros"] }
@@ -52,4 +54,5 @@ tui-input = "0.4.0"
 unicode-segmentation = "1.9.0"
 unicode-width = "0.1.9"
 vt100 = { package = "mprocs-vt100", path = "../vendor/vt100", version = "0.1.0" }
+which = "4.2.5"
 xdg = "2.4.1"

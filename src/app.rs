@@ -24,6 +24,7 @@ use tui::{
 use tui_input::Input;
 
 use crate::{
+  clipboard::copy,
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
   event::{AppEvent, CopyMove},
   key::Key,
@@ -747,10 +748,7 @@ impl App {
             let (low, high) = Pos::to_low_high(start, end);
             let text = screen.get_selected_text(low.x, low.y, high.x, high.y);
 
-            let mut stdout = std::io::stdout().lock();
-            use std::io::Write;
-            let _r =
-              write!(&mut stdout, "\x1b]52;;{}\x07", base64::encode(&text));
+            copy(text.as_str());
           }
           proc.copy_mode = CopyMode::None(None);
         }
