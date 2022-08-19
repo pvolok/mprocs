@@ -38,11 +38,11 @@ fn detect_copy_provider() -> Provider {
   // X11
   if std::env::var("DISPLAY").is_ok() {
     if let Some(provider) =
-      check_prog("xclip", &["-quiet", "-i", "-selection", "clipboard"])
+      check_prog("xclip", &["-i", "-selection", "clipboard"])
     {
       return provider;
     }
-    if let Some(provider) = check_prog("xsel", &["--nodetach", "-i", "-b"]) {
+    if let Some(provider) = check_prog("xsel", &["-i", "-b"]) {
       return provider;
     }
   }
@@ -78,12 +78,18 @@ fn copy_impl(s: &str, provider: &Provider) -> Result<()> {
     }
 
     Provider::Exec(prog, args) => {
-      let child = std::process::Command::new(prog)
+      let mut child = std::process::Command::new(prog)
         .args(args)
         .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
         .unwrap();
-      std::io::Write::write_all(&mut child.stdin.unwrap(), s.as_bytes())?;
+      std::io::Write::write_all(
+        &mut child.stdin.as_ref().unwrap(),
+        s.as_bytes(),
+      )?;
+      child.wait()?;
     }
 
     #[cfg(windows)]
