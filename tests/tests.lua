@@ -1,10 +1,16 @@
+print("Building mprocs.")
+vt.start("cargo build"):wait()
+print("Built.")
+
+local BIN = "./target/debug/mprocs"
+
 function test(name, f)
   print("TEST: " .. name)
   f()
 end
 
 test("next proc", function()
-  local proc = vt.start('cargo r -- "echo one" "echo two" "echo three"')
+  local proc = vt.start(BIN .. ' "echo one" "echo two" "echo three"')
 
   local mark = "•"
 
@@ -18,8 +24,8 @@ test("next proc", function()
   proc:wait()
 end)
 
-test("next proc", function()
-  local proc = vt.start("cargo r -- nvim")
+test("next proc 2", function()
+  local proc = vt.start(BIN .. ' "nvim --clean"')
 
   proc:wait_text("[No Name]")
 
@@ -36,13 +42,13 @@ test("next proc", function()
 end)
 
 test("select by mouse", function()
-  local proc = vt.start('cargo r -- "echo one" "echo two" "echo three"')
+  local proc = vt.start(BIN .. ' "echo one" "echo two" "echo three"')
 
   local mark = "•"
 
   proc:wait_text(" echo three")
 
-  proc:click({x = 1, y = 3})
+  proc:click({ x = 1, y = 3 })
 
   proc:wait_text(mark .. "echo three")
 
