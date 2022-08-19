@@ -2,7 +2,7 @@ print("Building mprocs.")
 vt.start("cargo build"):wait()
 print("Built.")
 
-local BIN = "./target/debug/mprocs"
+local BIN = "cargo r --"
 
 function test(name, f)
   print("TEST: " .. name)
