@@ -1,5 +1,9 @@
 ## Unreleased
 
+## 0.6.3 - 2022-08-20
+
+- Reimplement copying.
+
 ## 0.6.2 - 2022-08-09
 
 - Fix global mprocs.yaml path when XDG_CONFIG_HOME env var is defined
