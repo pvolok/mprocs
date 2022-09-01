@@ -1,3 +1,4 @@
+use crossterm::event::{KeyCode, KeyEvent};
 use tui_input::Input;
 
 use crate::{
@@ -38,6 +39,7 @@ pub struct State {
   pub modal: Option<Modal>,
 
   pub quitting: bool,
+  pub kkk: KeyEvent,
 }
 
 impl State {

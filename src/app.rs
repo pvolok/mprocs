@@ -3,7 +3,7 @@ use std::{io, rc::Rc};
 use crossterm::{
   event::{
     DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode,
-    KeyEvent, MouseButton, MouseEventKind,
+    KeyEvent, KeyModifiers, MouseButton, MouseEventKind,
   },
   execute,
   terminal::{
@@ -79,6 +79,7 @@ impl App {
       modal: None,
 
       quitting: false,
+      kkk: KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE),
     };
 
     let app = App {
@@ -377,6 +378,7 @@ impl App {
 
     match event {
       Event::Key(key) => {
+        self.state.kkk = key.clone();
         let key = Key::from(key);
         let keymap = self.keymap.clone();
         let group = self.state.get_keymap_group();

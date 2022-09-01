@@ -12,6 +12,7 @@ use tui::{
 use crate::{
   encode_term::print_key,
   event::AppEvent,
+  key::Key,
   keymap::{Keymap, KeymapGroup},
   state::State,
   theme::Theme,
@@ -32,6 +33,9 @@ pub fn render_keymap(
     .title(Span::styled("Help", theme.pane_title(false)));
   frame.render_widget(Clear, area);
   frame.render_widget(block, area);
+
+  frame.render_widget(Paragraph::new(Key::from(state.kkk).to_string()), area);
+  return;
 
   let group = state.get_keymap_group();
   let items = match group {
