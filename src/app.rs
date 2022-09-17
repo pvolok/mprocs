@@ -95,8 +95,17 @@ impl App {
     Ok(app)
   }
 
-  pub async fn run(mut self) -> anyhow::Result<()> {
+  pub async fn run(self) -> anyhow::Result<()> {
     enable_raw_mode()?;
+
+    let res = self.run_impl().await;
+
+    disable_raw_mode()?;
+
+    res
+  }
+
+  pub async fn run_impl(mut self) -> anyhow::Result<()> {
     execute!(io::stdout(), EnterAlternateScreen)?;
     self.terminal.clear()?;
     execute!(io::stdout(), EnableMouseCapture)?;
@@ -155,9 +164,8 @@ impl App {
 
     execute!(io::stdout(), DisableMouseCapture)?;
     execute!(io::stdout(), LeaveAlternateScreen)?;
-    disable_raw_mode()?;
 
-    result
+    Ok(())
   }
 
   async fn main_loop(mut self) -> anyhow::Result<()> {

@@ -46,6 +46,7 @@ async fn main() -> Result<(), std::io::Error> {
   let _logger = flexi_logger::Logger::try_with_str(logger_str)
     .unwrap()
     .log_to_file(FileSpec::default().suppress_timestamp())
+    .append()
     .use_utc()
     .start()
     .unwrap();

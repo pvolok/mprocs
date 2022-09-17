@@ -311,7 +311,7 @@ impl Proc {
       let encoder = encode_key(
         key,
         KeyCodeEncodeModes {
-          enable_csi_u_key_encoding: false,
+          enable_csi_u_key_encoding: true,
           application_cursor_keys,
           newline_mode: false,
         },

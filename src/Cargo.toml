@@ -56,3 +56,6 @@ unicode-width = "0.1.9"
 vt100 = { package = "mprocs-vt100", path = "../vendor/vt100", version = "0.1.0" }
 which = "4.2.5"
 xdg = "2.4.1"
+
+[target."cfg(windows)".dependencies]
+winapi = { version = "0.3", features = ["consoleapi", "winuser"] }

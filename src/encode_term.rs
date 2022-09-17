@@ -34,6 +34,11 @@ impl Default for KeyCodeEncodeModes {
 pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
   use KeyCode::*;
 
+  #[cfg(windows)]
+  if let Some(encoded) = encode_key_win32(key, modes) {
+    return Ok(encoded);
+  }
+
   let code = key.code().clone();
   let mods = key.mods().clone();
 
@@ -364,6 +369,129 @@ pub fn normalize_shift_to_upper_case(
   }
 }
 
+/// <https://github.com/microsoft/terminal/blob/main/doc/specs/%234999%20-%20Improved%20keyboard%20handling%20in%20Conpty.md>
+#[cfg(windows)]
+pub fn encode_key_win32(
+  key: &Key,
+  _modes: KeyCodeEncodeModes,
+) -> Option<String> {
+  // <https://docs.microsoft.com/en-us/windows/console/key-event-record-str>
+  // defines the dwControlKeyState values
+  let mut control_key_state = 0;
+
+  if key.mods().contains(KeyModifiers::SHIFT) {
+    control_key_state |= winapi::um::wincon::SHIFT_PRESSED;
+  }
+  if key.mods().contains(KeyModifiers::ALT) {
+    control_key_state |= winapi::um::wincon::LEFT_ALT_PRESSED;
+  }
+  if key.mods().contains(KeyModifiers::CONTROL) {
+    control_key_state |= winapi::um::wincon::LEFT_CTRL_PRESSED;
+  }
+
+  let vkey = virtual_key_code(key.code())?;
+  let uni = match key.code() {
+    KeyCode::Char(c) => {
+      let c = *c;
+      let c = match c {
+        // Delete key is transmitted as 0x0
+        '\x7f' => '\x00',
+        // Backspace key is transmitted as 0x8, 0x7f or 0x0
+        '\x08' => {
+          if key.mods().contains(KeyModifiers::CONTROL) {
+            if key.mods().contains(KeyModifiers::ALT)
+              || key.mods().contains(KeyModifiers::SHIFT)
+            {
+              '\x00'
+            } else {
+              '\x7f'
+            }
+          } else {
+            '\x08'
+          }
+        }
+        _ => c,
+      };
+
+      let c = if key.mods().contains(KeyModifiers::CONTROL) {
+        // Ensure that we rewrite the unicode value to the ASCII CTRL
+        // equivalent value.
+        // <https://github.com/microsoft/terminal/issues/13134>
+        ctrl_mapping(c).unwrap_or(c)
+      } else {
+        c
+      };
+      c as u32
+    }
+    KeyCode::Backspace => 0x8,
+    KeyCode::Enter => 0xd,
+    KeyCode::Left => 0,
+    KeyCode::Right => 0,
+    KeyCode::Up => 0,
+    KeyCode::Down => 0,
+    KeyCode::Home => 0,
+    KeyCode::End => 0,
+    KeyCode::PageUp => 0,
+    KeyCode::PageDown => 0,
+    KeyCode::Tab => 0x9,
+    KeyCode::BackTab => 0,
+    KeyCode::Delete => 0x7f,
+    KeyCode::Insert => 0,
+    KeyCode::F(_) => 0,
+    KeyCode::Null => 0,
+    KeyCode::Esc => 0,
+  };
+
+  let scan_code = 0;
+  let key_down = 1;
+  let repeat_count = 1;
+  Some(format!(
+    "\u{1b}[{};{};{};{};{};{}_",
+    vkey, scan_code, uni, key_down, control_key_state, repeat_count
+  ))
+}
+
+/// <https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes>
+#[cfg(windows)]
+fn virtual_key_code(code: &KeyCode) -> Option<i32> {
+  let code = match code {
+    KeyCode::Char(c) => match c {
+      '0'..='9' => *c as i32,
+      'a'..='z' => c.to_ascii_uppercase() as i32,
+      ' ' => winapi::um::winuser::VK_SPACE,
+      '*' => winapi::um::winuser::VK_MULTIPLY,
+      '+' => winapi::um::winuser::VK_ADD,
+      ',' => winapi::um::winuser::VK_SEPARATOR,
+      '-' => winapi::um::winuser::VK_SUBTRACT,
+      '.' => winapi::um::winuser::VK_DECIMAL,
+      '/' => winapi::um::winuser::VK_DIVIDE,
+      _ => return None,
+    },
+    KeyCode::Backspace => winapi::um::winuser::VK_BACK,
+    KeyCode::Enter => winapi::um::winuser::VK_RETURN,
+    KeyCode::Left => winapi::um::winuser::VK_LEFT,
+    KeyCode::Right => winapi::um::winuser::VK_RIGHT,
+    KeyCode::Up => winapi::um::winuser::VK_UP,
+    KeyCode::Down => winapi::um::winuser::VK_DOWN,
+    KeyCode::Home => winapi::um::winuser::VK_HOME,
+    KeyCode::End => winapi::um::winuser::VK_END,
+    KeyCode::PageUp => winapi::um::winuser::VK_PRIOR,
+    KeyCode::PageDown => winapi::um::winuser::VK_NEXT,
+    KeyCode::Tab => winapi::um::winuser::VK_TAB,
+    KeyCode::BackTab => return None,
+    KeyCode::Delete => winapi::um::winuser::VK_DELETE,
+    KeyCode::Insert => winapi::um::winuser::VK_INSERT,
+    KeyCode::F(n) => match n {
+      1..=24 => winapi::um::winuser::VK_F1 - 1 + *n as i32,
+      _ => return None,
+    },
+    KeyCode::Null => 0,
+    KeyCode::Esc => winapi::um::winuser::VK_ESCAPE,
+  };
+
+  Some(code)
+}
+
 pub fn print_key(key: &Key) -> String {
   let mut buf = String::new();
 
@@ -400,6 +528,10 @@ pub fn print_key(key: &Key) -> String {
 
   return buf;
 }
+
+/*
+ * Mouse
+ */
 
 pub fn encode_mouse_event(mev: MouseEvent) -> String {
   let mut buf = String::new();
