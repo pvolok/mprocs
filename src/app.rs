@@ -165,7 +165,7 @@ impl App {
     execute!(io::stdout(), DisableMouseCapture)?;
     execute!(io::stdout(), LeaveAlternateScreen)?;
 
-    Ok(())
+    result
   }
 
   async fn main_loop(mut self) -> anyhow::Result<()> {

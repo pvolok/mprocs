@@ -1,6 +1,7 @@
 mod app;
 mod clipboard;
 mod config;
+mod config_lua;
 mod ctl;
 mod encode_term;
 mod event;
@@ -20,11 +21,12 @@ mod ui_term;
 mod ui_zoom_tip;
 mod yaml_val;
 
-use std::path::Path;
+use std::{io::Read, path::Path};
 
 use anyhow::{bail, Result};
 use clap::{arg, command, ArgMatches};
 use config::{CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig};
+use config_lua::load_lua_config;
 use ctl::run_ctl;
 use flexi_logger::FileSpec;
 use keymap::Keymap;
@@ -149,6 +151,16 @@ fn load_config_value(
   }
 
   {
+    let path = "mprocs.lua";
+    if Path::new(path).is_file() {
+      return Ok(Some((
+        read_value(path)?,
+        ConfigContext { path: path.into() },
+      )));
+    }
+  }
+
+  {
     let path = "mprocs.yaml";
     if Path::new(path).is_file() {
       return Ok(Some((
@@ -182,7 +194,18 @@ fn read_value(path: &str) -> Result<Value> {
       _kind => return Err(err.into()),
     },
   };
-  let reader = std::io::BufReader::new(file);
-  let value: Value = serde_yaml::from_reader(reader)?;
+  let mut reader = std::io::BufReader::new(file);
+  let ext = std::path::Path::new(path)
+    .extension()
+    .map_or_else(|| "".to_string(), |ext| ext.to_string_lossy().to_string());
+  let value: Value = match ext.as_str() {
+    "yaml" | "yml" => serde_yaml::from_reader(reader)?,
+    "lua" => {
+      let mut buf = String::new();
+      reader.read_to_string(&mut buf)?;
+      load_lua_config(path, &buf)?
+    }
+    _ => bail!("Supported config extensions: lua, yaml, yml."),
+  };
   Ok(value)
 }
