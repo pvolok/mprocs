@@ -16,6 +16,7 @@ use vt100::MouseProtocolMode;
 
 use crate::config::{Config, ProcConfig};
 use crate::encode_term::{encode_key, encode_mouse_event, KeyCodeEncodeModes};
+use crate::error::ResultLogger;
 use crate::key::Key;
 
 pub struct Inst {
@@ -59,7 +60,7 @@ impl Inst {
 
     let running = Arc::new(AtomicBool::new(true));
     let mut child = pair.slave.spawn_command(cmd)?;
-    let pid = child.process_id().unwrap();
+    let pid = child.process_id().unwrap_or(0);
     let killer = child.clone_killer();
 
     let mut reader = pair.master.try_clone_reader().unwrap();
@@ -78,10 +79,12 @@ impl Inst {
           match reader.read(&mut buf[..]) {
             Ok(count) => {
               if count > 0 {
-                vt.clone().write().unwrap().process(&buf[..count]);
-                match tx.send((id, ProcUpdate::Render)) {
-                  Ok(_) => (),
-                  Err(_) => break,
+                if let Ok(mut vt) = vt.write() {
+                  vt.process(&buf[..count]);
+                  match tx.send((id, ProcUpdate::Render)) {
+                    Ok(_) => (),
+                    Err(_) => break,
+                  }
                 }
               } else {
                 thread::sleep(Duration::from_millis(10));
@@ -128,9 +131,11 @@ impl Inst {
         pixel_width: 0,
         pixel_height: 0,
       })
-      .unwrap();
+      .log_ignore();
 
-    self.vt.write().unwrap().set_size(rows, cols);
+    if let Ok(mut vt) = self.vt.write() {
+      vt.set_size(rows, cols);
+    }
   }
 }
 
@@ -246,6 +251,26 @@ impl Proc {
     }
   }
 
+  pub fn lock_vt(
+    &self,
+  ) -> Option<std::sync::RwLockReadGuard<'_, vt100::Parser>> {
+    match &self.inst {
+      ProcState::None => None,
+      ProcState::Some(inst) => inst.vt.read().ok(),
+      ProcState::Error(_) => None,
+    }
+  }
+
+  pub fn lock_vt_mut(
+    &mut self,
+  ) -> Option<std::sync::RwLockWriteGuard<'_, vt100::Parser>> {
+    match &self.inst {
+      ProcState::None => None,
+      ProcState::Some(inst) => inst.vt.write().ok(),
+      ProcState::Error(_) => None,
+    }
+  }
+
   pub fn kill(&mut self) {
     if self.is_up() {
       if let ProcState::Some(inst) = &mut self.inst {
@@ -301,13 +326,9 @@ impl Proc {
 
   pub fn send_key(&mut self, key: &Key) {
     if self.is_up() {
-      let application_cursor_keys = match &self.inst {
-        ProcState::None => unreachable!(),
-        ProcState::Some(inst) => {
-          inst.vt.read().unwrap().screen().application_cursor()
-        }
-        ProcState::Error(_) => unreachable!(),
-      };
+      let application_cursor_keys = self
+        .lock_vt()
+        .map_or(false, |vt| vt.screen().application_cursor());
       let encoder = encode_key(
         key,
         KeyCodeEncodeModes {
@@ -329,14 +350,13 @@ impl Proc {
 
   pub fn write_all(&mut self, bytes: &[u8]) {
     if self.is_up() {
-      if let ProcState::Some(inst) = &mut self.inst {
-        {
-          let mut vt = inst.vt.write().unwrap();
-          if vt.screen().scrollback() > 0 {
-            vt.set_scrollback(0);
-          }
+      if let Some(mut vt) = self.lock_vt_mut() {
+        if vt.screen().scrollback() > 0 {
+          vt.set_scrollback(0);
         }
-        inst.master.write_all(bytes).unwrap();
+      }
+      if let ProcState::Some(inst) = &mut self.inst {
+        inst.master.write_all(bytes).log_ignore();
       }
     }
   }
@@ -344,8 +364,8 @@ impl Proc {
   pub fn scroll_up_lines(&mut self, n: usize) {
     match &mut self.copy_mode {
       CopyMode::None(_) => {
-        if let ProcState::Some(inst) = &mut self.inst {
-          Self::scroll_vt_up(&mut inst.vt.write().unwrap(), n);
+        if let Some(mut vt) = self.lock_vt_mut() {
+          Self::scroll_vt_up(&mut vt, n);
         }
       }
       CopyMode::Start(screen, _) | CopyMode::Range(screen, _, _) => {
@@ -367,8 +387,8 @@ impl Proc {
   pub fn scroll_down_lines(&mut self, n: usize) {
     match &mut self.copy_mode {
       CopyMode::None(_) => {
-        if let ProcState::Some(inst) = &mut self.inst {
-          Self::scroll_vt_down(&mut inst.vt.write().unwrap(), n);
+        if let Some(mut vt) = self.lock_vt_mut() {
+          Self::scroll_vt_down(&mut vt, n);
         }
       }
       CopyMode::Start(screen, _) | CopyMode::Range(screen, _, _) => {
@@ -405,6 +425,10 @@ impl Proc {
       CopyMode::None(_) => false,
       CopyMode::Start(_, _) | CopyMode::Range(_, _, _) => true,
     };
+    let mouse_mode = self
+      .lock_vt()
+      .map(|vt| vt.screen().mouse_protocol_mode())
+      .unwrap_or_default();
 
     if copy_mode {
       match event.kind {
@@ -462,52 +486,51 @@ impl Proc {
       }
     } else {
       if let ProcState::Some(inst) = &mut self.inst {
-        let mouse_mode = inst.vt.read().unwrap().screen().mouse_protocol_mode();
         match mouse_mode {
           MouseProtocolMode::None => match event.kind {
             MouseEventKind::Down(btn) => match btn {
               MouseButton::Left => {
-                let vt = inst.vt.read().unwrap();
-                self.copy_mode = CopyMode::None(Some(translate_mouse_pos(
-                  &event,
-                  &term_area,
-                  vt.screen().scrollback(),
-                )));
+                if let Some(vt) = inst.vt.read().log_get() {
+                  self.copy_mode = CopyMode::None(Some(translate_mouse_pos(
+                    &event,
+                    &term_area,
+                    vt.screen().scrollback(),
+                  )));
+                }
               }
               MouseButton::Right | MouseButton::Middle => (),
             },
             MouseEventKind::Up(_) => (),
             MouseEventKind::Drag(MouseButton::Left) => {
-              let vt = inst.vt.read().unwrap();
-              let pos = translate_mouse_pos(
-                &event,
-                &term_area,
-                vt.screen().scrollback(),
-              );
-              self.copy_mode = match std::mem::take(&mut self.copy_mode) {
-                CopyMode::None(pos_) => CopyMode::Range(
-                  vt.screen().clone(),
-                  pos_.unwrap_or_default(),
-                  pos,
-                ),
-                CopyMode::Start(..) | CopyMode::Range(..) => {
-                  unreachable!()
-                }
-              };
+              if let Some(vt) = inst.vt.read().log_get() {
+                let pos = translate_mouse_pos(
+                  &event,
+                  &term_area,
+                  vt.screen().scrollback(),
+                );
+                self.copy_mode = match std::mem::take(&mut self.copy_mode) {
+                  CopyMode::None(pos_) => CopyMode::Range(
+                    vt.screen().clone(),
+                    pos_.unwrap_or_default(),
+                    pos,
+                  ),
+                  CopyMode::Start(..) | CopyMode::Range(..) => {
+                    unreachable!()
+                  }
+                };
+              }
             }
             MouseEventKind::Drag(_) => (),
             MouseEventKind::Moved => (),
             MouseEventKind::ScrollDown => {
-              Self::scroll_vt_down(
-                &mut inst.vt.write().unwrap(),
-                config.mouse_scroll_speed,
-              );
+              if let Some(mut vt) = inst.vt.write().log_get() {
+                Self::scroll_vt_down(&mut vt, config.mouse_scroll_speed);
+              }
             }
             MouseEventKind::ScrollUp => {
-              Self::scroll_vt_up(
-                &mut inst.vt.write().unwrap(),
-                config.mouse_scroll_speed,
-              );
+              if let Some(mut vt) = inst.vt.write().log_get() {
+                Self::scroll_vt_up(&mut vt, config.mouse_scroll_speed);
+              }
             }
           },
           MouseProtocolMode::Press

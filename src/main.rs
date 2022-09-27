@@ -4,6 +4,7 @@ mod config;
 mod config_lua;
 mod ctl;
 mod encode_term;
+mod error;
 mod event;
 mod key;
 mod keymap;
