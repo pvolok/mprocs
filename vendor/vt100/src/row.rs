@@ -87,13 +87,15 @@ impl Row {
   pub fn clear_wide(&mut self, col: u16) {
     let cell = &self.cells[usize::from(col)];
     let other = if cell.is_wide() {
-      &mut self.cells[usize::from(col + 1)]
+      self.cells.get_mut(usize::from(col + 1))
     } else if cell.is_wide_continuation() {
-      &mut self.cells[usize::from(col - 1)]
+      self.cells.get_mut(usize::from(col - 1))
     } else {
       return;
     };
-    other.clear(*other.attrs());
+    if let Some(other) = other {
+      other.clear(*other.attrs());
+    }
   }
 
   pub fn write_contents(
