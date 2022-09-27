@@ -963,21 +963,14 @@ impl Screen {
         .unwrap()
         .is_wide()
       {
-        let next_cell = self
-          .grid_mut()
-          .drawing_cell_mut(crate::grid::Pos {
+        if let Some(next_cell) =
+          self.grid_mut().drawing_cell_mut(crate::grid::Pos {
             row: pos.row,
             col: pos.col + 1,
           })
-          // pos.row is valid because we assume self.grid().pos() to
-          // always have a valid row value. pos.col is valid because
-          // we called col_wrap() immediately before this, which
-          // ensures that self.grid().pos().col has a valid value.
-          // pos.col + 1 is valid because the cell at pos.col is a
-          // wide character, so it must have the second half of the
-          // wide character after it.
-          .unwrap();
-        next_cell.set(' ', attrs);
+        {
+          next_cell.set(' ', attrs);
+        }
       }
 
       let cell = self
