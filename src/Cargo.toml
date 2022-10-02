@@ -1,6 +1,6 @@
 [package]
 name = "mprocs"
-version = "0.6.3"
+version = "0.6.4"
 description = "TUI for running multiple processes"
 repository = "https://github.com/pvolok/mprocs"
 authors = ["Pavel Volokitin <pavelvolokitin@gmail.com>"]
@@ -54,7 +54,7 @@ tui = "0.18.0"
 tui-input = "0.4.0"
 unicode-segmentation = "1.9.0"
 unicode-width = "0.1.9"
-vt100 = { package = "mprocs-vt100", path = "../vendor/vt100", version = "0.1.0" }
+vt100 = { package = "mprocs-vt100", path = "../vendor/vt100", version = "0.1.1" }
 which = "4.2.5"
 xdg = "2.4.1"
 

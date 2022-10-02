@@ -727,7 +727,7 @@ dependencies = [
 
 [[package]]
 name = "mprocs"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -785,7 +785,7 @@ dependencies = [
 
 [[package]]
 name = "mprocs-vt100"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "itoa",
  "log",
