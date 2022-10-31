@@ -10,35 +10,22 @@ rm -rf release
 
 # Linux 64
 
-mkdir -p release/mprocs-$VERSION-linux64
-
-TARGET_CC=x86_64-linux-musl-gcc \
-RUSTFLAGS="-C linker=x86_64-linux-musl-gcc" \
-cargo build --release --target=x86_64-unknown-linux-musl
-
-cp target/x86_64-unknown-linux-musl/release/mprocs \
-  release/mprocs-$VERSION-linux64/mprocs
-
-upx-head --brute release/mprocs-$VERSION-linux64/mprocs
-
-tar -czvf release/mprocs-$VERSION-linux64.tar.gz \
-  -C release/mprocs-$VERSION-linux64 \
-  mprocs
+scripts/build-linux64-musl.sh
 
 # Aarch64
 
-mkdir -p release/mprocs-$VERSION-aarch64
-
-TARGET_CC=aarch64-none-elf-gcc \
-RUSTFLAGS="-C linker=aarch64-none-elf-gcc" \
-cargo build --release --target=aarch64-unknown-linux-musl
-
-cp target/aarch64-unknown-linux-musl/release/mprocs \
-  release/mprocs-$VERSION-aarch64/mprocs
-
-tar -czvf release/mprocs-$VERSION-aarch64.tar.gz \
-  -C release/mprocs-$VERSION-aarch64 \
-  mprocs
+# mkdir -p release/mprocs-$VERSION-aarch64
+#
+# TARGET_CC=aarch64-none-elf-gcc \
+# RUSTFLAGS="-C linker=aarch64-none-elf-gcc" \
+# cargo build --release --target=aarch64-unknown-linux-musl
+#
+# cp target/aarch64-unknown-linux-musl/release/mprocs \
+#   release/mprocs-$VERSION-aarch64/mprocs
+#
+# tar -czvf release/mprocs-$VERSION-aarch64.tar.gz \
+#   -C release/mprocs-$VERSION-aarch64 \
+#   mprocs
 
 # Macos
 
