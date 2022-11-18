@@ -43,7 +43,7 @@ indexmap = { version = "1.8.0", features = ["serde"] }
 lazy_static = "1.4.0"
 libc = "0.2.120"
 log = "0.4.14"
-mlua = { version = "0.8.3", features = ["luajit52", "vendored", "serialize"] }
+mlua = { version = "0.8.5", features = ["luajit52", "vendored", "serialize"] }
 phf = { version = "0.10.1", features = ["macros"] }
 portable-pty = { package = "mprocs-pty", path = "../vendor/pty", version = "0.1.0" }
 serde = { version = "1.0.136", features = ["derive"] }

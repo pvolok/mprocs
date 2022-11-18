@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 set -e
 
 docker build . -t mprocs-build-linux64-musl -f Dockerfile.linux64
