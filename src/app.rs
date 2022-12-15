@@ -1,23 +1,11 @@
-use std::{io, rc::Rc};
-
-use crossterm::{
-  event::{
-    DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode,
-    KeyEvent, MouseButton, MouseEventKind,
-  },
-  execute,
-  terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen,
-    LeaveAlternateScreen,
-  },
-};
-use futures::{future::FutureExt, select, StreamExt};
+use anyhow::bail;
+use crossterm::event::{Event, KeyCode, KeyEvent, MouseButton, MouseEventKind};
+use futures::{future::FutureExt, select};
 use tokio::{
   io::AsyncReadExt,
-  sync::mpsc::{UnboundedReceiver, UnboundedSender},
+  sync::mpsc::{Receiver, UnboundedReceiver, UnboundedSender},
 };
 use tui::{
-  backend::CrosstermBackend,
   layout::{Constraint, Direction, Layout, Margin, Rect},
   Terminal,
 };
@@ -30,6 +18,7 @@ use crate::{
   key::Key,
   keymap::Keymap,
   proc::{CopyMode, Pos, Proc, ProcState, ProcUpdate, StopSignal},
+  protocol::{CltToSrv, ProxyBackend, SrvToClt},
   state::{Modal, Scope, State},
   ui_add_proc::render_add_proc,
   ui_confirm_quit::render_confirm_quit,
@@ -40,7 +29,7 @@ use crate::{
   ui_zoom_tip::render_zoom_tip,
 };
 
-type Term = Terminal<CrosstermBackend<io::Stdout>>;
+type Term = Terminal<ProxyBackend>;
 
 enum LoopAction {
   Render,
@@ -50,9 +39,11 @@ enum LoopAction {
 
 pub struct App {
   config: Config,
-  keymap: Rc<Keymap>,
+  keymap: Keymap,
   terminal: Term,
   state: State,
+  client_rx: Receiver<CltToSrv>,
+  client_tx: UnboundedSender<SrvToClt>,
   upd_rx: UnboundedReceiver<(usize, ProcUpdate)>,
   upd_tx: UnboundedSender<(usize, ProcUpdate)>,
   ev_rx: UnboundedReceiver<AppEvent>,
@@ -60,56 +51,7 @@ pub struct App {
 }
 
 impl App {
-  pub fn from_config_file(
-    config: Config,
-    keymap: Keymap,
-  ) -> anyhow::Result<Self> {
-    let backend = CrosstermBackend::new(io::stdout());
-    let terminal = Terminal::new(backend)?;
-
-    let (upd_tx, upd_rx) =
-      tokio::sync::mpsc::unbounded_channel::<(usize, ProcUpdate)>();
-    let (ev_tx, ev_rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
-
-    let state = State {
-      scope: Scope::Procs,
-      procs: Vec::new(),
-      selected: 0,
-
-      modal: None,
-
-      quitting: false,
-    };
-
-    let app = App {
-      config,
-      keymap: Rc::new(keymap),
-      terminal,
-      state,
-      upd_rx,
-      upd_tx,
-
-      ev_rx,
-      ev_tx,
-    };
-    Ok(app)
-  }
-
   pub async fn run(self) -> anyhow::Result<()> {
-    enable_raw_mode()?;
-
-    let res = self.run_impl().await;
-
-    disable_raw_mode()?;
-
-    res
-  }
-
-  pub async fn run_impl(mut self) -> anyhow::Result<()> {
-    execute!(io::stdout(), EnterAlternateScreen)?;
-    self.terminal.clear()?;
-    execute!(io::stdout(), EnableMouseCapture)?;
-
     let (exit_trigger, exit_listener) = triggered::trigger();
 
     let server_thread = if let Some(ref server_addr) = self.config.server {
@@ -162,15 +104,10 @@ impl App {
       let _ = server_thread.await;
     }
 
-    execute!(io::stdout(), DisableMouseCapture)?;
-    execute!(io::stdout(), LeaveAlternateScreen)?;
-
     result
   }
 
   async fn main_loop(mut self) -> anyhow::Result<()> {
-    let mut input = EventStream::new();
-
     let mut last_term_size = {
       let area = self.get_layout().term_area();
       self.start_procs(area)?;
@@ -220,8 +157,12 @@ impl App {
       }
 
       let loop_action = select! {
-        event = input.next().fuse() => {
-          self.handle_input(event)
+        event = self.client_rx.recv().fuse() => {
+          if let Some(CltToSrv::Key(event)) = event {
+            self.handle_input(Some(Ok(event)))
+          } else {
+            LoopAction::Skip
+          }
         }
         event = self.upd_rx.recv().fuse() => {
           if let Some(event) = event {
@@ -386,10 +327,10 @@ impl App {
     match event {
       Event::Key(key) => {
         let key = Key::from(key);
-        let keymap = self.keymap.clone();
         let group = self.state.get_keymap_group();
-        if let Some(bound) = keymap.resolve(group, &key) {
-          self.handle_event(bound)
+        if let Some(bound) = self.keymap.resolve(group, &key) {
+          let bound = bound.clone();
+          self.handle_event(&bound)
         } else {
           match self.state.scope {
             Scope::Procs => LoopAction::Skip,
@@ -854,4 +795,62 @@ impl AppLayout {
       horizontal: 1,
     })
   }
+}
+
+pub async fn server_main(
+  config: Config,
+  keymap: Keymap,
+  client_tx: tokio::sync::mpsc::UnboundedSender<SrvToClt>,
+  mut client_rx: tokio::sync::mpsc::Receiver<CltToSrv>,
+) -> anyhow::Result<()> {
+  let init = client_rx
+    .recv()
+    .await
+    .ok_or_else(|| anyhow::Error::msg("Expected init message."))?;
+  let backend = match init {
+    CltToSrv::Init { width, height } => {
+      let proxy_backend = ProxyBackend {
+        tx: client_tx.clone(),
+        width,
+        height,
+      };
+      proxy_backend
+    }
+    _ => bail!("Expected init message."),
+  };
+
+  let terminal = Terminal::new(backend)?;
+
+  let (upd_tx, upd_rx) =
+    tokio::sync::mpsc::unbounded_channel::<(usize, ProcUpdate)>();
+  let (ev_tx, ev_rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+
+  let state = State {
+    scope: Scope::Procs,
+    procs: Vec::new(),
+    selected: 0,
+
+    modal: None,
+
+    quitting: false,
+  };
+
+  let app = App {
+    config,
+    keymap,
+    terminal,
+    state,
+    client_rx,
+    client_tx,
+    upd_rx,
+    upd_tx,
+
+    ev_rx,
+    ev_tx,
+  };
+  let client_tx = app.client_tx.clone();
+  app.run().await?;
+  client_tx.send(SrvToClt::Quit).unwrap();
+
+  Ok(())
 }

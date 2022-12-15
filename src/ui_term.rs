@@ -1,7 +1,4 @@
-use std::io;
-
 use tui::{
-  backend::CrosstermBackend,
   layout::{Margin, Rect},
   style::{Color, Modifier, Style},
   text::{Span, Spans, Text},
@@ -11,11 +8,12 @@ use tui::{
 
 use crate::{
   proc::{CopyMode, Pos, ProcState},
+  protocol::ProxyBackend,
   state::{Scope, State},
   theme::Theme,
 };
 
-type Backend = CrosstermBackend<io::Stdout>;
+type Backend = ProxyBackend;
 
 pub fn render_term(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
   if area.width < 3 || area.height < 3 {

@@ -1,17 +1,13 @@
-use std::io;
-
-use tui::{
-  backend::CrosstermBackend, layout::Rect, text::Text, widgets::Paragraph,
-  Frame,
-};
+use tui::{layout::Rect, text::Text, widgets::Paragraph, Frame};
 
 use crate::{
   event::AppEvent,
   keymap::{Keymap, KeymapGroup},
+  protocol::ProxyBackend,
   theme::Theme,
 };
 
-type Backend = CrosstermBackend<io::Stdout>;
+type Backend = ProxyBackend;
 
 pub fn render_zoom_tip(
   area: Rect,

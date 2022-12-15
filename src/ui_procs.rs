@@ -1,7 +1,4 @@
-use std::io;
-
 use tui::{
-  backend::CrosstermBackend,
   layout::{Margin, Rect},
   style::{Color, Modifier, Style},
   text::{Span, Spans},
@@ -11,11 +8,12 @@ use tui::{
 
 use crate::{
   proc::Proc,
+  protocol::ProxyBackend,
   state::{Scope, State},
   theme::Theme,
 };
 
-type Backend = CrosstermBackend<io::Stdout>;
+type Backend = ProxyBackend;
 
 pub fn render_procs(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
   if area.width <= 2 {

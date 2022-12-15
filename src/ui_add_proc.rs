@@ -1,7 +1,4 @@
-use std::io;
-
 use tui::{
-  backend::CrosstermBackend,
   layout::Rect,
   text::Span,
   widgets::{Clear, Paragraph},
@@ -9,9 +6,9 @@ use tui::{
 };
 use tui_input::Input;
 
-use crate::theme::Theme;
+use crate::{protocol::ProxyBackend, theme::Theme};
 
-type Backend = CrosstermBackend<io::Stdout>;
+type Backend = ProxyBackend;
 
 pub fn render_add_proc(
   area: Rect,

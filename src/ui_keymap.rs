@@ -1,7 +1,4 @@
-use std::io;
-
 use tui::{
-  backend::CrosstermBackend,
   layout::{Margin, Rect},
   style::{Color, Style},
   text::{Span, Spans, Text},
@@ -13,11 +10,12 @@ use crate::{
   encode_term::print_key,
   event::AppEvent,
   keymap::{Keymap, KeymapGroup},
+  protocol::ProxyBackend,
   state::State,
   theme::Theme,
 };
 
-type Backend = CrosstermBackend<io::Stdout>;
+type Backend = ProxyBackend;
 
 pub fn render_keymap(
   area: Rect,

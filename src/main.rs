@@ -1,4 +1,5 @@
 mod app;
+mod client;
 mod clipboard;
 mod config;
 mod config_lua;
@@ -10,6 +11,7 @@ mod key;
 mod keymap;
 mod package_json;
 mod proc;
+mod protocol;
 mod settings;
 mod state;
 mod theme;
@@ -25,7 +27,9 @@ mod yaml_val;
 use std::{io::Read, path::Path};
 
 use anyhow::{bail, Result};
+use app::server_main;
 use clap::{arg, command, ArgMatches};
+use client::client_main;
 use config::{CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig};
 use config_lua::load_lua_config;
 use ctl::run_ctl;
@@ -33,11 +37,10 @@ use flexi_logger::FileSpec;
 use keymap::Keymap;
 use package_json::load_npm_procs;
 use proc::StopSignal;
+use protocol::{CltToSrv, SrvToClt};
 use serde_yaml::Value;
 use settings::Settings;
 use yaml_val::Val;
-
-use crate::app::App;
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
@@ -137,8 +140,26 @@ async fn run_app() -> anyhow::Result<()> {
     config
   };
 
-  let app = App::from_config_file(config, keymap)?;
-  app.run().await
+  run_client_and_server(config, keymap).await
+}
+
+async fn run_client_and_server(config: Config, keymap: Keymap) -> Result<()> {
+  let (clt_tx, srv_rx) = tokio::sync::mpsc::channel::<CltToSrv>(64);
+  let (srv_tx, clt_rx) = tokio::sync::mpsc::unbounded_channel::<SrvToClt>();
+
+  let client = tokio::spawn(async { client_main(clt_tx, clt_rx).await });
+  let server =
+    tokio::spawn(async { server_main(config, keymap, srv_tx, srv_rx).await });
+
+  let r1 = server
+    .await
+    .unwrap_or_else(|err| Err(anyhow::Error::from(err)));
+  let r2 = client
+    .await
+    .unwrap_or_else(|err| Err(anyhow::Error::from(err)));
+
+  r1.and(r2)
+    .map_err(|err| anyhow::Error::msg(err.to_string()))
 }
 
 fn load_config_value(

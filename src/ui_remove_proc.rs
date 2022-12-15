@@ -1,15 +1,12 @@
-use std::io;
-
 use tui::{
-  backend::CrosstermBackend,
   layout::Rect,
   widgets::{Clear, Paragraph},
   Frame,
 };
 
-use crate::theme::Theme;
+use crate::{protocol::ProxyBackend, theme::Theme};
 
-type Backend = CrosstermBackend<io::Stdout>;
+type Backend = ProxyBackend;
 
 pub fn render_remove_proc(area: Rect, frame: &mut Frame<Backend>) {
   let theme = Theme::default();
