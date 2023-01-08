@@ -1,7 +1,14 @@
+use std::sync::{Arc, Mutex};
+
+enum CurParser {
+  Vte(vte::Parser),
+  Termwiz(Arc<Mutex<termwiz::escape::parser::Parser>>),
+}
+
 /// A parser for terminal output which produces an in-memory representation of
 /// the terminal contents.
 pub struct Parser {
-  parser: vte::Parser,
+  parser: CurParser,
   screen: crate::screen::Screen,
 }
 
@@ -10,8 +17,16 @@ impl Parser {
   /// amount of scrollback.
   #[must_use]
   pub fn new(rows: u16, cols: u16, scrollback_len: usize) -> Self {
+    let parser = if std::env::var("VTE_PARSER").map_or(false, |v| !v.is_empty())
+    {
+      CurParser::Vte(vte::Parser::new())
+    } else {
+      CurParser::Termwiz(Arc::new(Mutex::new(
+        termwiz::escape::parser::Parser::new(),
+      )))
+    };
     Self {
-      parser: vte::Parser::new(),
+      parser,
       screen: crate::screen::Screen::new(
         crate::grid::Size { rows, cols },
         scrollback_len,
@@ -22,8 +37,17 @@ impl Parser {
   /// Processes the contents of the given byte string, and updates the
   /// in-memory terminal state.
   pub fn process(&mut self, bytes: &[u8]) {
-    for byte in bytes {
-      self.parser.advance(&mut self.screen, *byte);
+    match &mut self.parser {
+      CurParser::Vte(parser) => {
+        for byte in bytes {
+          parser.advance(&mut self.screen, *byte);
+        }
+      }
+      CurParser::Termwiz(parser) => {
+        parser.lock().unwrap().parse(bytes, |action| {
+          self.screen.handle_action(action);
+        });
+      }
     }
   }
 

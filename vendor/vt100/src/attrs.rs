@@ -19,6 +19,19 @@ impl Default for Color {
   }
 }
 
+impl From<termwiz::color::ColorSpec> for Color {
+  fn from(value: termwiz::color::ColorSpec) -> Self {
+    match value {
+      termwiz::color::ColorSpec::Default => Self::Default,
+      termwiz::color::ColorSpec::PaletteIndex(idx) => Self::Idx(idx),
+      termwiz::color::ColorSpec::TrueColor(srgba) => {
+        let (r, g, b, _) = srgba.to_srgb_u8();
+        Self::Rgb(r, g, b)
+      }
+    }
+  }
+}
+
 const TEXT_MODE_BOLD: u8 = 0b0000_0001;
 const TEXT_MODE_ITALIC: u8 = 0b0000_0010;
 const TEXT_MODE_UNDERLINE: u8 = 0b0000_0100;
