@@ -4,7 +4,8 @@ use termwiz::escape::{
     Cursor, DecPrivateMode, DecPrivateModeCode, Edit, EraseInDisplay,
     EraseInLine, Sgr, Window,
   },
-  Action, ControlCode, DeviceControlMode, Esc, OperatingSystemCommand, CSI,
+  Action, ControlCode, DeviceControlMode, Esc, EscCode, OperatingSystemCommand,
+  CSI,
 };
 use unicode_width::UnicodeWidthChar as _;
 
@@ -1762,6 +1763,25 @@ fn osc_param_str(params: &[&[u8]]) -> String {
   strs.join(" ; ")
 }
 
+macro_rules! skip {
+  ($fmt:expr) => {
+    {
+      use std::fmt::Write;
+      let mut output = String::new();
+      write!(output, $fmt).unwrap();
+      log::debug!("Skip seq: {}", output);
+    }
+  };
+  ($fmt:expr, $($arg:tt)*) => {
+    {
+      use std::fmt::Write;
+      let mut output = String::new();
+      write!(output, $fmt, $($arg)*).unwrap();
+      log::debug!("Skip seq: {}", output);
+    }
+  };
+}
+
 impl Screen {
   pub fn handle_action(&mut self, action: Action) {
     match action {
@@ -1780,14 +1800,14 @@ impl Screen {
 
   fn handle_control(&mut self, code: ControlCode) {
     match code {
-      ControlCode::Null => log::warn!("Null "),
-      ControlCode::StartOfHeading => log::warn!("StartOfHeading "),
-      ControlCode::StartOfText => log::warn!("StartOfText "),
-      ControlCode::EndOfText => log::warn!("EndOfText "),
-      ControlCode::EndOfTransmission => log::warn!("EndOfTransmission "),
-      ControlCode::Enquiry => log::warn!("Enquiry "),
-      ControlCode::Acknowledge => log::warn!("Acknowledge "),
-      ControlCode::Bell => log::warn!("Bell "),
+      ControlCode::Null => skip!("Null"),
+      ControlCode::StartOfHeading => skip!("StartOfHeading"),
+      ControlCode::StartOfText => skip!("StartOfText"),
+      ControlCode::EndOfText => skip!("EndOfText"),
+      ControlCode::EndOfTransmission => skip!("EndOfTransmission"),
+      ControlCode::Enquiry => skip!("Enquiry"),
+      ControlCode::Acknowledge => skip!("Acknowledge"),
+      ControlCode::Bell => skip!("Bell"),
       ControlCode::Backspace => self.grid_mut().col_dec(1),
       ControlCode::HorizontalTab => self.tab(),
       ControlCode::LineFeed => {
@@ -1800,64 +1820,64 @@ impl Screen {
         self.grid_mut().row_inc_scroll(1);
       }
       ControlCode::CarriageReturn => self.grid_mut().col_set(0),
-      ControlCode::ShiftOut => log::warn!("ShiftOut "),
-      ControlCode::ShiftIn => log::warn!("ShiftIn "),
-      ControlCode::DataLinkEscape => log::warn!("DataLinkEscape "),
-      ControlCode::DeviceControlOne => log::warn!("DeviceControlOne "),
-      ControlCode::DeviceControlTwo => log::warn!("DeviceControlTwo "),
-      ControlCode::DeviceControlThree => log::warn!("DeviceControlThree "),
-      ControlCode::DeviceControlFour => log::warn!("DeviceControlFour "),
-      ControlCode::NegativeAcknowledge => log::warn!("NegativeAcknowledge "),
-      ControlCode::SynchronousIdle => log::warn!("SynchronousIdle "),
+      ControlCode::ShiftOut => skip!("ShiftOut"),
+      ControlCode::ShiftIn => skip!("ShiftIn"),
+      ControlCode::DataLinkEscape => skip!("DataLinkEscape"),
+      ControlCode::DeviceControlOne => skip!("DeviceControlOne"),
+      ControlCode::DeviceControlTwo => skip!("DeviceControlTwo"),
+      ControlCode::DeviceControlThree => skip!("DeviceControlThree"),
+      ControlCode::DeviceControlFour => skip!("DeviceControlFour"),
+      ControlCode::NegativeAcknowledge => skip!("NegativeAcknowledge"),
+      ControlCode::SynchronousIdle => skip!("SynchronousIdle"),
       ControlCode::EndOfTransmissionBlock => {
-        log::warn!("EndOfTransmissionBlock ")
+        skip!("EndOfTransmissionBlock")
       }
-      ControlCode::Cancel => log::warn!("Cancel "),
-      ControlCode::EndOfMedium => log::warn!("EndOfMedium "),
-      ControlCode::Substitute => log::warn!("Substitute "),
-      ControlCode::Escape => log::warn!("Escape "),
-      ControlCode::FileSeparator => log::warn!("FileSeparator "),
-      ControlCode::GroupSeparator => log::warn!("GroupSeparator "),
-      ControlCode::RecordSeparator => log::warn!("RecordSeparator "),
-      ControlCode::UnitSeparator => log::warn!("UnitSeparator "),
-      ControlCode::BPH => log::warn!("BPH "),
-      ControlCode::NBH => log::warn!("NBH "),
-      ControlCode::IND => log::warn!("IND "),
-      ControlCode::NEL => log::warn!("NEL "),
-      ControlCode::SSA => log::warn!("SSA "),
-      ControlCode::ESA => log::warn!("ESA "),
-      ControlCode::HTS => log::warn!("HTS "),
-      ControlCode::HTJ => log::warn!("HTJ "),
-      ControlCode::VTS => log::warn!("VTS "),
-      ControlCode::PLD => log::warn!("PLD "),
-      ControlCode::PLU => log::warn!("PLU "),
-      ControlCode::RI => log::warn!("RI "),
-      ControlCode::SS2 => log::warn!("SS2 "),
-      ControlCode::SS3 => log::warn!("SS3 "),
-      ControlCode::DCS => log::warn!("DCS "),
-      ControlCode::PU1 => log::warn!("PU1 "),
-      ControlCode::PU2 => log::warn!("PU2 "),
-      ControlCode::STS => log::warn!("STS "),
-      ControlCode::CCH => log::warn!("CCH "),
-      ControlCode::MW => log::warn!("MW "),
-      ControlCode::SPA => log::warn!("SPA "),
-      ControlCode::EPA => log::warn!("EPA "),
-      ControlCode::SOS => log::warn!("SOS "),
-      ControlCode::SCI => log::warn!("SCI "),
-      ControlCode::CSI => log::warn!("CSI "),
-      ControlCode::ST => log::warn!("ST "),
-      ControlCode::OSC => log::warn!("OSC "),
-      ControlCode::PM => log::warn!("PM "),
-      ControlCode::APC => log::warn!("APC "),
+      ControlCode::Cancel => skip!("Cancel"),
+      ControlCode::EndOfMedium => skip!("EndOfMedium"),
+      ControlCode::Substitute => skip!("Substitute"),
+      ControlCode::Escape => skip!("Escape"),
+      ControlCode::FileSeparator => skip!("FileSeparator"),
+      ControlCode::GroupSeparator => skip!("GroupSeparator"),
+      ControlCode::RecordSeparator => skip!("RecordSeparator"),
+      ControlCode::UnitSeparator => skip!("UnitSeparator"),
+      ControlCode::BPH => skip!("BPH"),
+      ControlCode::NBH => skip!("NBH"),
+      ControlCode::IND => skip!("IND"),
+      ControlCode::NEL => skip!("NEL"),
+      ControlCode::SSA => skip!("SSA"),
+      ControlCode::ESA => skip!("ESA"),
+      ControlCode::HTS => skip!("HTS"),
+      ControlCode::HTJ => skip!("HTJ"),
+      ControlCode::VTS => skip!("VTS"),
+      ControlCode::PLD => skip!("PLD"),
+      ControlCode::PLU => skip!("PLU"),
+      ControlCode::RI => skip!("RI"),
+      ControlCode::SS2 => skip!("SS2"),
+      ControlCode::SS3 => skip!("SS3"),
+      ControlCode::DCS => skip!("DCS"),
+      ControlCode::PU1 => skip!("PU1"),
+      ControlCode::PU2 => skip!("PU2"),
+      ControlCode::STS => skip!("STS"),
+      ControlCode::CCH => skip!("CCH"),
+      ControlCode::MW => skip!("MW"),
+      ControlCode::SPA => skip!("SPA"),
+      ControlCode::EPA => skip!("EPA"),
+      ControlCode::SOS => skip!("SOS"),
+      ControlCode::SCI => skip!("SCI"),
+      ControlCode::CSI => skip!("CSI"),
+      ControlCode::ST => skip!("ST"),
+      ControlCode::OSC => skip!("OSC"),
+      ControlCode::PM => skip!("PM"),
+      ControlCode::APC => skip!("APC"),
     }
   }
 
   fn handle_device_control(&mut self, _mode: DeviceControlMode) {
-    log::warn!("DeviceControl");
+    skip!("DeviceControl");
   }
 
   fn handle_os_command(&mut self, _cmd: &OperatingSystemCommand) {
-    log::warn!("OperatingSystemCommand");
+    skip!("OperatingSystemCommand");
   }
 
   fn handle_csi(&mut self, csi: CSI) {
@@ -1877,53 +1897,53 @@ impl Screen {
           | termwiz::cell::Underline::Dotted
           | termwiz::cell::Underline::Dashed => self.attrs.set_underline(true),
         },
-        Sgr::UnderlineColor(_) => log::warn!("UnderlineColor"),
-        Sgr::Blink(_) => log::warn!("Blink"),
-        Sgr::Italic(_) => log::warn!("Italic"),
-        Sgr::Inverse(_) => log::warn!("Inverse"),
-        Sgr::Invisible(_) => log::warn!("Invisible"),
-        Sgr::StrikeThrough(_) => log::warn!("StrikeThrough"),
-        Sgr::Font(_) => log::warn!("Font"),
+        Sgr::UnderlineColor(_) => skip!("UnderlineColor"),
+        Sgr::Blink(_) => skip!("Blink"),
+        Sgr::Italic(_) => skip!("Italic"),
+        Sgr::Inverse(_) => skip!("Inverse"),
+        Sgr::Invisible(_) => skip!("Invisible"),
+        Sgr::StrikeThrough(_) => skip!("StrikeThrough"),
+        Sgr::Font(_) => skip!("Font"),
         Sgr::Foreground(color) => self.attrs.fgcolor = color.into(),
         Sgr::Background(color) => self.attrs.bgcolor = color.into(),
-        Sgr::Overline(_) => log::warn!("Overline"),
-        Sgr::VerticalAlign(_) => log::warn!("VerticalAlign"),
+        Sgr::Overline(_) => skip!("Overline"),
+        Sgr::VerticalAlign(_) => skip!("VerticalAlign"),
       },
       CSI::Cursor(cursor) => match cursor {
-        Cursor::BackwardTabulation(_) => log::warn!("BackwardTabulation"),
-        Cursor::TabulationClear(_) => log::warn!("TabulationClear"),
+        Cursor::BackwardTabulation(_) => skip!("BackwardTabulation"),
+        Cursor::TabulationClear(_) => skip!("TabulationClear"),
         Cursor::CharacterAbsolute(pos) => {
           self.grid_mut().col_set(pos.as_zero_based() as u16)
         }
         Cursor::CharacterPositionAbsolute(_) => {
-          log::warn!("CharacterPositionAbsolute")
+          skip!("CharacterPositionAbsolute")
         }
         Cursor::CharacterPositionBackward(_) => {
-          log::warn!("CharacterPositionBackward")
+          skip!("CharacterPositionBackward")
         }
         Cursor::CharacterPositionForward(_) => {
-          log::warn!("CharacterPositionForward")
+          skip!("CharacterPositionForward")
         }
         Cursor::CharacterAndLinePosition { line: _, col: _ } => {
-          log::warn!("CharacterAndLinePosition")
+          skip!("CharacterAndLinePosition")
         }
         Cursor::LinePositionAbsolute(row) => {
           self.grid_mut().row_set((row - 1) as u16)
         }
-        Cursor::LinePositionBackward(_) => log::warn!("LinePositionBackward"),
-        Cursor::LinePositionForward(_) => log::warn!("LinePositionForward"),
-        Cursor::ForwardTabulation(_) => log::warn!("ForwardTabulation"),
-        Cursor::NextLine(_) => log::warn!("NextLine"),
-        Cursor::PrecedingLine(_) => log::warn!("PrecedingLine"),
+        Cursor::LinePositionBackward(_) => skip!("LinePositionBackward"),
+        Cursor::LinePositionForward(_) => skip!("LinePositionForward"),
+        Cursor::ForwardTabulation(_) => skip!("ForwardTabulation"),
+        Cursor::NextLine(_) => skip!("NextLine"),
+        Cursor::PrecedingLine(_) => skip!("PrecedingLine"),
         Cursor::ActivePositionReport { line: _, col: _ } => {
-          log::warn!("ActivePositionReport")
+          skip!("ActivePositionReport")
         }
         Cursor::RequestActivePositionReport => {
-          log::warn!("RequestActivePositionReport")
+          skip!("RequestActivePositionReport")
         }
-        Cursor::SaveCursor => log::warn!("SaveCursor"),
-        Cursor::RestoreCursor => log::warn!("RestoreCursor"),
-        Cursor::TabulationControl(_) => log::warn!("TabulationControl"),
+        Cursor::SaveCursor => skip!("SaveCursor"),
+        Cursor::RestoreCursor => skip!("RestoreCursor"),
+        Cursor::TabulationControl(_) => skip!("TabulationControl"),
         Cursor::Left(count) => self.grid_mut().col_dec(count as u16),
         Cursor::Down(count) => self.grid_mut().row_inc_clamp(count as u16),
         Cursor::Right(count) => self.grid_mut().col_inc_clamp(count as u16),
@@ -1934,7 +1954,7 @@ impl Screen {
           })
         }
         Cursor::Up(count) => self.grid_mut().row_dec_clamp(count as u16),
-        Cursor::LineTabulation(_) => log::warn!("LineTabulation"),
+        Cursor::LineTabulation(_) => skip!("LineTabulation"),
         Cursor::SetTopAndBottomMargins { top, bottom } => {
           self.grid_mut().set_scroll_region(
             top.as_zero_based() as u16,
@@ -1942,9 +1962,9 @@ impl Screen {
           )
         }
         Cursor::SetLeftAndRightMargins { left: _, right: _ } => {
-          log::warn!("SetLeftAndRightMargins")
+          skip!("SetLeftAndRightMargins")
         }
-        Cursor::CursorStyle(_) => log::warn!("CursorStyle"),
+        Cursor::CursorStyle(_) => skip!("CursorStyle"),
       },
       CSI::Edit(edit) => match edit {
         Edit::DeleteCharacter(count) => {
@@ -1967,7 +1987,7 @@ impl Screen {
             EraseInLine::EraseLine => self.grid_mut().erase_row(attrs),
           }
         }
-        Edit::InsertCharacter(_) => log::warn!("InsertCharacter"),
+        Edit::InsertCharacter(_) => skip!("InsertCharacter"),
         Edit::InsertLine(count) => self.grid_mut().insert_lines(count as u16),
         Edit::ScrollDown(count) => self.grid_mut().scroll_down(count as u16),
         Edit::ScrollUp(count) => self.grid_mut().scroll_up(count as u16),
@@ -1981,249 +2001,345 @@ impl Screen {
               self.grid_mut().erase_all_backward(attrs)
             }
             EraseInDisplay::EraseDisplay => self.grid_mut().erase_all(attrs),
-            EraseInDisplay::EraseScrollback => log::warn!("EraseScrollback"),
+            EraseInDisplay::EraseScrollback => skip!("EraseScrollback"),
           }
         }
-        Edit::Repeat(_) => log::warn!("Repeat"),
+        Edit::Repeat(_) => skip!("Repeat"),
       },
       CSI::Mode(mode) => match mode {
         termwiz::escape::csi::Mode::SetDecPrivateMode(pmode) => match pmode {
           DecPrivateMode::Code(code) => match code {
             DecPrivateModeCode::ApplicationCursorKeys => {
-              log::warn!("ApplicationCursorKeys")
+              skip!("ApplicationCursorKeys")
             }
-            DecPrivateModeCode::DecAnsiMode => log::warn!("DecAnsiMode"),
+            DecPrivateModeCode::DecAnsiMode => skip!("DecAnsiMode"),
             DecPrivateModeCode::Select132Columns => {
-              log::warn!("Select132Columns")
+              skip!("Select132Columns")
             }
-            DecPrivateModeCode::SmoothScroll => log::warn!("SmoothScroll"),
-            DecPrivateModeCode::ReverseVideo => log::warn!("ReverseVideo"),
+            DecPrivateModeCode::SmoothScroll => skip!("SmoothScroll"),
+            DecPrivateModeCode::ReverseVideo => skip!("ReverseVideo"),
             DecPrivateModeCode::OriginMode => {
               self.grid_mut().set_origin_mode(true)
             }
-            DecPrivateModeCode::AutoWrap => log::warn!("AutoWrap"),
-            DecPrivateModeCode::AutoRepeat => log::warn!("AutoRepeat"),
+            DecPrivateModeCode::AutoWrap => skip!("AutoWrap"),
+            DecPrivateModeCode::AutoRepeat => skip!("AutoRepeat"),
             DecPrivateModeCode::StartBlinkingCursor => {
-              log::warn!("StartBlinkingCursor")
+              skip!("StartBlinkingCursor")
             }
             DecPrivateModeCode::ShowCursor => self.clear_mode(MODE_HIDE_CURSOR),
             DecPrivateModeCode::ReverseWraparound => {
-              log::warn!("ReverseWraparound")
+              skip!("ReverseWraparound")
             }
             DecPrivateModeCode::LeftRightMarginMode => {
-              log::warn!("LeftRightMarginMode")
+              skip!("LeftRightMarginMode")
             }
             DecPrivateModeCode::SixelDisplayMode => {
-              log::warn!("SixelDisplayMode")
+              skip!("SixelDisplayMode")
             }
-            DecPrivateModeCode::MouseTracking => log::warn!("MouseTracking"),
+            DecPrivateModeCode::MouseTracking => {
+              self.set_mouse_mode(MouseProtocolMode::PressRelease)
+            }
             DecPrivateModeCode::HighlightMouseTracking => {
-              log::warn!("HighlightMouseTracking")
+              skip!("HighlightMouseTracking")
             }
             DecPrivateModeCode::ButtonEventMouse => {
-              log::warn!("ButtonEventMouse")
+              self.set_mouse_mode(MouseProtocolMode::ButtonMotion)
             }
-            DecPrivateModeCode::AnyEventMouse => log::warn!("AnyEventMouse"),
-            DecPrivateModeCode::FocusTracking => log::warn!("FocusTracking"),
-            DecPrivateModeCode::Utf8Mouse => log::warn!("Utf8Mouse"),
-            DecPrivateModeCode::SGRMouse => log::warn!("SGRMouse"),
-            DecPrivateModeCode::SGRPixelsMouse => log::warn!("SGRPixelsMouse"),
+            DecPrivateModeCode::AnyEventMouse => {
+              self.set_mouse_mode(MouseProtocolMode::AnyMotion)
+            }
+            DecPrivateModeCode::FocusTracking => skip!("FocusTracking"),
+            DecPrivateModeCode::Utf8Mouse => {
+              self.set_mouse_encoding(MouseProtocolEncoding::Utf8)
+            }
+            DecPrivateModeCode::SGRMouse => {
+              self.set_mouse_encoding(MouseProtocolEncoding::Sgr)
+            }
+            DecPrivateModeCode::SGRPixelsMouse => skip!("SGRPixelsMouse"),
             DecPrivateModeCode::XTermMetaSendsEscape => {
-              log::warn!("XTermMetaSendsEscape")
+              skip!("XTermMetaSendsEscape")
             }
             DecPrivateModeCode::XTermAltSendsEscape => {
-              log::warn!("XTermAltSendsEscape")
+              skip!("XTermAltSendsEscape")
             }
-            DecPrivateModeCode::SaveCursor => log::warn!("SaveCursor"),
+            DecPrivateModeCode::SaveCursor => skip!("SaveCursor"),
             DecPrivateModeCode::ClearAndEnableAlternateScreen => {
               self.decsc();
               self.alternate_grid.clear();
               self.enter_alternate_grid();
             }
             DecPrivateModeCode::EnableAlternateScreen => {
-              log::warn!("EnableAlternateScreen")
+              skip!("EnableAlternateScreen")
             }
             DecPrivateModeCode::OptEnableAlternateScreen => {
-              log::warn!("OptEnableAlternateScreen")
+              skip!("OptEnableAlternateScreen")
             }
-            DecPrivateModeCode::BracketedPaste => log::warn!("BracketedPaste"),
+            DecPrivateModeCode::BracketedPaste => {
+              self.set_mode(MODE_BRACKETED_PASTE);
+            }
             DecPrivateModeCode::UsePrivateColorRegistersForEachGraphic => {
-              log::warn!("UsePrivateColorRegistersForEachGraphic")
+              skip!("UsePrivateColorRegistersForEachGraphic")
             }
             DecPrivateModeCode::SynchronizedOutput => {
-              log::warn!("SynchronizedOutput")
+              skip!("SynchronizedOutput")
             }
             DecPrivateModeCode::MinTTYApplicationEscapeKeyMode => {
-              log::warn!("MinTTYApplicationEscapeKeyMode")
+              skip!("MinTTYApplicationEscapeKeyMode")
             }
             DecPrivateModeCode::SixelScrollsRight => {
-              log::warn!("SixelScrollsRight")
+              skip!("SixelScrollsRight")
             }
-            DecPrivateModeCode::Win32InputMode => log::warn!("Win32InputMode"),
+            DecPrivateModeCode::Win32InputMode => skip!("Win32InputMode"),
           },
           DecPrivateMode::Unspecified(m) => {
-            log::warn!("SetDecPrivateMode:Unspecified:{}", m)
+            skip!("SetDecPrivateMode:Unspecified:{}", m)
           }
         },
-        termwiz::escape::csi::Mode::ResetDecPrivateMode(_) => {
-          log::warn!("ResetDecPrivateMode")
-        }
+        termwiz::escape::csi::Mode::ResetDecPrivateMode(pmode) => match pmode {
+          DecPrivateMode::Code(code) => match code {
+            DecPrivateModeCode::ApplicationCursorKeys => {
+              self.clear_mode(MODE_APPLICATION_CURSOR)
+            }
+            DecPrivateModeCode::DecAnsiMode => skip!("DecAnsiMode"),
+            DecPrivateModeCode::Select132Columns => {
+              skip!("Select132Columns")
+            }
+            DecPrivateModeCode::SmoothScroll => skip!("SmoothScroll"),
+            DecPrivateModeCode::ReverseVideo => skip!("ReverseVideo"),
+            DecPrivateModeCode::OriginMode => {
+              self.grid_mut().set_origin_mode(false)
+            }
+            DecPrivateModeCode::AutoWrap => skip!("AutoWrap"),
+            DecPrivateModeCode::AutoRepeat => skip!("AutoRepeat"),
+            DecPrivateModeCode::StartBlinkingCursor => {
+              skip!("StartBlinkingCursor")
+            }
+            DecPrivateModeCode::ShowCursor => self.set_mode(MODE_HIDE_CURSOR),
+            DecPrivateModeCode::ReverseWraparound => {
+              skip!("ReverseWraparound")
+            }
+            DecPrivateModeCode::LeftRightMarginMode => {
+              skip!("LeftRightMarginMode")
+            }
+            DecPrivateModeCode::SixelDisplayMode => {
+              skip!("SixelDisplayMode")
+            }
+            DecPrivateModeCode::MouseTracking => {
+              self.clear_mouse_mode(MouseProtocolMode::PressRelease)
+            }
+            DecPrivateModeCode::HighlightMouseTracking => {
+              skip!("HighlightMouseTracking")
+            }
+            DecPrivateModeCode::ButtonEventMouse => {
+              self.clear_mouse_mode(MouseProtocolMode::ButtonMotion)
+            }
+            DecPrivateModeCode::AnyEventMouse => {
+              self.clear_mouse_mode(MouseProtocolMode::AnyMotion)
+            }
+            DecPrivateModeCode::FocusTracking => skip!("FocusTracking"),
+            DecPrivateModeCode::Utf8Mouse => {
+              self.clear_mouse_encoding(MouseProtocolEncoding::Utf8)
+            }
+            DecPrivateModeCode::SGRMouse => {
+              self.clear_mouse_encoding(MouseProtocolEncoding::Sgr)
+            }
+            DecPrivateModeCode::SGRPixelsMouse => {
+              skip!("SGRPixelsMouse")
+            }
+            DecPrivateModeCode::XTermMetaSendsEscape => {
+              skip!("XTermMetaSendsEscape")
+            }
+            DecPrivateModeCode::XTermAltSendsEscape => {
+              skip!("XTermAltSendsEscape")
+            }
+            DecPrivateModeCode::SaveCursor => skip!("SaveCursor"),
+            DecPrivateModeCode::ClearAndEnableAlternateScreen => {
+              self.exit_alternate_grid();
+              self.decrc();
+            }
+            DecPrivateModeCode::EnableAlternateScreen => {
+              self.exit_alternate_grid()
+            }
+            DecPrivateModeCode::OptEnableAlternateScreen => {
+              skip!("OptEnableAlternateScreen")
+            }
+            DecPrivateModeCode::BracketedPaste => {
+              self.clear_mode(MODE_BRACKETED_PASTE)
+            }
+            DecPrivateModeCode::UsePrivateColorRegistersForEachGraphic => {
+              skip!("UsePrivateColorRegistersForEachGraphic")
+            }
+            DecPrivateModeCode::SynchronizedOutput => {
+              skip!("SynchronizedOutput")
+            }
+            DecPrivateModeCode::MinTTYApplicationEscapeKeyMode => {
+              skip!("MinTTYApplicationEscapeKeyMode")
+            }
+            DecPrivateModeCode::SixelScrollsRight => {
+              skip!("SixelScrollsRight")
+            }
+            DecPrivateModeCode::Win32InputMode => {
+              skip!("Win32InputMode")
+            }
+          },
+          termwiz::escape::csi::DecPrivateMode::Unspecified(_) => todo!(),
+        },
         termwiz::escape::csi::Mode::SaveDecPrivateMode(pmode) => {
-          log::warn!("SaveDecPrivateMode --->");
+          skip!("SaveDecPrivateMode --->");
           match pmode {
             DecPrivateMode::Code(code) => match code {
               DecPrivateModeCode::ApplicationCursorKeys => {
-                log::warn!("ApplicationCursorKeys")
+                skip!("ApplicationCursorKeys")
               }
-              DecPrivateModeCode::DecAnsiMode => log::warn!("DecAnsiMode"),
+              DecPrivateModeCode::DecAnsiMode => skip!("DecAnsiMode"),
               DecPrivateModeCode::Select132Columns => {
-                log::warn!("Select132Columns")
+                skip!("Select132Columns")
               }
-              DecPrivateModeCode::SmoothScroll => log::warn!("SmoothScroll"),
-              DecPrivateModeCode::ReverseVideo => log::warn!("ReverseVideo"),
-              DecPrivateModeCode::OriginMode => log::warn!("OriginMode"),
-              DecPrivateModeCode::AutoWrap => log::warn!("AutoWrap"),
-              DecPrivateModeCode::AutoRepeat => log::warn!("AutoRepeat"),
+              DecPrivateModeCode::SmoothScroll => skip!("SmoothScroll"),
+              DecPrivateModeCode::ReverseVideo => skip!("ReverseVideo"),
+              DecPrivateModeCode::OriginMode => skip!("OriginMode"),
+              DecPrivateModeCode::AutoWrap => skip!("AutoWrap"),
+              DecPrivateModeCode::AutoRepeat => skip!("AutoRepeat"),
               DecPrivateModeCode::StartBlinkingCursor => {
-                log::warn!("StartBlinkingCursor")
+                skip!("StartBlinkingCursor")
               }
-              DecPrivateModeCode::ShowCursor => log::warn!("ShowCursor"),
+              DecPrivateModeCode::ShowCursor => skip!("ShowCursor"),
               DecPrivateModeCode::ReverseWraparound => {
-                log::warn!("ReverseWraparound")
+                skip!("ReverseWraparound")
               }
               DecPrivateModeCode::LeftRightMarginMode => {
-                log::warn!("LeftRightMarginMode")
+                skip!("LeftRightMarginMode")
               }
               DecPrivateModeCode::SixelDisplayMode => {
-                log::warn!("SixelDisplayMode")
+                skip!("SixelDisplayMode")
               }
-              DecPrivateModeCode::MouseTracking => log::warn!("MouseTracking"),
+              DecPrivateModeCode::MouseTracking => skip!("MouseTracking"),
               DecPrivateModeCode::HighlightMouseTracking => {
-                log::warn!("HighlightMouseTracking")
+                skip!("HighlightMouseTracking")
               }
               DecPrivateModeCode::ButtonEventMouse => {
-                log::warn!("ButtonEventMouse")
+                skip!("ButtonEventMouse")
               }
-              DecPrivateModeCode::AnyEventMouse => log::warn!("AnyEventMouse"),
-              DecPrivateModeCode::FocusTracking => log::warn!("FocusTracking"),
-              DecPrivateModeCode::Utf8Mouse => log::warn!("Utf8Mouse"),
-              DecPrivateModeCode::SGRMouse => log::warn!("SGRMouse"),
+              DecPrivateModeCode::AnyEventMouse => skip!("AnyEventMouse"),
+              DecPrivateModeCode::FocusTracking => skip!("FocusTracking"),
+              DecPrivateModeCode::Utf8Mouse => skip!("Utf8Mouse"),
+              DecPrivateModeCode::SGRMouse => skip!("SGRMouse"),
               DecPrivateModeCode::SGRPixelsMouse => {
-                log::warn!("SGRPixelsMouse")
+                skip!("SGRPixelsMouse")
               }
               DecPrivateModeCode::XTermMetaSendsEscape => {
-                log::warn!("XTermMetaSendsEscape")
+                skip!("XTermMetaSendsEscape")
               }
               DecPrivateModeCode::XTermAltSendsEscape => {
-                log::warn!("XTermAltSendsEscape")
+                skip!("XTermAltSendsEscape")
               }
-              DecPrivateModeCode::SaveCursor => log::warn!("SaveCursor"),
+              DecPrivateModeCode::SaveCursor => skip!("SaveCursor"),
               DecPrivateModeCode::ClearAndEnableAlternateScreen => {
-                log::warn!("ClearAndEnableAlternateScreen")
+                skip!("ClearAndEnableAlternateScreen")
               }
               DecPrivateModeCode::EnableAlternateScreen => {
-                log::warn!("EnableAlternateScreen")
+                skip!("EnableAlternateScreen")
               }
               DecPrivateModeCode::OptEnableAlternateScreen => {
-                log::warn!("OptEnableAlternateScreen")
+                skip!("OptEnableAlternateScreen")
               }
               DecPrivateModeCode::BracketedPaste => {
-                log::warn!("BracketedPaste")
+                skip!("BracketedPaste")
               }
               DecPrivateModeCode::UsePrivateColorRegistersForEachGraphic => {
-                log::warn!("UsePrivateColorRegistersForEachGraphic")
+                skip!("UsePrivateColorRegistersForEachGraphic")
               }
               DecPrivateModeCode::SynchronizedOutput => {
-                log::warn!("SynchronizedOutput")
+                skip!("SynchronizedOutput")
               }
               DecPrivateModeCode::MinTTYApplicationEscapeKeyMode => {
-                log::warn!("MinTTYApplicationEscapeKeyMode")
+                skip!("MinTTYApplicationEscapeKeyMode")
               }
               DecPrivateModeCode::SixelScrollsRight => {
-                log::warn!("SixelScrollsRight")
+                skip!("SixelScrollsRight")
               }
               DecPrivateModeCode::Win32InputMode => {
-                log::warn!("Win32InputMode")
+                skip!("Win32InputMode")
               }
             },
             termwiz::escape::csi::DecPrivateMode::Unspecified(_) => todo!(),
           }
         }
         termwiz::escape::csi::Mode::RestoreDecPrivateMode(_) => {
-          log::warn!("RestoreDecPrivateMode")
+          skip!("RestoreDecPrivateMode")
         }
         termwiz::escape::csi::Mode::QueryDecPrivateMode(_) => {
-          log::warn!("QueryDecPrivateMode")
+          skip!("QueryDecPrivateMode")
         }
-        termwiz::escape::csi::Mode::SetMode(_) => log::warn!("SetMode"),
-        termwiz::escape::csi::Mode::ResetMode(_) => log::warn!("ResetMode"),
-        termwiz::escape::csi::Mode::QueryMode(_) => log::warn!("QueryMode"),
+        termwiz::escape::csi::Mode::SetMode(_) => skip!("SetMode"),
+        termwiz::escape::csi::Mode::ResetMode(_) => skip!("ResetMode"),
+        termwiz::escape::csi::Mode::QueryMode(_) => skip!("QueryMode"),
         termwiz::escape::csi::Mode::XtermKeyMode {
           resource: _,
           value: _,
         } => {
-          log::warn!("XtermKeyMode")
+          skip!("XtermKeyMode")
         }
       },
-      CSI::Device(_) => log::warn!("device"),
-      CSI::Mouse(_) => log::warn!("mouse"),
+      CSI::Device(_) => skip!("device"),
+      CSI::Mouse(_) => skip!("mouse"),
       CSI::Window(win) => match *win {
-        Window::DeIconify => log::warn!("DeIconify"),
-        Window::Iconify => log::warn!("Iconify"),
-        Window::MoveWindow { x: _, y: _ } => log::warn!("MoveWindow"),
+        Window::DeIconify => skip!("DeIconify"),
+        Window::Iconify => skip!("Iconify"),
+        Window::MoveWindow { x: _, y: _ } => skip!("MoveWindow"),
         Window::ResizeWindowPixels {
           width: _,
           height: _,
         } => {
-          log::warn!("ResizeWindowPixels")
+          skip!("ResizeWindowPixels")
         }
-        Window::RaiseWindow => log::warn!("RaiseWindow"),
-        Window::LowerWindow => log::warn!("LowerWindow"),
-        Window::RefreshWindow => log::warn!("RefreshWindow"),
+        Window::RaiseWindow => skip!("RaiseWindow"),
+        Window::LowerWindow => skip!("LowerWindow"),
+        Window::RefreshWindow => skip!("RefreshWindow"),
         Window::ResizeWindowCells {
           width: _,
           height: _,
         } => {
-          log::warn!("ResizeWindowCells")
+          skip!("ResizeWindowCells")
         }
-        Window::RestoreMaximizedWindow => log::warn!("RestoreMaximizedWindow"),
-        Window::MaximizeWindow => log::warn!("MaximizeWindow"),
+        Window::RestoreMaximizedWindow => skip!("RestoreMaximizedWindow"),
+        Window::MaximizeWindow => skip!("MaximizeWindow"),
         Window::MaximizeWindowVertically => {
-          log::warn!("MaximizeWindowVertically")
+          skip!("MaximizeWindowVertically")
         }
         Window::MaximizeWindowHorizontally => {
-          log::warn!("MaximizeWindowHorizontally")
+          skip!("MaximizeWindowHorizontally")
         }
-        Window::UndoFullScreenMode => log::warn!("UndoFullScreenMode"),
-        Window::ChangeToFullScreenMode => log::warn!("ChangeToFullScreenMode"),
-        Window::ToggleFullScreen => log::warn!("ToggleFullScreen"),
-        Window::ReportWindowState => log::warn!("ReportWindowState"),
-        Window::ReportWindowPosition => log::warn!("ReportWindowPosition"),
-        Window::ReportTextAreaPosition => log::warn!("ReportTextAreaPosition"),
+        Window::UndoFullScreenMode => skip!("UndoFullScreenMode"),
+        Window::ChangeToFullScreenMode => skip!("ChangeToFullScreenMode"),
+        Window::ToggleFullScreen => skip!("ToggleFullScreen"),
+        Window::ReportWindowState => skip!("ReportWindowState"),
+        Window::ReportWindowPosition => skip!("ReportWindowPosition"),
+        Window::ReportTextAreaPosition => skip!("ReportTextAreaPosition"),
         Window::ReportTextAreaSizePixels => {
-          log::warn!("ReportTextAreaSizePixels")
+          skip!("ReportTextAreaSizePixels")
         }
-        Window::ReportWindowSizePixels => log::warn!("ReportWindowSizePixels"),
-        Window::ReportScreenSizePixels => log::warn!("ReportScreenSizePixels"),
-        Window::ReportCellSizePixels => log::warn!("ReportCellSizePixels"),
+        Window::ReportWindowSizePixels => skip!("ReportWindowSizePixels"),
+        Window::ReportScreenSizePixels => skip!("ReportScreenSizePixels"),
+        Window::ReportCellSizePixels => skip!("ReportCellSizePixels"),
         Window::ReportCellSizePixelsResponse {
           width: _,
           height: _,
         } => {
-          log::warn!("ReportCellSizePixelsResponse")
+          skip!("ReportCellSizePixelsResponse")
         }
         Window::ReportTextAreaSizeCells => {
-          log::warn!("ReportTextAreaSizeCells")
+          skip!("ReportTextAreaSizeCells")
         }
-        Window::ReportScreenSizeCells => log::warn!("ReportScreenSizeCells"),
-        Window::ReportIconLabel => log::warn!("ReportIconLabel"),
-        Window::ReportWindowTitle => log::warn!("ReportWindowTitle"),
-        Window::PushIconAndWindowTitle => log::warn!("PushIconAndWindowTitle"),
-        Window::PushIconTitle => log::warn!("PushIconTitle"),
-        Window::PushWindowTitle => log::warn!("PushWindowTitle"),
-        Window::PopIconAndWindowTitle => log::warn!("PopIconAndWindowTitle"),
-        Window::PopIconTitle => log::warn!("PopIconTitle"),
-        Window::PopWindowTitle => log::warn!("PopWindowTitle"),
+        Window::ReportScreenSizeCells => skip!("ReportScreenSizeCells"),
+        Window::ReportIconLabel => skip!("ReportIconLabel"),
+        Window::ReportWindowTitle => skip!("ReportWindowTitle"),
+        Window::PushIconAndWindowTitle => skip!("PushIconAndWindowTitle"),
+        Window::PushIconTitle => skip!("PushIconTitle"),
+        Window::PushWindowTitle => skip!("PushWindowTitle"),
+        Window::PopIconAndWindowTitle => skip!("PopIconAndWindowTitle"),
+        Window::PopIconTitle => skip!("PopIconTitle"),
+        Window::PopWindowTitle => skip!("PopWindowTitle"),
         Window::ChecksumRectangularArea {
           request_id: _,
           page_number: _,
@@ -2231,19 +2347,111 @@ impl Screen {
           left: _,
           bottom: _,
           right: _,
-        } => log::warn!("ChecksumRectangularArea"),
+        } => skip!("ChecksumRectangularArea"),
       },
-      CSI::Keyboard(_) => log::warn!("keyboard"),
-      CSI::SelectCharacterPath(_, _) => log::warn!("SelectCharacterPath"),
-      CSI::Unspecified(_) => log::warn!("unspecified"),
+      CSI::Keyboard(kb) => match kb {
+        termwiz::escape::csi::Keyboard::SetKittyState { flags: _, mode: _ } => {
+          skip!("SetKittyState")
+        }
+        termwiz::escape::csi::Keyboard::PushKittyState {
+          flags: _,
+          mode: _,
+        } => {
+          skip!("PushKittyState")
+        }
+        termwiz::escape::csi::Keyboard::PopKittyState(_) => {
+          skip!("PopKittyState")
+        }
+        termwiz::escape::csi::Keyboard::QueryKittySupport => {
+          skip!("QueryKittySupport")
+        }
+        termwiz::escape::csi::Keyboard::ReportKittyState(_) => {
+          skip!("ReportKittyState")
+        }
+      },
+      CSI::SelectCharacterPath(_, _) => skip!("SelectCharacterPath"),
+      CSI::Unspecified(_) => skip!("unspecified"),
     }
   }
 
-  fn handle_esc(&mut self, _esc: Esc) {
-    log::warn!("Esc");
+  fn handle_esc(&mut self, esc: Esc) {
+    match esc {
+      Esc::Code(code) => match code {
+        EscCode::FullReset => skip!("FullReset"),
+        EscCode::Index => skip!("Index"),
+        EscCode::NextLine => skip!("NextLine"),
+        EscCode::CursorPositionLowerLeft => {
+          skip!("CursorPositionLowerLeft")
+        }
+        EscCode::HorizontalTabSet => skip!("HorizontalTabSet"),
+        EscCode::ReverseIndex => skip!("ReverseIndex"),
+        EscCode::SingleShiftG2 => skip!("SingleShiftG2"),
+        EscCode::SingleShiftG3 => skip!("SingleShiftG3"),
+        EscCode::StartOfGuardedArea => skip!("StartOfGuardedArea"),
+        EscCode::EndOfGuardedArea => skip!("EndOfGuardedArea"),
+        EscCode::StartOfString => skip!("StartOfString"),
+        EscCode::ReturnTerminalId => skip!("ReturnTerminalId"),
+        EscCode::StringTerminator => skip!("StringTerminator"),
+        EscCode::PrivacyMessage => skip!("PrivacyMessage"),
+        EscCode::ApplicationProgramCommand => {
+          skip!("ApplicationProgramCommand")
+        }
+        EscCode::TmuxTitle => skip!("TmuxTitle"),
+        EscCode::DecBackIndex => skip!("DecBackIndex"),
+        EscCode::DecSaveCursorPosition => skip!("DecSaveCursorPosition"),
+        EscCode::DecRestoreCursorPosition => {
+          skip!("DecRestoreCursorPosition")
+        }
+        EscCode::DecApplicationKeyPad => skip!("DecApplicationKeyPad"),
+        EscCode::DecNormalKeyPad => skip!("DecNormalKeyPad"),
+        EscCode::DecLineDrawingG0 => skip!("DecLineDrawingG0"),
+        EscCode::UkCharacterSetG0 => skip!("UkCharacterSetG0"),
+        EscCode::AsciiCharacterSetG0 => (),
+        EscCode::DecLineDrawingG1 => skip!("DecLineDrawingG1"),
+        EscCode::UkCharacterSetG1 => skip!("UkCharacterSetG1"),
+        EscCode::AsciiCharacterSetG1 => skip!("AsciiCharacterSetG1"),
+        EscCode::DecScreenAlignmentDisplay => {
+          skip!("DecScreenAlignmentDisplay")
+        }
+        EscCode::DecDoubleHeightTopHalfLine => {
+          skip!("DecDoubleHeightTopHalfLine")
+        }
+        EscCode::DecDoubleHeightBottomHalfLine => {
+          skip!("DecDoubleHeightBottomHalfLine")
+        }
+        EscCode::DecSingleWidthLine => skip!("DecSingleWidthLine"),
+        EscCode::DecDoubleWidthLine => skip!("DecDoubleWidthLine"),
+        EscCode::ApplicationModeArrowUpPress => {
+          skip!("ApplicationModeArrowUpPress")
+        }
+        EscCode::ApplicationModeArrowDownPress => {
+          skip!("ApplicationModeArrowDownPress")
+        }
+        EscCode::ApplicationModeArrowRightPress => {
+          skip!("ApplicationModeArrowRightPress")
+        }
+        EscCode::ApplicationModeArrowLeftPress => {
+          skip!("ApplicationModeArrowLeftPress")
+        }
+        EscCode::ApplicationModeHomePress => {
+          skip!("ApplicationModeHomePress")
+        }
+        EscCode::ApplicationModeEndPress => {
+          skip!("ApplicationModeEndPress")
+        }
+        EscCode::F1Press => skip!("F1Press"),
+        EscCode::F2Press => skip!("F2Press"),
+        EscCode::F3Press => skip!("F3Press"),
+        EscCode::F4Press => skip!("F4Press"),
+      },
+      Esc::Unspecified {
+        intermediate: _,
+        control,
+      } => skip!("Unspecified esc: {}", control),
+    }
   }
 
   fn handle_xt_get_tcap(&mut self, _names: Vec<String>) {
-    log::warn!("XtGetTcap");
+    skip!("XtGetTcap");
   }
 }

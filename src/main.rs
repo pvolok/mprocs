@@ -45,7 +45,7 @@ use yaml_val::Val;
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
   let logger_str = if cfg!(debug_assertions) {
-    "info"
+    "debug"
   } else {
     "warn"
   };
