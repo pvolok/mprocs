@@ -155,6 +155,8 @@ settings the _global_.
 - **mouse_scroll_speed**: _integer_ - Number of lines to scrollper one mouse
   scroll.
 - **proc_list_width**: _integer_ - Process list window width.
+- **proc_list_vertical**: _bool_ - Move proc list to the top of the screen.
+- **proc_list_height**: _integer_ - Max proc list height in vertical mode.
 - **keymap_procs**: _object_ - Key bindings for process list. See
   [Keymap](#keymap).
 - **keymap_term**: _object_ - Key bindings for terminal window. See

@@ -141,11 +141,10 @@ impl Settings {
     }
 
     if let Some(proc_list_direction) =
-      obj.get(&Value::from("proc_list_direction"))
+      obj.get(&Value::from("proc_list_vertical"))
     {
-      self.proc_list_direction = match proc_list_direction.as_str()? {
-        "Horizontal" => tui::layout::Direction::Horizontal,
-        "Vertical" => tui::layout::Direction::Vertical,
+      self.proc_list_direction = match proc_list_direction.as_bool()? {
+        true => tui::layout::Direction::Vertical,
         _ => tui::layout::Direction::Horizontal,
       };
     }
