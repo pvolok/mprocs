@@ -22,6 +22,8 @@ pub struct Config {
   pub hide_keymap_window: bool,
   pub mouse_scroll_speed: usize,
   pub proc_list_width: usize,
+  pub proc_list_direction: tui::layout::Direction,
+  pub proc_list_height: usize,
 }
 
 impl Config {
@@ -61,6 +63,8 @@ impl Config {
       hide_keymap_window: settings.hide_keymap_window,
       mouse_scroll_speed: settings.mouse_scroll_speed,
       proc_list_width: settings.proc_list_width,
+      proc_list_direction: settings.proc_list_direction.clone(),
+      proc_list_height: settings.proc_list_height,
     };
 
     Ok(config)
@@ -73,6 +77,8 @@ impl Config {
       hide_keymap_window: settings.hide_keymap_window,
       mouse_scroll_speed: settings.mouse_scroll_speed,
       proc_list_width: settings.proc_list_width,
+      proc_list_direction: tui::layout::Direction::Horizontal,
+      proc_list_height: settings.proc_list_height,
     }
   }
 }

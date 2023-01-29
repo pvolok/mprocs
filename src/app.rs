@@ -121,6 +121,7 @@ impl App {
           let layout = AppLayout::new(
             f.size(),
             self.state.scope.is_zoomed(),
+            self.state.procs.len(),
             &self.config,
           );
 
@@ -407,6 +408,7 @@ impl App {
         let area = AppLayout::new(
           Rect::new(0, 0, width, height),
           self.state.scope.is_zoomed(),
+          self.state.procs.len(),
           &self.config,
         )
         .term_area();
@@ -743,6 +745,7 @@ impl App {
     AppLayout::new(
       self.terminal.get_frame().size(),
       self.state.scope.is_zoomed(),
+      self.state.procs.len(),
       &self.config,
     )
   }
@@ -756,7 +759,12 @@ struct AppLayout {
 }
 
 impl AppLayout {
-  pub fn new(area: Rect, zoom: bool, config: &Config) -> Self {
+  pub fn new(
+    area: Rect,
+    zoom: bool,
+    procs_lenth: usize,
+    config: &Config,
+  ) -> Self {
     let keymap_h = if zoom || config.hide_keymap_window {
       0
     } else {
@@ -764,6 +772,8 @@ impl AppLayout {
     };
     let procs_w = if zoom {
       0
+    } else if config.proc_list_direction == Direction::Vertical {
+      (std::cmp::min(procs_lenth, config.proc_list_height) + 2) as u16
     } else {
       config.proc_list_width as u16
     };
@@ -773,7 +783,7 @@ impl AppLayout {
       .constraints([Constraint::Min(1), Constraint::Length(keymap_h)])
       .split(area);
     let chunks = Layout::default()
-      .direction(Direction::Horizontal)
+      .direction(config.proc_list_direction.clone())
       .constraints([Constraint::Length(procs_w), Constraint::Min(2)].as_ref())
       .split(top_bot[0]);
     let term_zoom = Layout::default()

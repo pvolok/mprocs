@@ -20,6 +20,8 @@ pub struct Settings {
   pub hide_keymap_window: bool,
   pub mouse_scroll_speed: usize,
   pub proc_list_width: usize,
+  pub proc_list_direction: tui::layout::Direction,
+  pub proc_list_height: usize,
 }
 
 impl Default for Settings {
@@ -31,6 +33,8 @@ impl Default for Settings {
       hide_keymap_window: false,
       mouse_scroll_speed: 5,
       proc_list_width: 30,
+      proc_list_direction: tui::layout::Direction::Horizontal,
+      proc_list_height: 8,
     };
     settings.add_defaults();
     settings
@@ -134,6 +138,20 @@ impl Settings {
 
     if let Some(proc_list_width) = obj.get(&Value::from("proc_list_width")) {
       self.proc_list_width = proc_list_width.as_usize()?;
+    }
+
+    if let Some(proc_list_direction) =
+      obj.get(&Value::from("proc_list_direction"))
+    {
+      self.proc_list_direction = match proc_list_direction.as_str()? {
+        "Horizontal" => tui::layout::Direction::Horizontal,
+        "Vertical" => tui::layout::Direction::Vertical,
+        _ => tui::layout::Direction::Horizontal,
+      };
+    }
+
+    if let Some(proc_list_height) = obj.get(&Value::from("proc_list_height")) {
+      self.proc_list_height = proc_list_height.as_usize()?;
     }
 
     Ok(())
