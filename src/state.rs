@@ -80,6 +80,7 @@ impl State {
 
 pub enum Modal {
   AddProc { input: Input },
+  RenameProc { input: Input },
   RemoveProc { id: usize },
   Quit,
 }

@@ -20,7 +20,7 @@ use crate::{
   proc::{CopyMode, Pos, Proc, ProcState, ProcUpdate, StopSignal},
   protocol::{CltToSrv, ProxyBackend, SrvToClt},
   state::{Modal, Scope, State},
-  ui_add_proc::render_add_proc,
+  ui_add_proc::render_input_dialog,
   ui_confirm_quit::render_confirm_quit,
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
@@ -143,7 +143,10 @@ impl App {
           if let Some(modal) = &mut self.state.modal {
             match modal {
               Modal::AddProc { input } => {
-                render_add_proc(f.size(), f, input);
+                render_input_dialog(f.size(), "Add process", f, input);
+              }
+              Modal::RenameProc { input } => {
+                render_input_dialog(f.size(), "Rename process", f, input);
               }
               Modal::RemoveProc { id: _ } => {
                 render_remove_proc(f.size(), f);
@@ -248,6 +251,38 @@ impl App {
                   })
                   .unwrap();
                 // Skip because AddProc event will immediately rerender.
+                ret = Some(LoopAction::Skip);
+              }
+              Event::Key(KeyEvent {
+                code: KeyCode::Esc,
+                modifiers,
+              }) if modifiers.is_empty() => {
+                reset_modal = true;
+                ret = Some(LoopAction::Render);
+              }
+              _ => (),
+            }
+
+            let req = tui_input::backend::crossterm::to_input_request(event);
+            if let Some(req) = req {
+              input.handle(req);
+              ret = Some(LoopAction::Render);
+            }
+          }
+          Modal::RenameProc { input } => {
+            match event {
+              Event::Key(KeyEvent {
+                code: KeyCode::Enter,
+                modifiers,
+              }) if modifiers.is_empty() => {
+                reset_modal = true;
+                self
+                  .ev_tx
+                  .send(AppEvent::RenameProc {
+                    name: input.value().to_string(),
+                  })
+                  .unwrap();
+                // Skip because RenameProc event will immediately rerender.
                 ret = Some(LoopAction::Skip);
               }
               Event::Key(KeyEvent {
@@ -613,6 +648,21 @@ impl App {
           .procs
           .retain(|proc| proc.is_up() || proc.id != *id);
         LoopAction::Render
+      }
+
+      AppEvent::ShowRenameProc => {
+        self.state.modal = Some(Modal::RenameProc {
+          input: Input::default(),
+        });
+        LoopAction::Render
+      }
+      AppEvent::RenameProc { name } => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.rename(name);
+          LoopAction::Render
+        } else {
+          LoopAction::Skip
+        }
       }
 
       AppEvent::CopyModeEnter => {

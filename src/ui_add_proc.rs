@@ -10,8 +10,9 @@ use crate::{protocol::ProxyBackend, theme::Theme};
 
 type Backend = ProxyBackend;
 
-pub fn render_add_proc(
+pub fn render_input_dialog(
   area: Rect,
+  title: &str,
   frame: &mut Frame<Backend>,
   input: &mut Input,
 ) {
@@ -23,7 +24,7 @@ pub fn render_add_proc(
 
   let block = theme
     .pane(true)
-    .title(Span::styled("Add process", theme.pane_title(true)));
+    .title(Span::styled(title, theme.pane_title(true)));
   frame.render_widget(block, Rect::new(x - 1, y - 1, 42, 3).intersection(area));
 
   let left_trim = input.cursor().saturating_sub(w as usize);
