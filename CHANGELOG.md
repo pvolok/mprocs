@@ -1,5 +1,9 @@
 ## Unreleased
 
+## 0.6.4 - 2023-02-17
+
+- Add command for renaming the currently selected process (default: `e`)
+
 ## 0.6.3 - 2022-08-20
 
 - Reimplement copying.
