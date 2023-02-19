@@ -193,6 +193,10 @@ impl Settings {
       Key::new(KeyCode::Char('R'), KeyModifiers::SHIFT),
       AppEvent::ForceRestartProc,
     );
+    s.keymap_add_p(
+      Key::new(KeyCode::Char('e'), KeyModifiers::NONE),
+      AppEvent::ShowRenameProc,
+    );
     let ctrlc = Key::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
     s.keymap_add_p(ctrlc, AppEvent::SendKey { key: ctrlc });
     s.keymap_add_p(

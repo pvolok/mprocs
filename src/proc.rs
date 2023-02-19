@@ -309,6 +309,10 @@ impl Proc {
     }
   }
 
+  pub fn rename(&mut self, name: &str) {
+    self.name.replace_range(.., &name);
+  }
+
   #[cfg(not(windows))]
   fn send_signal(&mut self, sig: libc::c_int) {
     if let ProcState::Some(inst) = &self.inst {

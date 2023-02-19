@@ -249,6 +249,7 @@ Process list focused:
 - `R` - Hard kill selected process and restart it when it stops
 - `a` - Add new process
 - `d` - Remove selected process (process must be stopped first)
+- `e` - Rename selected process
 - `k` or `↑` - Select previous process
 - `j` or `↓` - Select next process
 - `M-1` - `M-8` - Select process 1-8
@@ -307,9 +308,11 @@ Commands are encoded as yaml. Available commands:
 - `{c: add-proc, cmd: "<SHELL COMMAND>"}`
 - `{c: show-remove-proc}`
 - `{c: remove-proc, id: "<PROCESS ID>"}`
-- `{c: scrol-down}`
+- `{c: show-rename-proc}`
+- `{c: rename-proc, name: "<NEW_NAME>"}` - Rename currently selected process
+- `{c: scroll-down}`
 - `{c: scroll-up}`
-- `{c: scrol-down-lines, n: <COUNT>}`
+- `{c: scroll-down-lines, n: <COUNT>}`
 - `{c: scroll-up-lines, n: <COUNT>}`
 - `{c: copy-mode-enter}` - Enter copy mode
 - `{c: copy-mode-leave}` - Leave copy mode
