@@ -14,6 +14,7 @@ use tui_input::Input;
 use crate::{
   clipboard::copy,
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
+  error::ResultLogger,
   event::{AppEvent, CopyMove},
   key::Key,
   keymap::Keymap,
@@ -242,6 +243,7 @@ impl App {
               Event::Key(KeyEvent {
                 code: KeyCode::Enter,
                 modifiers,
+                ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
                 self
@@ -256,6 +258,7 @@ impl App {
               Event::Key(KeyEvent {
                 code: KeyCode::Esc,
                 modifiers,
+                ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
                 ret = Some(LoopAction::Render);
@@ -263,7 +266,7 @@ impl App {
               _ => (),
             }
 
-            let req = tui_input::backend::crossterm::to_input_request(event);
+            let req = tui_input::backend::crossterm::to_input_request(&event);
             if let Some(req) = req {
               input.handle(req);
               ret = Some(LoopAction::Render);
@@ -274,6 +277,7 @@ impl App {
               Event::Key(KeyEvent {
                 code: KeyCode::Enter,
                 modifiers,
+                ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
                 self
@@ -288,6 +292,7 @@ impl App {
               Event::Key(KeyEvent {
                 code: KeyCode::Esc,
                 modifiers,
+                ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
                 ret = Some(LoopAction::Render);
@@ -295,7 +300,7 @@ impl App {
               _ => (),
             }
 
-            let req = tui_input::backend::crossterm::to_input_request(event);
+            let req = tui_input::backend::crossterm::to_input_request(&event);
             if let Some(req) = req {
               input.handle(req);
               ret = Some(LoopAction::Render);
@@ -306,6 +311,7 @@ impl App {
               Event::Key(KeyEvent {
                 code: KeyCode::Char('y'),
                 modifiers,
+                ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
                 self.ev_tx.send(AppEvent::RemoveProc { id: *id }).unwrap();
@@ -315,10 +321,12 @@ impl App {
               Event::Key(KeyEvent {
                 code: KeyCode::Esc,
                 modifiers,
+                ..
               })
               | Event::Key(KeyEvent {
                 code: KeyCode::Char('n'),
                 modifiers,
+                ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
                 ret = Some(LoopAction::Render);
@@ -330,6 +338,7 @@ impl App {
             Event::Key(KeyEvent {
               code: KeyCode::Char('y'),
               modifiers,
+              ..
             }) if modifiers.is_empty() => {
               reset_modal = true;
               self.ev_tx.send(AppEvent::Quit).unwrap();
@@ -338,10 +347,12 @@ impl App {
             Event::Key(KeyEvent {
               code: KeyCode::Esc,
               modifiers,
+              ..
             })
             | Event::Key(KeyEvent {
               code: KeyCode::Char('n'),
               modifiers,
+              ..
             }) if modifiers.is_empty() => {
               reset_modal = true;
               ret = Some(LoopAction::Render);
@@ -449,7 +460,29 @@ impl App {
           proc.resize(area);
         }
 
+        self
+          .terminal
+          .resize(Rect {
+            x: 0,
+            y: 0,
+            width,
+            height,
+          })
+          .log_ignore();
+
         LoopAction::Render
+      }
+      Event::FocusGained => {
+        log::warn!("Ignore input event: {:?}", event);
+        LoopAction::Skip
+      }
+      Event::FocusLost => {
+        log::warn!("Ignore input event: {:?}", event);
+        LoopAction::Skip
+      }
+      Event::Paste(_) => {
+        log::warn!("Ignore input event: {:?}", event);
+        LoopAction::Skip
       }
     }
   }

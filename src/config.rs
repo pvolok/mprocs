@@ -242,6 +242,7 @@ impl ProcConfig {
           stop: stop_signal,
         }))
       }
+      Value::Tagged(_) => anyhow::bail!("Yaml tags are not supported"),
     }
   }
 }

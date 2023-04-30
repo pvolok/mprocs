@@ -18,9 +18,9 @@ name = "vt100"
 [dependencies]
 itoa = "1.0.1"
 log = "0.4.14"
-termwiz = { version = "0.19.0", features = ["use_serde"] }
+termwiz = { version = "0.20.0", features = ["use_serde"] }
 unicode-width = "0.1.9"
-vte = "0.10.1"
+vte = "0.11.0"
 
 [dev-dependencies]
 nix = "0.23.0"
@@ -29,4 +29,4 @@ rand = "0.7"
 serde = { version = "1.0.131", features = ["derive"] }
 serde_json = "1.0.73"
 terminal_size = "0.1.17"
-vte = "0.10.1"
+vte = "0.11.0"

@@ -1876,8 +1876,8 @@ impl Screen {
     skip!("DeviceControl");
   }
 
-  fn handle_os_command(&mut self, _cmd: &OperatingSystemCommand) {
-    skip!("OperatingSystemCommand");
+  fn handle_os_command(&mut self, cmd: &OperatingSystemCommand) {
+    skip!("OperatingSystemCommand: {:?}", cmd);
   }
 
   fn handle_csi(&mut self, csi: CSI) {
@@ -1964,7 +1964,7 @@ impl Screen {
         Cursor::SetLeftAndRightMargins { left: _, right: _ } => {
           skip!("SetLeftAndRightMargins")
         }
-        Cursor::CursorStyle(_) => skip!("CursorStyle"),
+        Cursor::CursorStyle(style) => skip!("CursorStyle: {:?}", style),
       },
       CSI::Edit(edit) => match edit {
         Edit::DeleteCharacter(count) => {
@@ -2281,8 +2281,8 @@ impl Screen {
           skip!("XtermKeyMode")
         }
       },
-      CSI::Device(_) => skip!("device"),
-      CSI::Mouse(_) => skip!("mouse"),
+      CSI::Device(device) => skip!("Device: {:?}", device),
+      CSI::Mouse(mouse) => skip!("Mouse: {:?}", mouse),
       CSI::Window(win) => match *win {
         Window::DeIconify => skip!("DeIconify"),
         Window::Iconify => skip!("Iconify"),

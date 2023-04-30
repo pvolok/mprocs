@@ -158,5 +158,6 @@ pub fn value_to_string(value: &Value) -> anyhow::Result<String> {
     Value::Mapping(_v) => {
       bail!("`primitive_to_string` is not implemented for objects.")
     }
+    Value::Tagged(_) => anyhow::bail!("Yaml tags are not supported"),
   }
 }

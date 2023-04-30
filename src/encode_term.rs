@@ -249,7 +249,17 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
       }
     }
 
-    BackTab | Null => todo!(),
+    // TODO: Following keys are not encoded.
+    BackTab | Null => (),
+    CapsLock => (),
+    ScrollLock => (),
+    NumLock => (),
+    PrintScreen => (),
+    Pause => (),
+    Menu => (),
+    KeypadBegin => (),
+    Media(_) => (),
+    Modifier(_) => (),
   };
 
   Ok(buf)
@@ -524,6 +534,15 @@ pub fn print_key(key: &Key) -> String {
     KeyCode::Char(ch) => buf.push(*ch),
     KeyCode::Null => buf.push_str("Null"),
     KeyCode::Esc => buf.push_str("Esc"),
+    KeyCode::CapsLock => todo!(),
+    KeyCode::ScrollLock => todo!(),
+    KeyCode::NumLock => todo!(),
+    KeyCode::PrintScreen => todo!(),
+    KeyCode::Pause => todo!(),
+    KeyCode::Menu => todo!(),
+    KeyCode::KeypadBegin => todo!(),
+    KeyCode::Media(_) => todo!(),
+    KeyCode::Modifier(_) => todo!(),
   }
 
   return buf;
