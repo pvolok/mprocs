@@ -1800,14 +1800,14 @@ impl Screen {
 
   fn handle_control(&mut self, code: ControlCode) {
     match code {
-      ControlCode::Null => skip!("Null"),
+      ControlCode::Null => {},
       ControlCode::StartOfHeading => skip!("StartOfHeading"),
       ControlCode::StartOfText => skip!("StartOfText"),
       ControlCode::EndOfText => skip!("EndOfText"),
       ControlCode::EndOfTransmission => skip!("EndOfTransmission"),
       ControlCode::Enquiry => skip!("Enquiry"),
       ControlCode::Acknowledge => skip!("Acknowledge"),
-      ControlCode::Bell => skip!("Bell"),
+      ControlCode::Bell => self.bel(),
       ControlCode::Backspace => self.grid_mut().col_dec(1),
       ControlCode::HorizontalTab => self.tab(),
       ControlCode::LineFeed => {
@@ -1851,7 +1851,7 @@ impl Screen {
       ControlCode::VTS => skip!("VTS"),
       ControlCode::PLD => skip!("PLD"),
       ControlCode::PLU => skip!("PLU"),
-      ControlCode::RI => skip!("RI"),
+      ControlCode::RI => self.ri(),
       ControlCode::SS2 => skip!("SS2"),
       ControlCode::SS3 => skip!("SS3"),
       ControlCode::DCS => skip!("DCS"),

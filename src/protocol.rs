@@ -63,6 +63,11 @@ impl ProxyBackend {
   fn send(&mut self, msg: SrvToClt) {
     self.tx.send(msg).log_ignore()
   }
+
+  pub fn set_size(&mut self, width: u16, height: u16) {
+    self.width = width;
+    self.height = height;
+  }
 }
 
 impl Backend for ProxyBackend {

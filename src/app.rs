@@ -162,8 +162,8 @@ impl App {
 
       let loop_action = select! {
         event = self.client_rx.recv().fuse() => {
-          if let Some(CltToSrv::Key(event)) = event {
-            self.handle_input(Some(Ok(event)))
+          if let Some(event) = event {
+            self.handle_client_msg(event)?
           } else {
             LoopAction::Skip
           }
@@ -217,22 +217,14 @@ impl App {
     Ok(())
   }
 
-  fn handle_input(
-    &mut self,
-    event: Option<crossterm::Result<Event>>,
-  ) -> LoopAction {
-    let event = match event {
-      Some(Ok(event)) => event,
-      Some(Err(err)) => {
-        log::warn!("Crossterm input error: {}", err.to_string());
-        return LoopAction::Skip;
-      }
-      None => {
-        log::warn!("Crossterm input is None.");
-        return LoopAction::Skip;
-      }
-    };
+  fn handle_client_msg(&mut self, msg: CltToSrv) -> anyhow::Result<LoopAction> {
+    match msg {
+      CltToSrv::Init { .. } => bail!("Init message is unexpected."),
+      CltToSrv::Key(event) => Ok(self.handle_input(event)),
+    }
+  }
 
+  fn handle_input(&mut self, event: Event) -> LoopAction {
     {
       let mut ret: Option<LoopAction> = None;
       let mut reset_modal = false;
@@ -444,12 +436,6 @@ impl App {
         LoopAction::Render
       }
       Event::Resize(width, height) => {
-        let (width, height) = if cfg!(windows) {
-          crossterm::terminal::size().unwrap()
-        } else {
-          (width, height)
-        };
-
         let area = AppLayout::new(
           Rect::new(0, 0, width, height),
           self.state.scope.is_zoomed(),
@@ -460,6 +446,7 @@ impl App {
           proc.resize(area);
         }
 
+        self.terminal.backend_mut().set_size(width, height);
         self
           .terminal
           .resize(Rect {
