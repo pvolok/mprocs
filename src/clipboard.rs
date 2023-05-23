@@ -30,7 +30,7 @@ fn detect_copy_provider() -> Provider {
   // Wayland
   if std::env::var("WAYLAND_DISPLAY").is_ok() {
     if let Some(provider) =
-      check_prog("wl-copy", &["--foreground", "--type", "text/plain"])
+      check_prog("wl-copy", &["--type", "text/plain"])
     {
       return provider;
     }

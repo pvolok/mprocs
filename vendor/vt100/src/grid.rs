@@ -70,7 +70,7 @@ impl Grid {
       let width = width - start;
 
       row.write_contents(&mut contents, start as u16, width as u16, false);
-      if i != lines_len - 1 {
+      if i != lines_len - 1 && !row.wrapped() {
         contents.push('\n');
       }
     }
