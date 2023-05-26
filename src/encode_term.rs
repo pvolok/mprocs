@@ -143,6 +143,10 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
       }
     }
 
+    BackTab => {
+      buf.push_str("\x1b[Z");
+    }
+
     Char(c) => {
       if mods.is_empty() {
         buf.push(c);
@@ -249,7 +253,7 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
       }
     }
 
-    BackTab | Null => todo!(),
+    Null => todo!(),
   };
 
   Ok(buf)
