@@ -1,8 +1,8 @@
 use crate::{attrs::Attrs, term::BufWrite as _};
 use termwiz::escape::{
   csi::{
-    Cursor, DecPrivateMode, DecPrivateModeCode, Edit, EraseInDisplay,
-    EraseInLine, Sgr, Window,
+    CsiParam, Cursor, CursorStyle, DecPrivateMode, DecPrivateModeCode, Edit,
+    EraseInDisplay, EraseInLine, Sgr, Window,
   },
   Action, ControlCode, DeviceControlMode, Esc, EscCode, OperatingSystemCommand,
   CSI,
@@ -80,6 +80,8 @@ pub struct Screen {
   title: String,
   icon_name: String,
 
+  cursor_style: CursorStyle,
+
   modes: u8,
   mouse_protocol_mode: MouseProtocolMode,
   mouse_protocol_encoding: MouseProtocolEncoding,
@@ -113,6 +115,8 @@ impl Screen {
 
       title: String::default(),
       icon_name: String::default(),
+
+      cursor_style: CursorStyle::Default,
 
       modes: 0,
       mouse_protocol_mode: MouseProtocolMode::default(),
@@ -629,6 +633,11 @@ impl Screen {
   #[must_use]
   pub fn icon_name(&self) -> &str {
     &self.icon_name
+  }
+
+  #[must_use]
+  pub fn cursor_style(&self) -> CursorStyle {
+    self.cursor_style
   }
 
   /// Returns a value which changes every time an audible bell is received.
@@ -1789,7 +1798,7 @@ impl Screen {
       Action::PrintString(s) => s.chars().for_each(|c| self.text(c)),
       Action::Control(code) => self.handle_control(code),
       Action::DeviceControl(mode) => self.handle_device_control(mode),
-      Action::OperatingSystemCommand(cmd) => self.handle_os_command(&cmd),
+      Action::OperatingSystemCommand(cmd) => self.handle_os_command(*cmd),
       Action::CSI(csi) => self.handle_csi(csi),
       Action::Esc(esc) => self.handle_esc(esc),
       Action::Sixel(_) => (),
@@ -1800,7 +1809,7 @@ impl Screen {
 
   fn handle_control(&mut self, code: ControlCode) {
     match code {
-      ControlCode::Null => {},
+      ControlCode::Null => {}
       ControlCode::StartOfHeading => skip!("StartOfHeading"),
       ControlCode::StartOfText => skip!("StartOfText"),
       ControlCode::EndOfText => skip!("EndOfText"),
@@ -1876,8 +1885,51 @@ impl Screen {
     skip!("DeviceControl");
   }
 
-  fn handle_os_command(&mut self, cmd: &OperatingSystemCommand) {
-    skip!("OperatingSystemCommand: {:?}", cmd);
+  fn handle_os_command(&mut self, cmd: OperatingSystemCommand) {
+    match cmd {
+      OperatingSystemCommand::SetIconNameAndWindowTitle(icon_and_title) => {
+        self.icon_name = icon_and_title.clone();
+        self.title = icon_and_title;
+      }
+      OperatingSystemCommand::SetWindowTitle(title) => self.title = title,
+      OperatingSystemCommand::SetWindowTitleSun(_) => {
+        skip!("SetWindowTitleSun")
+      }
+      OperatingSystemCommand::SetIconName(icon) => self.icon_name = icon,
+      OperatingSystemCommand::SetIconNameSun(_) => skip!("SetIconNameSun"),
+      OperatingSystemCommand::SetHyperlink(_) => skip!("SetHyperlink"),
+      OperatingSystemCommand::ClearSelection(_) => skip!("ClearSelection"),
+      OperatingSystemCommand::QuerySelection(_) => skip!("QuerySelection"),
+      OperatingSystemCommand::SetSelection(_, _) => skip!("SetSelection"),
+      OperatingSystemCommand::SystemNotification(_) => {
+        skip!("SystemNotification")
+      }
+      OperatingSystemCommand::ITermProprietary(_) => skip!("ITermProprietary"),
+      OperatingSystemCommand::FinalTermSemanticPrompt(_) => {
+        skip!("FinalTermSemanticPrompt")
+      }
+      OperatingSystemCommand::ChangeColorNumber(_) => {
+        skip!("ChangeColorNumber")
+      }
+      OperatingSystemCommand::ChangeDynamicColors(_, _) => {
+        skip!("ChangeDynamicColors")
+      }
+      OperatingSystemCommand::ResetDynamicColor(_) => {
+        skip!("ResetDynamicColor")
+      }
+      OperatingSystemCommand::CurrentWorkingDirectory(_) => {
+        skip!("CurrentWorkingDirectory")
+      }
+      OperatingSystemCommand::ResetColors(_) => skip!("ResetColors"),
+      OperatingSystemCommand::RxvtExtension(_) => skip!("RxvtExtension"),
+      OperatingSystemCommand::Unspecified(data) => {
+        let strings: Vec<_> = data
+          .into_iter()
+          .map(|bytes| String::from_utf8_lossy(bytes.as_slice()).to_string())
+          .collect();
+        skip!("OSC: Unspecified {:?}", strings);
+      }
+    }
   }
 
   fn handle_csi(&mut self, csi: CSI) {
@@ -1899,8 +1951,8 @@ impl Screen {
         },
         Sgr::UnderlineColor(_) => skip!("UnderlineColor"),
         Sgr::Blink(_) => skip!("Blink"),
-        Sgr::Italic(_) => skip!("Italic"),
-        Sgr::Inverse(_) => skip!("Inverse"),
+        Sgr::Italic(mode) => self.attrs.set_italic(mode),
+        Sgr::Inverse(mode) => self.attrs.set_inverse(mode),
         Sgr::Invisible(_) => skip!("Invisible"),
         Sgr::StrikeThrough(_) => skip!("StrikeThrough"),
         Sgr::Font(_) => skip!("Font"),
@@ -1924,8 +1976,11 @@ impl Screen {
         Cursor::CharacterPositionForward(_) => {
           skip!("CharacterPositionForward")
         }
-        Cursor::CharacterAndLinePosition { line: _, col: _ } => {
-          skip!("CharacterAndLinePosition")
+        Cursor::CharacterAndLinePosition { line, col } => {
+          self.grid_mut().set_pos(crate::grid::Pos {
+            row: line.as_zero_based() as u16,
+            col: col.as_zero_based() as u16,
+          });
         }
         Cursor::LinePositionAbsolute(row) => {
           self.grid_mut().row_set((row - 1) as u16)
@@ -1964,7 +2019,9 @@ impl Screen {
         Cursor::SetLeftAndRightMargins { left: _, right: _ } => {
           skip!("SetLeftAndRightMargins")
         }
-        Cursor::CursorStyle(style) => skip!("CursorStyle: {:?}", style),
+        Cursor::CursorStyle(style) => {
+          self.cursor_style = style;
+        }
       },
       CSI::Edit(edit) => match edit {
         Edit::DeleteCharacter(count) => {
@@ -1987,7 +2044,9 @@ impl Screen {
             EraseInLine::EraseLine => self.grid_mut().erase_row(attrs),
           }
         }
-        Edit::InsertCharacter(_) => skip!("InsertCharacter"),
+        Edit::InsertCharacter(count) => {
+          self.ich(u16::try_from(count).unwrap_or_default())
+        }
         Edit::InsertLine(count) => self.grid_mut().insert_lines(count as u16),
         Edit::ScrollDown(count) => self.grid_mut().scroll_down(count as u16),
         Edit::ScrollUp(count) => self.grid_mut().scroll_up(count as u16),
@@ -2010,7 +2069,7 @@ impl Screen {
         termwiz::escape::csi::Mode::SetDecPrivateMode(pmode) => match pmode {
           DecPrivateMode::Code(code) => match code {
             DecPrivateModeCode::ApplicationCursorKeys => {
-              skip!("ApplicationCursorKeys")
+              self.set_mode(MODE_APPLICATION_CURSOR)
             }
             DecPrivateModeCode::DecAnsiMode => skip!("DecAnsiMode"),
             DecPrivateModeCode::Select132Columns => {
@@ -2069,7 +2128,7 @@ impl Screen {
               self.enter_alternate_grid();
             }
             DecPrivateModeCode::EnableAlternateScreen => {
-              skip!("EnableAlternateScreen")
+              self.enter_alternate_grid();
             }
             DecPrivateModeCode::OptEnableAlternateScreen => {
               skip!("OptEnableAlternateScreen")
@@ -2091,6 +2150,9 @@ impl Screen {
             }
             DecPrivateModeCode::Win32InputMode => skip!("Win32InputMode"),
           },
+          DecPrivateMode::Unspecified(9) => {
+            self.set_mouse_mode(MouseProtocolMode::Press)
+          }
           DecPrivateMode::Unspecified(m) => {
             skip!("SetDecPrivateMode:Unspecified:{}", m)
           }
@@ -2182,89 +2244,91 @@ impl Screen {
               skip!("Win32InputMode")
             }
           },
+          DecPrivateMode::Unspecified(9) => {
+            self.clear_mouse_mode(MouseProtocolMode::Press)
+          }
+          termwiz::escape::csi::DecPrivateMode::Unspecified(_) => {
+            skip!("DecPrivateMode::Unspecified")
+          }
+        },
+        termwiz::escape::csi::Mode::SaveDecPrivateMode(pmode) => match pmode {
+          DecPrivateMode::Code(code) => match code {
+            DecPrivateModeCode::ApplicationCursorKeys => {
+              skip!("ApplicationCursorKeys")
+            }
+            DecPrivateModeCode::DecAnsiMode => skip!("DecAnsiMode"),
+            DecPrivateModeCode::Select132Columns => {
+              skip!("Select132Columns")
+            }
+            DecPrivateModeCode::SmoothScroll => skip!("SmoothScroll"),
+            DecPrivateModeCode::ReverseVideo => skip!("ReverseVideo"),
+            DecPrivateModeCode::OriginMode => skip!("OriginMode"),
+            DecPrivateModeCode::AutoWrap => skip!("AutoWrap"),
+            DecPrivateModeCode::AutoRepeat => skip!("AutoRepeat"),
+            DecPrivateModeCode::StartBlinkingCursor => {
+              skip!("StartBlinkingCursor")
+            }
+            DecPrivateModeCode::ShowCursor => skip!("ShowCursor"),
+            DecPrivateModeCode::ReverseWraparound => {
+              skip!("ReverseWraparound")
+            }
+            DecPrivateModeCode::LeftRightMarginMode => {
+              skip!("LeftRightMarginMode")
+            }
+            DecPrivateModeCode::SixelDisplayMode => {
+              skip!("SixelDisplayMode")
+            }
+            DecPrivateModeCode::MouseTracking => skip!("MouseTracking"),
+            DecPrivateModeCode::HighlightMouseTracking => {
+              skip!("HighlightMouseTracking")
+            }
+            DecPrivateModeCode::ButtonEventMouse => {
+              skip!("ButtonEventMouse")
+            }
+            DecPrivateModeCode::AnyEventMouse => skip!("AnyEventMouse"),
+            DecPrivateModeCode::FocusTracking => skip!("FocusTracking"),
+            DecPrivateModeCode::Utf8Mouse => skip!("Utf8Mouse"),
+            DecPrivateModeCode::SGRMouse => skip!("SGRMouse"),
+            DecPrivateModeCode::SGRPixelsMouse => {
+              skip!("SGRPixelsMouse")
+            }
+            DecPrivateModeCode::XTermMetaSendsEscape => {
+              skip!("XTermMetaSendsEscape")
+            }
+            DecPrivateModeCode::XTermAltSendsEscape => {
+              skip!("XTermAltSendsEscape")
+            }
+            DecPrivateModeCode::SaveCursor => skip!("SaveCursor"),
+            DecPrivateModeCode::ClearAndEnableAlternateScreen => {
+              skip!("ClearAndEnableAlternateScreen")
+            }
+            DecPrivateModeCode::EnableAlternateScreen => {
+              skip!("EnableAlternateScreen")
+            }
+            DecPrivateModeCode::OptEnableAlternateScreen => {
+              skip!("OptEnableAlternateScreen")
+            }
+            DecPrivateModeCode::BracketedPaste => {
+              skip!("BracketedPaste")
+            }
+            DecPrivateModeCode::UsePrivateColorRegistersForEachGraphic => {
+              skip!("UsePrivateColorRegistersForEachGraphic")
+            }
+            DecPrivateModeCode::SynchronizedOutput => {
+              skip!("SynchronizedOutput")
+            }
+            DecPrivateModeCode::MinTTYApplicationEscapeKeyMode => {
+              skip!("MinTTYApplicationEscapeKeyMode")
+            }
+            DecPrivateModeCode::SixelScrollsRight => {
+              skip!("SixelScrollsRight")
+            }
+            DecPrivateModeCode::Win32InputMode => {
+              skip!("Win32InputMode")
+            }
+          },
           termwiz::escape::csi::DecPrivateMode::Unspecified(_) => todo!(),
         },
-        termwiz::escape::csi::Mode::SaveDecPrivateMode(pmode) => {
-          skip!("SaveDecPrivateMode --->");
-          match pmode {
-            DecPrivateMode::Code(code) => match code {
-              DecPrivateModeCode::ApplicationCursorKeys => {
-                skip!("ApplicationCursorKeys")
-              }
-              DecPrivateModeCode::DecAnsiMode => skip!("DecAnsiMode"),
-              DecPrivateModeCode::Select132Columns => {
-                skip!("Select132Columns")
-              }
-              DecPrivateModeCode::SmoothScroll => skip!("SmoothScroll"),
-              DecPrivateModeCode::ReverseVideo => skip!("ReverseVideo"),
-              DecPrivateModeCode::OriginMode => skip!("OriginMode"),
-              DecPrivateModeCode::AutoWrap => skip!("AutoWrap"),
-              DecPrivateModeCode::AutoRepeat => skip!("AutoRepeat"),
-              DecPrivateModeCode::StartBlinkingCursor => {
-                skip!("StartBlinkingCursor")
-              }
-              DecPrivateModeCode::ShowCursor => skip!("ShowCursor"),
-              DecPrivateModeCode::ReverseWraparound => {
-                skip!("ReverseWraparound")
-              }
-              DecPrivateModeCode::LeftRightMarginMode => {
-                skip!("LeftRightMarginMode")
-              }
-              DecPrivateModeCode::SixelDisplayMode => {
-                skip!("SixelDisplayMode")
-              }
-              DecPrivateModeCode::MouseTracking => skip!("MouseTracking"),
-              DecPrivateModeCode::HighlightMouseTracking => {
-                skip!("HighlightMouseTracking")
-              }
-              DecPrivateModeCode::ButtonEventMouse => {
-                skip!("ButtonEventMouse")
-              }
-              DecPrivateModeCode::AnyEventMouse => skip!("AnyEventMouse"),
-              DecPrivateModeCode::FocusTracking => skip!("FocusTracking"),
-              DecPrivateModeCode::Utf8Mouse => skip!("Utf8Mouse"),
-              DecPrivateModeCode::SGRMouse => skip!("SGRMouse"),
-              DecPrivateModeCode::SGRPixelsMouse => {
-                skip!("SGRPixelsMouse")
-              }
-              DecPrivateModeCode::XTermMetaSendsEscape => {
-                skip!("XTermMetaSendsEscape")
-              }
-              DecPrivateModeCode::XTermAltSendsEscape => {
-                skip!("XTermAltSendsEscape")
-              }
-              DecPrivateModeCode::SaveCursor => skip!("SaveCursor"),
-              DecPrivateModeCode::ClearAndEnableAlternateScreen => {
-                skip!("ClearAndEnableAlternateScreen")
-              }
-              DecPrivateModeCode::EnableAlternateScreen => {
-                skip!("EnableAlternateScreen")
-              }
-              DecPrivateModeCode::OptEnableAlternateScreen => {
-                skip!("OptEnableAlternateScreen")
-              }
-              DecPrivateModeCode::BracketedPaste => {
-                skip!("BracketedPaste")
-              }
-              DecPrivateModeCode::UsePrivateColorRegistersForEachGraphic => {
-                skip!("UsePrivateColorRegistersForEachGraphic")
-              }
-              DecPrivateModeCode::SynchronizedOutput => {
-                skip!("SynchronizedOutput")
-              }
-              DecPrivateModeCode::MinTTYApplicationEscapeKeyMode => {
-                skip!("MinTTYApplicationEscapeKeyMode")
-              }
-              DecPrivateModeCode::SixelScrollsRight => {
-                skip!("SixelScrollsRight")
-              }
-              DecPrivateModeCode::Win32InputMode => {
-                skip!("Win32InputMode")
-              }
-            },
-            termwiz::escape::csi::DecPrivateMode::Unspecified(_) => todo!(),
-          }
-        }
         termwiz::escape::csi::Mode::RestoreDecPrivateMode(_) => {
           skip!("RestoreDecPrivateMode")
         }
@@ -2370,21 +2434,44 @@ impl Screen {
         }
       },
       CSI::SelectCharacterPath(_, _) => skip!("SelectCharacterPath"),
-      CSI::Unspecified(_) => skip!("unspecified"),
+      CSI::Unspecified(n) => {
+        let handled = match (n.control, n.params.as_slice()) {
+          ('J', [CsiParam::P(b'?')]) => {
+            self.decsed(0);
+            true
+          }
+          ('J', [CsiParam::P(b'?'), CsiParam::Integer(mode)]) => {
+            self.decsed(u16::try_from(*mode).unwrap_or_default());
+            true
+          }
+          ('K', [CsiParam::P(b'?')]) => {
+            self.decsel(0);
+            true
+          }
+          ('K', [CsiParam::P(b'?'), CsiParam::Integer(mode)]) => {
+            self.decsel(u16::try_from(*mode).unwrap_or_default());
+            true
+          }
+          _ => false,
+        };
+        if !handled {
+          skip!("unspecified {}", n);
+        }
+      }
     }
   }
 
   fn handle_esc(&mut self, esc: Esc) {
     match esc {
       Esc::Code(code) => match code {
-        EscCode::FullReset => skip!("FullReset"),
+        EscCode::FullReset => self.ris(),
         EscCode::Index => skip!("Index"),
         EscCode::NextLine => skip!("NextLine"),
         EscCode::CursorPositionLowerLeft => {
           skip!("CursorPositionLowerLeft")
         }
         EscCode::HorizontalTabSet => skip!("HorizontalTabSet"),
-        EscCode::ReverseIndex => skip!("ReverseIndex"),
+        EscCode::ReverseIndex => self.ri(),
         EscCode::SingleShiftG2 => skip!("SingleShiftG2"),
         EscCode::SingleShiftG3 => skip!("SingleShiftG3"),
         EscCode::StartOfGuardedArea => skip!("StartOfGuardedArea"),
@@ -2398,12 +2485,10 @@ impl Screen {
         }
         EscCode::TmuxTitle => skip!("TmuxTitle"),
         EscCode::DecBackIndex => skip!("DecBackIndex"),
-        EscCode::DecSaveCursorPosition => skip!("DecSaveCursorPosition"),
-        EscCode::DecRestoreCursorPosition => {
-          skip!("DecRestoreCursorPosition")
-        }
-        EscCode::DecApplicationKeyPad => skip!("DecApplicationKeyPad"),
-        EscCode::DecNormalKeyPad => skip!("DecNormalKeyPad"),
+        EscCode::DecSaveCursorPosition => self.save_cursor(),
+        EscCode::DecRestoreCursorPosition => self.restore_cursor(),
+        EscCode::DecApplicationKeyPad => self.deckpam(),
+        EscCode::DecNormalKeyPad => self.clear_mode(MODE_APPLICATION_KEYPAD),
         EscCode::DecLineDrawingG0 => skip!("DecLineDrawingG0"),
         EscCode::UkCharacterSetG0 => skip!("UkCharacterSetG0"),
         EscCode::AsciiCharacterSetG0 => (),
@@ -2445,9 +2530,14 @@ impl Screen {
         EscCode::F4Press => skip!("F4Press"),
       },
       Esc::Unspecified {
-        intermediate: _,
+        intermediate,
         control,
-      } => skip!("Unspecified esc: {}", control),
+      } => match (intermediate, control) {
+        (None, b'g') => self.vb(),
+        _ => {
+          skip!("Unspecified esc: {:?} {}", intermediate, control);
+        }
+      },
     }
   }
 
