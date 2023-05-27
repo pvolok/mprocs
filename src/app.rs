@@ -1,6 +1,7 @@
 use anyhow::bail;
 use crossterm::event::{Event, KeyCode, KeyEvent, MouseButton, MouseEventKind};
 use futures::{future::FutureExt, select};
+use termwiz::escape::csi::CursorStyle;
 use tokio::{
   io::AsyncReadExt,
   sync::mpsc::{Receiver, UnboundedReceiver, UnboundedSender},
@@ -116,9 +117,12 @@ impl App {
     };
 
     let mut render_needed = true;
+    let mut current_cursor_shape = CursorStyle::Default;
     loop {
       if render_needed {
         self.terminal.draw(|f| {
+          let mut cursor_style = current_cursor_shape;
+
           let layout = AppLayout::new(
             f.size(),
             self.state.scope.is_zoomed(),
@@ -137,11 +141,13 @@ impl App {
           }
 
           render_procs(layout.procs, f, &mut self.state);
-          render_term(layout.term, f, &mut self.state);
+          render_term(layout.term, f, &mut self.state, &mut cursor_style);
           render_keymap(layout.keymap, f, &mut self.state, &self.keymap);
           render_zoom_tip(layout.zoom_banner, f, &self.keymap);
 
           if let Some(modal) = &mut self.state.modal {
+            cursor_style = CursorStyle::Default;
+
             match modal {
               Modal::AddProc { input } => {
                 render_input_dialog(f.size(), "Add process", f, input);
@@ -156,6 +162,14 @@ impl App {
                 render_confirm_quit(f.size(), f);
               }
             }
+          }
+
+          if current_cursor_shape != cursor_style {
+            self
+              .client_tx
+              .send(SrvToClt::CursorShape(cursor_style))
+              .log_ignore();
+            current_cursor_shape = cursor_style;
           }
         })?;
       }

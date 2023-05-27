@@ -1036,6 +1036,7 @@ dependencies = [
  "ratatui",
  "serde",
  "serde_yaml",
+ "termwiz",
  "tokio",
  "triggered",
  "tui-input",

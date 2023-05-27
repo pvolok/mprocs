@@ -1,4 +1,5 @@
 use crossterm::{
+  cursor::SetCursorStyle,
   event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream},
   execute,
   terminal::{
@@ -7,6 +8,7 @@ use crossterm::{
   },
 };
 use futures::{FutureExt, StreamExt};
+use termwiz::escape::csi::CursorStyle;
 use tokio::select;
 use tui::backend::{Backend, CrosstermBackend};
 
@@ -76,6 +78,20 @@ async fn client_main_inner(
           }
           SrvToClt::SetCursor { x, y } => backend.set_cursor(x, y)?,
           SrvToClt::ShowCursor => backend.show_cursor()?,
+          SrvToClt::CursorShape(cursor_style) => {
+            let cursor_style = match cursor_style {
+              CursorStyle::Default => SetCursorStyle::DefaultUserShape,
+              CursorStyle::BlinkingBlock => SetCursorStyle::BlinkingBlock,
+              CursorStyle::SteadyBlock => SetCursorStyle::SteadyBlock,
+              CursorStyle::BlinkingUnderline => {
+                SetCursorStyle::BlinkingUnderScore
+              }
+              CursorStyle::SteadyUnderline => SetCursorStyle::SteadyUnderScore,
+              CursorStyle::BlinkingBar => SetCursorStyle::BlinkingBar,
+              CursorStyle::SteadyBar => SetCursorStyle::SteadyBar,
+            };
+            execute!(std::io::stdout(), cursor_style)?;
+          }
           SrvToClt::HideCursor => backend.hide_cursor()?,
           SrvToClt::Clear => backend.clear()?,
           SrvToClt::Flush => backend.flush()?,

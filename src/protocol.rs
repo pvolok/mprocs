@@ -1,4 +1,5 @@
 use crossterm::event::Event;
+use termwiz::{surface::CursorShape, escape::csi::CursorStyle};
 use tui::{
   backend::Backend,
   style::{Color, Modifier},
@@ -12,6 +13,7 @@ pub enum SrvToClt {
   SetCursor { x: u16, y: u16 },
   ShowCursor,
   HideCursor,
+  CursorShape(CursorStyle),
   Clear,
   Flush,
   Quit,
