@@ -143,6 +143,10 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
       }
     }
 
+    BackTab => {
+      buf.push_str("\x1b[Z");
+    }
+
     Char(c) => {
       if mods.is_empty() {
         buf.push(c);
@@ -249,8 +253,7 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
       }
     }
 
-    // TODO: Following keys are not encoded.
-    BackTab | Null => (),
+    Null => (),
     CapsLock => (),
     ScrollLock => (),
     NumLock => (),
