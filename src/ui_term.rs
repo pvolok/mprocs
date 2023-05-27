@@ -1,3 +1,4 @@
+use termwiz::{escape::csi::CursorStyle, surface::CursorShape};
 use tui::{
   layout::{Margin, Rect},
   style::{Color, Modifier, Style},
@@ -15,7 +16,12 @@ use crate::{
 
 type Backend = ProxyBackend;
 
-pub fn render_term(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
+pub fn render_term(
+  area: Rect,
+  frame: &mut Frame<Backend>,
+  state: &mut State,
+  cursor_style: &mut CursorStyle,
+) {
   if area.width < 3 || area.height < 3 {
     return;
   }
@@ -84,6 +90,7 @@ pub fn render_term(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
             if active {
               if let Some(cursor) = cursor {
                 frame.set_cursor(cursor.0, cursor.1);
+                *cursor_style = vt.screen().cursor_style();
               }
             }
           }

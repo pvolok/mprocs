@@ -126,6 +126,21 @@ impl ToString for Key {
       }
       KeyCode::Null => buf.push_str("Nul"),
       KeyCode::Esc => buf.push_str("Esc"),
+      KeyCode::CapsLock => buf.push_str("CapsLock"),
+      KeyCode::ScrollLock => buf.push_str("ScrollLock"),
+      KeyCode::NumLock => buf.push_str("NumLock"),
+      KeyCode::PrintScreen => buf.push_str("PrintScreen"),
+      KeyCode::Pause => buf.push_str("Pause"),
+      KeyCode::Menu => buf.push_str("Menu"),
+      KeyCode::KeypadBegin => buf.push_str("KeypadBegin"),
+      KeyCode::Media(_code) => {
+        // TODO
+        buf.push_str("Nul");
+      }
+      KeyCode::Modifier(_code) => {
+        // TODO
+        buf.push_str("Nul");
+      }
     }
 
     buf.push('>');

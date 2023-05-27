@@ -27,36 +27,37 @@ name = "mprocs"
 path = "main.rs"
 
 [dependencies]
-anyhow = "1.0.44"
+anyhow = "1.0.70"
 assert_matches = "1.5.0"
-base64 = "0.13.0"
+base64 = "0.13.1"
 clap = { version = "3.1.8", features = ["cargo"] }
-clipboard-win = "4.4.2"
-crossterm = { version = "0.23.2", features = ["event-stream"] }
-dunce = "1.0.2"
+clipboard-win = "4.5.0"
+crossterm = { version = "0.26.1", features = ["event-stream"] }
+dunce = "1.0.3"
 # Excluded "textfilter" feature that depends on regex (~0.7 MiB).
-flexi_logger = { version = "0.22.3", default-features = false, features = [
+flexi_logger = { version = "0.25.3", default-features = false, features = [
   "colors",
 ] }
-futures = { version = "0.3.21" }
-indexmap = { version = "1.8.0", features = ["serde"] }
+futures = { version = "0.3.27" }
+indexmap = { version = "1.9.3", features = ["serde"] }
 lazy_static = "1.4.0"
-libc = "0.2.120"
-log = "0.4.14"
-mlua = { version = "0.8.5", features = ["luajit52", "vendored", "serialize"] }
-phf = { version = "0.10.1", features = ["macros"] }
+libc = "0.2.140"
+log = "0.4.17"
+mlua = { version = "0.8.8", features = ["luajit52", "vendored", "serialize"] }
+phf = { version = "0.11.1", features = ["macros"] }
 portable-pty = { package = "mprocs-pty", path = "../vendor/pty", version = "0.1.0" }
+tui = { package = "ratatui", version = "0.20.1" }
 serde = { version = "1.0.136", features = ["derive"] }
-serde_yaml = "0.8.24"
+serde_yaml = "0.9.19"
 tokio = { version = "1", features = ["full"] }
 triggered = "0.1.2"
-tui = "0.18.0"
-tui-input = "0.4.0"
-unicode-segmentation = "1.9.0"
-unicode-width = "0.1.9"
+tui-input = "0.7.0"
+unicode-segmentation = "1.10.1"
+unicode-width = "0.1.10"
 vt100 = { package = "mprocs-vt100", path = "../vendor/vt100", version = "0.1.1" }
-which = "4.2.5"
+which = "4.4.0"
 xdg = "2.4.1"
+termwiz = "0.20.0"
 
 [target."cfg(windows)".dependencies]
 winapi = { version = "0.3", features = ["consoleapi", "winuser"] }

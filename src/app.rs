@@ -1,6 +1,7 @@
 use anyhow::bail;
 use crossterm::event::{Event, KeyCode, KeyEvent, MouseButton, MouseEventKind};
 use futures::{future::FutureExt, select};
+use termwiz::escape::csi::CursorStyle;
 use tokio::{
   io::AsyncReadExt,
   sync::mpsc::{Receiver, UnboundedReceiver, UnboundedSender},
@@ -14,6 +15,7 @@ use tui_input::Input;
 use crate::{
   clipboard::copy,
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
+  error::ResultLogger,
   event::{AppEvent, CopyMove},
   key::Key,
   keymap::Keymap,
@@ -115,9 +117,12 @@ impl App {
     };
 
     let mut render_needed = true;
+    let mut current_cursor_shape = CursorStyle::Default;
     loop {
       if render_needed {
         self.terminal.draw(|f| {
+          let mut cursor_style = current_cursor_shape;
+
           let layout = AppLayout::new(
             f.size(),
             self.state.scope.is_zoomed(),
@@ -136,11 +141,13 @@ impl App {
           }
 
           render_procs(layout.procs, f, &mut self.state);
-          render_term(layout.term, f, &mut self.state);
+          render_term(layout.term, f, &mut self.state, &mut cursor_style);
           render_keymap(layout.keymap, f, &mut self.state, &self.keymap);
           render_zoom_tip(layout.zoom_banner, f, &self.keymap);
 
           if let Some(modal) = &mut self.state.modal {
+            cursor_style = CursorStyle::Default;
+
             match modal {
               Modal::AddProc { input } => {
                 render_input_dialog(f.size(), "Add process", f, input);
@@ -156,13 +163,21 @@ impl App {
               }
             }
           }
+
+          if current_cursor_shape != cursor_style {
+            self
+              .client_tx
+              .send(SrvToClt::CursorShape(cursor_style))
+              .log_ignore();
+            current_cursor_shape = cursor_style;
+          }
         })?;
       }
 
       let loop_action = select! {
         event = self.client_rx.recv().fuse() => {
-          if let Some(CltToSrv::Key(event)) = event {
-            self.handle_input(Some(Ok(event)))
+          if let Some(event) = event {
+            self.handle_client_msg(event)?
           } else {
             LoopAction::Skip
           }
@@ -216,22 +231,14 @@ impl App {
     Ok(())
   }
 
-  fn handle_input(
-    &mut self,
-    event: Option<crossterm::Result<Event>>,
-  ) -> LoopAction {
-    let event = match event {
-      Some(Ok(event)) => event,
-      Some(Err(err)) => {
-        log::warn!("Crossterm input error: {}", err.to_string());
-        return LoopAction::Skip;
-      }
-      None => {
-        log::warn!("Crossterm input is None.");
-        return LoopAction::Skip;
-      }
-    };
+  fn handle_client_msg(&mut self, msg: CltToSrv) -> anyhow::Result<LoopAction> {
+    match msg {
+      CltToSrv::Init { .. } => bail!("Init message is unexpected."),
+      CltToSrv::Key(event) => Ok(self.handle_input(event)),
+    }
+  }
 
+  fn handle_input(&mut self, event: Event) -> LoopAction {
     {
       let mut ret: Option<LoopAction> = None;
       let mut reset_modal = false;
@@ -242,6 +249,7 @@ impl App {
               Event::Key(KeyEvent {
                 code: KeyCode::Enter,
                 modifiers,
+                ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
                 self
@@ -256,6 +264,7 @@ impl App {
               Event::Key(KeyEvent {
                 code: KeyCode::Esc,
                 modifiers,
+                ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
                 ret = Some(LoopAction::Render);
@@ -263,7 +272,7 @@ impl App {
               _ => (),
             }
 
-            let req = tui_input::backend::crossterm::to_input_request(event);
+            let req = tui_input::backend::crossterm::to_input_request(&event);
             if let Some(req) = req {
               input.handle(req);
               ret = Some(LoopAction::Render);
@@ -274,6 +283,7 @@ impl App {
               Event::Key(KeyEvent {
                 code: KeyCode::Enter,
                 modifiers,
+                ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
                 self
@@ -288,6 +298,7 @@ impl App {
               Event::Key(KeyEvent {
                 code: KeyCode::Esc,
                 modifiers,
+                ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
                 ret = Some(LoopAction::Render);
@@ -295,7 +306,7 @@ impl App {
               _ => (),
             }
 
-            let req = tui_input::backend::crossterm::to_input_request(event);
+            let req = tui_input::backend::crossterm::to_input_request(&event);
             if let Some(req) = req {
               input.handle(req);
               ret = Some(LoopAction::Render);
@@ -306,6 +317,7 @@ impl App {
               Event::Key(KeyEvent {
                 code: KeyCode::Char('y'),
                 modifiers,
+                ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
                 self.ev_tx.send(AppEvent::RemoveProc { id: *id }).unwrap();
@@ -315,10 +327,12 @@ impl App {
               Event::Key(KeyEvent {
                 code: KeyCode::Esc,
                 modifiers,
+                ..
               })
               | Event::Key(KeyEvent {
                 code: KeyCode::Char('n'),
                 modifiers,
+                ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
                 ret = Some(LoopAction::Render);
@@ -330,6 +344,7 @@ impl App {
             Event::Key(KeyEvent {
               code: KeyCode::Char('y'),
               modifiers,
+              ..
             }) if modifiers.is_empty() => {
               reset_modal = true;
               self.ev_tx.send(AppEvent::Quit).unwrap();
@@ -338,10 +353,12 @@ impl App {
             Event::Key(KeyEvent {
               code: KeyCode::Esc,
               modifiers,
+              ..
             })
             | Event::Key(KeyEvent {
               code: KeyCode::Char('n'),
               modifiers,
+              ..
             }) if modifiers.is_empty() => {
               reset_modal = true;
               ret = Some(LoopAction::Render);
@@ -433,12 +450,6 @@ impl App {
         LoopAction::Render
       }
       Event::Resize(width, height) => {
-        let (width, height) = if cfg!(windows) {
-          crossterm::terminal::size().unwrap()
-        } else {
-          (width, height)
-        };
-
         let area = AppLayout::new(
           Rect::new(0, 0, width, height),
           self.state.scope.is_zoomed(),
@@ -449,7 +460,30 @@ impl App {
           proc.resize(area);
         }
 
+        self.terminal.backend_mut().set_size(width, height);
+        self
+          .terminal
+          .resize(Rect {
+            x: 0,
+            y: 0,
+            width,
+            height,
+          })
+          .log_ignore();
+
         LoopAction::Render
+      }
+      Event::FocusGained => {
+        log::warn!("Ignore input event: {:?}", event);
+        LoopAction::Skip
+      }
+      Event::FocusLost => {
+        log::warn!("Ignore input event: {:?}", event);
+        LoopAction::Skip
+      }
+      Event::Paste(_) => {
+        log::warn!("Ignore input event: {:?}", event);
+        LoopAction::Skip
       }
     }
   }

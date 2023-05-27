@@ -1,4 +1,5 @@
 use crossterm::event::Event;
+use termwiz::{surface::CursorShape, escape::csi::CursorStyle};
 use tui::{
   backend::Backend,
   style::{Color, Modifier},
@@ -12,6 +13,7 @@ pub enum SrvToClt {
   SetCursor { x: u16, y: u16 },
   ShowCursor,
   HideCursor,
+  CursorShape(CursorStyle),
   Clear,
   Flush,
   Quit,
@@ -62,6 +64,11 @@ pub struct ProxyBackend {
 impl ProxyBackend {
   fn send(&mut self, msg: SrvToClt) {
     self.tx.send(msg).log_ignore()
+  }
+
+  pub fn set_size(&mut self, width: u16, height: u16) {
+    self.width = width;
+    self.height = height;
   }
 }
 

@@ -128,7 +128,7 @@ mod tests {
   fn serialize() {
     assert_eq!(
       serde_yaml::to_string(&AppEvent::ForceQuit).unwrap(),
-      "---\nc: force-quit\n"
+      "c: force-quit\n"
     );
 
     assert_eq!(
@@ -136,7 +136,7 @@ mod tests {
         key: Key::parse("<c-a>").unwrap()
       })
       .unwrap(),
-      "---\nc: send-key\nkey: \"<C-a>\"\n"
+      "c: send-key\nkey: <C-a>\n"
     );
   }
 }
