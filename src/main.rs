@@ -221,13 +221,13 @@ fn read_value(path: &str) -> Result<Value> {
     .extension()
     .map_or_else(|| "".to_string(), |ext| ext.to_string_lossy().to_string());
   let value: Value = match ext.as_str() {
-    "yaml" | "yml" => serde_yaml::from_reader(reader)?,
+    "yaml" | "yml" | "json" => serde_yaml::from_reader(reader)?,
     "lua" => {
       let mut buf = String::new();
       reader.read_to_string(&mut buf)?;
       load_lua_config(path, &buf)?
     }
-    _ => bail!("Supported config extensions: lua, yaml, yml."),
+    _ => bail!("Supported config extensions: lua, yaml, yml, json."),
   };
   Ok(value)
 }
