@@ -1,5 +1,5 @@
 use crossterm::event::Event;
-use termwiz::{surface::CursorShape, escape::csi::CursorStyle};
+use termwiz::escape::csi::CursorStyle;
 use tui::{
   backend::Backend,
   style::{Color, Modifier},

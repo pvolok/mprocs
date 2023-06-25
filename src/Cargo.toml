@@ -58,6 +58,8 @@ vt100 = { package = "mprocs-vt100", path = "../vendor/vt100", version = "0.1.1" 
 which = "4.4.0"
 xdg = "2.4.1"
 termwiz = "0.20.0"
+bitflags = { version = "2.3.2", features = ["serde"] }
+compact_str = { version = "0.7.1", features = ["serde"] }
 
 [target."cfg(windows)".dependencies]
 winapi = { version = "0.3", features = ["consoleapi", "winuser"] }

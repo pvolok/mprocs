@@ -1,13 +1,14 @@
-use termwiz::{escape::csi::CursorStyle, surface::CursorShape};
+use termwiz::escape::csi::CursorStyle;
 use tui::{
   layout::{Margin, Rect},
-  style::{Color, Modifier, Style},
+  style::Style,
   text::{Span, Spans, Text},
   widgets::{Clear, Paragraph, Widget, Wrap},
   Frame,
 };
 
 use crate::{
+  dk_screen::{attrs::Color, cell::Cell},
   proc::{CopyMode, Pos, ProcState},
   protocol::ProxyBackend,
   state::{Scope, State},
@@ -95,8 +96,10 @@ pub fn render_term(
             }
           }
           Err(err) => {
-            let text =
-              Text::styled(err.to_string(), Style::default().fg(Color::Red));
+            let text = Text::styled(
+              err.to_string(),
+              Style::default().fg(tui::style::Color::Red),
+            );
             frame.render_widget(
               Paragraph::new(text),
               area.inner(&Margin {
@@ -108,7 +111,8 @@ pub fn render_term(
         }
       }
       ProcState::Error(err) => {
-        let text = Text::styled(err, Style::default().fg(Color::Red));
+        let text =
+          Text::styled(err, Style::default().fg(tui::style::Color::Red));
         frame.render_widget(
           Paragraph::new(text).wrap(Wrap { trim: false }),
           area.inner(&Margin {
@@ -141,42 +145,28 @@ impl Widget for UiTerm<'_> {
         let to_cell = buf.get_mut(area.x + col, area.y + row);
         if let Some(cell) = screen.cell(row, col) {
           if cell.has_contents() {
-            let mut mods = Modifier::empty();
-            mods.set(Modifier::BOLD, cell.bold());
-            mods.set(Modifier::ITALIC, cell.italic());
-            mods.set(Modifier::REVERSED, cell.inverse());
-            mods.set(Modifier::UNDERLINED, cell.underline());
+            let mut new_cell = Cell::from_vt100(cell);
 
             let copy_mode = match self.copy_mode {
               CopyMode::None(_) => None,
               CopyMode::Start(_, start) => Some((start, start)),
               CopyMode::Range(_, start, end) => Some((start, end)),
             };
-            let (fg, bg) = match copy_mode {
-              Some((start, end))
-                if Pos::within(
-                  start,
-                  end,
-                  &Pos {
-                    y: (row as i32) - screen.scrollback() as i32,
-                    x: col as i32,
-                  },
-                ) =>
-              {
-                (Some(Color::Black), Some(Color::Cyan))
+            if let Some((start, end)) = copy_mode {
+              if Pos::within(
+                start,
+                end,
+                &Pos {
+                  y: (row as i32) - screen.scrollback() as i32,
+                  x: col as i32,
+                },
+              ) {
+                new_cell.attrs.fg = Color::Idx(0); // Black
+                new_cell.attrs.bg = Color::Idx(6); // Cyan
               }
-              _ => (conv_color(cell.fgcolor()), conv_color(cell.bgcolor())),
-            };
+            }
 
-            let style = Style {
-              fg,
-              bg,
-              add_modifier: mods,
-              sub_modifier: Modifier::empty(),
-            };
-            to_cell.set_style(style);
-
-            to_cell.set_symbol(&cell.contents());
+            *to_cell = new_cell.to_tui();
           } else {
             // Cell doesn't have content.
             to_cell.set_char(' ');
@@ -194,20 +184,14 @@ impl Widget for UiTerm<'_> {
       let width = str.len() as u16;
       let span = Span::styled(
         str,
-        Style::reset().bg(Color::LightYellow).fg(Color::Black),
+        Style::reset()
+          .bg(tui::style::Color::LightYellow)
+          .fg(tui::style::Color::Black),
       );
       let x = area.x + area.width - width;
       let y = area.y;
       buf.set_span(x, y, &span, width);
     }
-  }
-}
-
-fn conv_color(color: vt100::Color) -> Option<tui::style::Color> {
-  match color {
-    vt100::Color::Default => None,
-    vt100::Color::Idx(index) => Some(tui::style::Color::Indexed(index)),
-    vt100::Color::Rgb(r, g, b) => Some(tui::style::Color::Rgb(r, g, b)),
   }
 }
 
