@@ -316,7 +316,7 @@ impl Proc {
   #[cfg(not(windows))]
   fn send_signal(&mut self, sig: libc::c_int) {
     if let ProcState::Some(inst) = &self.inst {
-      unsafe { libc::kill(inst.pid as i32, sig) };
+      unsafe { libc::killpg(inst.pid as i32, sig) };
     }
   }
 
