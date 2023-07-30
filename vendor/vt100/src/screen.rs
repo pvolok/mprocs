@@ -825,6 +825,12 @@ impl Screen {
       self.mouse_protocol_encoding = MouseProtocolEncoding::default();
     }
   }
+
+  pub fn is_wide_continuation(&self, row: u16, col: u16) -> bool {
+    self
+      .grid()
+      .is_wide_continuation(crate::grid::Pos { row, col })
+  }
 }
 
 impl Screen {
@@ -854,17 +860,20 @@ impl Screen {
     // cells, which i really don't want to do).
     let mut wrap = false;
     if pos.col > size.cols - width {
+      let last_cell_pos = crate::grid::Pos {
+        row: pos.row,
+        col: size.cols - 1,
+      };
       let last_cell = self
         .grid()
-        .drawing_cell(crate::grid::Pos {
-          row: pos.row,
-          col: size.cols - 1,
-        })
+        .drawing_cell(last_cell_pos)
         // pos.row is valid, since it comes directly from
         // self.grid().pos() which we assume to always have a valid
         // row value. size.cols - 1 is also always a valid column.
         .unwrap();
-      if last_cell.has_contents() || last_cell.is_wide_continuation() {
+      if last_cell.has_contents()
+        || self.grid().is_wide_continuation(last_cell_pos)
+      {
         wrap = true;
       }
     }
@@ -873,32 +882,27 @@ impl Screen {
 
     if width == 0 {
       if pos.col > 0 {
-        let mut prev_cell = self
-          .grid_mut()
-          .drawing_cell_mut(crate::grid::Pos {
+        let prev_cell_pos = crate::grid::Pos {
+          row: pos.row,
+          col: pos.col - 1,
+        };
+        let prev_cell_pos = if self.grid().is_wide_continuation(prev_cell_pos) {
+          crate::grid::Pos {
             row: pos.row,
-            col: pos.col - 1,
-          })
+            col: pos.col - 2,
+          }
+        } else {
+          prev_cell_pos
+        };
+        let prev_cell = self
+          .grid_mut()
+          .drawing_cell_mut(prev_cell_pos)
           // pos.row is valid, since it comes directly from
           // self.grid().pos() which we assume to always have a
           // valid row value. pos.col - 1 is valid because we just
           // checked for pos.col > 0.
+          // pos.col - 2 is valid because pos.col - 1 is a wide continuation
           .unwrap();
-        if prev_cell.is_wide_continuation() {
-          prev_cell = self
-            .grid_mut()
-            .drawing_cell_mut(crate::grid::Pos {
-              row: pos.row,
-              col: pos.col - 2,
-            })
-            // pos.row is valid, since it comes directly from
-            // self.grid().pos() which we assume to always have a
-            // valid row value. we know pos.col - 2 is valid
-            // because the cell at pos.col - 1 is a wide
-            // continuation character, which means there must be
-            // the first half of the wide character before it.
-            .unwrap();
-        }
         prev_cell.append(c);
       } else if pos.row > 0 {
         let prev_row = self
@@ -910,49 +914,36 @@ impl Screen {
           // checked for pos.row > 0.
           .unwrap();
         if prev_row.wrapped() {
-          let mut prev_cell = self
-            .grid_mut()
-            .drawing_cell_mut(crate::grid::Pos {
+          let prev_cell_pos = crate::grid::Pos {
+            row: pos.row - 1,
+            col: size.cols - 1,
+          };
+          let prev_cell_pos = if self.grid().is_wide_continuation(prev_cell_pos)
+          {
+            crate::grid::Pos {
               row: pos.row - 1,
-              col: size.cols - 1,
-            })
+              col: size.cols - 2,
+            }
+          } else {
+            prev_cell_pos
+          };
+          let prev_cell = self
+            .grid_mut()
+            .drawing_cell_mut(prev_cell_pos)
             // pos.row is valid, since it comes directly from
-            // self.grid().pos() which we assume to always have a
-            // valid row value. pos.row - 1 is valid because we
-            // just checked for pos.row > 0. col of size.cols - 1
-            // is always valid.
+            // self.grid().pos() which we assume to always
+            // have a valid row value. pos.row - 1 is valid
+            // because we just checked for pos.row > 0. col of
+            // size.cols - 2 is valid because the cell at
+            // size.cols - 1 is a wide continuation character,
+            // so it must have the first half of the wide
+            // character before it.
             .unwrap();
-          if prev_cell.is_wide_continuation() {
-            prev_cell = self
-              .grid_mut()
-              .drawing_cell_mut(crate::grid::Pos {
-                row: pos.row - 1,
-                col: size.cols - 2,
-              })
-              // pos.row is valid, since it comes directly from
-              // self.grid().pos() which we assume to always
-              // have a valid row value. pos.row - 1 is valid
-              // because we just checked for pos.row > 0. col of
-              // size.cols - 2 is valid because the cell at
-              // size.cols - 1 is a wide continuation character,
-              // so it must have the first half of the wide
-              // character before it.
-              .unwrap();
-          }
           prev_cell.append(c);
         }
       }
     } else {
-      if self
-        .grid()
-        .drawing_cell(pos)
-        // pos.row is valid because we assume self.grid().pos() to
-        // always have a valid row value. pos.col is valid because we
-        // called col_wrap() immediately before this, which ensures
-        // that self.grid().pos().col has a valid value.
-        .unwrap()
-        .is_wide_continuation()
-      {
+      if self.grid().is_wide_continuation(pos) {
         let prev_cell = self
           .grid_mut()
           .drawing_cell_mut(crate::grid::Pos {
@@ -1055,7 +1046,6 @@ impl Screen {
           // into account.
           .unwrap();
         next_cell.clear(crate::attrs::Attrs::default());
-        next_cell.set_wide_continuation(true);
         self.grid_mut().col_inc(1);
       }
     }

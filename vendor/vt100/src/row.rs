@@ -88,7 +88,7 @@ impl Row {
     let cell = &self.cells[usize::from(col)];
     let other = if cell.is_wide() {
       self.cells.get_mut(usize::from(col + 1))
-    } else if cell.is_wide_continuation() {
+    } else if self.is_wide_continuation(col) {
       self.cells.get_mut(usize::from(col - 1))
     } else {
       return;
@@ -304,7 +304,7 @@ impl Row {
       }
       let mut cell_contents = prev_first_cell.contents();
       let need_erase = if cell_contents.is_empty() {
-        cell_contents = " ".to_string();
+        cell_contents = " ";
         true
       } else {
         false
@@ -420,7 +420,7 @@ impl Row {
     // drawing the next line can just start writing and be wrapped.
     if (!self.wrapped && prev.wrapped) || (!prev.wrapped && self.wrapped) {
       let end_pos =
-        if self.cells[usize::from(self.cols() - 1)].is_wide_continuation() {
+        if self.is_wide_continuation(self.cols() - 1) {
           crate::grid::Pos {
             row,
             col: self.cols() - 2,
@@ -449,5 +449,16 @@ impl Row {
     }
 
     (prev_pos, prev_attrs)
+  }
+
+  pub(crate) fn is_wide_continuation(&self, col: u16) -> bool {
+    if col == 0 {
+      return false;
+    }
+
+    self
+      .cells
+      .get(col as usize - 1)
+      .map_or(false, |c| c.is_wide())
   }
 }

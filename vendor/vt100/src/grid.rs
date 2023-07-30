@@ -343,13 +343,7 @@ impl Grid {
         row: self.pos.row,
         col: self.size.cols - 1,
       };
-      if self
-        .drawing_cell(pos)
-        // we assume self.pos.row is always valid, and self.size.cols
-        // - 1 is always a valid column
-        .unwrap()
-        .is_wide_continuation()
-      {
+      if self.is_wide_continuation(pos) {
         pos.col = self.size.cols - 2;
       }
       let cell =
@@ -382,14 +376,7 @@ impl Grid {
         for i in (0..self.pos.row).rev() {
           pos.row = i;
           pos.col = self.size.cols - 1;
-          if self
-            .drawing_cell(pos)
-            // i is always less than self.pos.row, which we assume
-            // to be always valid, so it must also be valid.
-            // self.size.cols - 1 is always a valid col.
-            .unwrap()
-            .is_wide_continuation()
-          {
+          if self.is_wide_continuation(pos) {
             pos.col = self.size.cols - 2;
           }
           let cell = self
@@ -514,23 +501,10 @@ impl Grid {
   pub fn insert_cells(&mut self, count: u16) {
     let size = self.size;
     let pos = self.pos;
-    let wide = pos.col < size.cols
-      && self
-        .drawing_cell(pos)
-        // we assume self.pos.row is always valid, and we know we are
-        // not off the end of a row because we just checked pos.col <
-        // size.cols
-        .unwrap()
-        .is_wide_continuation();
+    let wide = pos.col < size.cols && self.is_wide_continuation(pos);
     let row = self.current_row_mut();
     for _ in 0..count {
-      if wide {
-        row.get_mut(pos.col).unwrap().set_wide_continuation(false);
-      }
       row.insert(pos.col, crate::cell::Cell::default());
-      if wide {
-        row.get_mut(pos.col).unwrap().set_wide_continuation(true);
-      }
     }
     row.truncate(size.cols);
   }
@@ -747,6 +721,13 @@ impl Grid {
     if self.pos.col > self.size.cols - 1 {
       self.pos.col = self.size.cols - 1;
     }
+  }
+
+  pub(crate) fn is_wide_continuation(&self, pos: Pos) -> bool {
+    self
+      .rows
+      .get(pos.row as usize)
+      .map_or(false, |r| r.is_wide_continuation(pos.col))
   }
 }
 
