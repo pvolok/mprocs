@@ -5,7 +5,7 @@ use tui::{
   style::{Color, Modifier},
 };
 
-use crate::error::ResultLogger;
+use crate::{error::ResultLogger, yaml_val::value_to_string};
 
 #[derive(Debug)]
 pub enum SrvToClt {
@@ -39,6 +39,7 @@ impl From<&Cell> for tui::buffer::Cell {
       symbol: value.str.clone(),
       fg: value.fg,
       bg: value.bg,
+      underline_color: value.fg,
       modifier: value.mods,
     }
   }

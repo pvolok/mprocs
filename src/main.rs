@@ -103,17 +103,17 @@ async fn run_app() -> anyhow::Result<()> {
       Config::make_default(&settings)
     };
 
-    if let Some(server_addr) = matches.value_of("server") {
+    if let Some(server_addr) = matches.get_one::<String>("server") {
       config.server = Some(ServerConfig::from_str(server_addr)?);
     }
 
-    if matches.occurrences_of("ctl") > 0 {
-      return run_ctl(matches.value_of("ctl").unwrap(), &config).await;
+    if let Some(ctl_arg) = matches.get_one::<String>("ctl") {
+      return run_ctl(ctl_arg, &config).await;
     }
 
-    if let Some(cmds) = matches.values_of("COMMANDS") {
+    if let Some(cmds) = matches.get_many::<String>("COMMANDS") {
       let names = matches
-        .value_of("names")
+        .get_one::<String>("names")
         .map_or_else(|| Vec::new(), |arg| arg.split(",").collect::<Vec<_>>());
       let procs = cmds
         .into_iter()
@@ -123,7 +123,7 @@ async fn run_app() -> anyhow::Result<()> {
             .get(i)
             .map_or_else(|| cmd.to_string(), |s| s.to_string()),
           cmd: CmdConfig::Shell {
-            shell: cmd.to_owned(),
+            shell: cmd.to_string(),
           },
           env: None,
           cwd: None,
@@ -133,7 +133,7 @@ async fn run_app() -> anyhow::Result<()> {
         .collect::<Vec<_>>();
 
       config.procs = procs;
-    } else if matches.is_present("npm") {
+    } else if matches.contains_id("npm") {
       let procs = load_npm_procs()?;
       config.procs = procs;
     }
@@ -166,7 +166,7 @@ async fn run_client_and_server(config: Config, keymap: Keymap) -> Result<()> {
 fn load_config_value(
   matches: &ArgMatches,
 ) -> Result<Option<(Value, ConfigContext)>> {
-  if let Some(path) = matches.value_of("config") {
+  if let Some(path) = matches.get_one::<String>("config") {
     return Ok(Some((
       read_value(path)?,
       ConfigContext { path: path.into() },
