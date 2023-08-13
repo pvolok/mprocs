@@ -33,10 +33,31 @@ use crate::{
 
 type Term = Terminal<ProxyBackend>;
 
+#[derive(Debug, PartialEq)]
 enum LoopAction {
   Render,
   Skip,
   ForceQuit,
+}
+
+impl Default for LoopAction {
+  fn default() -> Self {
+    LoopAction::Skip
+  }
+}
+
+impl LoopAction {
+  fn render(&mut self) {
+    match self {
+      LoopAction::Render => (),
+      LoopAction::Skip => *self = LoopAction::Render,
+      LoopAction::ForceQuit => (),
+    }
+  }
+
+  fn force_quit(&mut self) {
+    *self = LoopAction::ForceQuit;
+  }
 }
 
 pub struct App {
@@ -174,26 +195,21 @@ impl App {
         })?;
       }
 
-      let loop_action = select! {
+      let mut loop_action = LoopAction::default();
+      let () = select! {
         event = self.client_rx.recv().fuse() => {
           if let Some(event) = event {
-            self.handle_client_msg(event)?
-          } else {
-            LoopAction::Skip
+            self.handle_client_msg(&mut loop_action, event)?
           }
         }
         event = self.upd_rx.recv().fuse() => {
           if let Some(event) = event {
-            self.handle_proc_update(event)
-          } else {
-            LoopAction::Skip
+            self.handle_proc_update(&mut loop_action, event)
           }
         }
         event = self.ev_rx.recv().fuse() => {
           if let Some(event) = event {
-            self.handle_event(&event)
-          } else {
-            LoopAction::Skip
+            self.handle_event(&mut loop_action, &event)
           }
         }
       };
@@ -231,16 +247,20 @@ impl App {
     Ok(())
   }
 
-  fn handle_client_msg(&mut self, msg: CltToSrv) -> anyhow::Result<LoopAction> {
+  fn handle_client_msg(
+    &mut self,
+    loop_action: &mut LoopAction,
+    msg: CltToSrv,
+  ) -> anyhow::Result<()> {
     match msg {
       CltToSrv::Init { .. } => bail!("Init message is unexpected."),
-      CltToSrv::Key(event) => Ok(self.handle_input(event)),
+      CltToSrv::Key(event) => Ok(self.handle_input(loop_action, event)),
     }
   }
 
-  fn handle_input(&mut self, event: Event) -> LoopAction {
+  fn handle_input(&mut self, loop_action: &mut LoopAction, event: Event) {
     {
-      let mut ret: Option<LoopAction> = None;
+      let mut ret: bool = false;
       let mut reset_modal = false;
       if let Some(modal) = &mut self.state.modal {
         match modal {
@@ -259,7 +279,7 @@ impl App {
                   })
                   .unwrap();
                 // Skip because AddProc event will immediately rerender.
-                ret = Some(LoopAction::Skip);
+                ret = true;
               }
               Event::Key(KeyEvent {
                 code: KeyCode::Esc,
@@ -267,7 +287,8 @@ impl App {
                 ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
-                ret = Some(LoopAction::Render);
+                loop_action.render();
+                ret = true;
               }
               _ => (),
             }
@@ -275,7 +296,8 @@ impl App {
             let req = tui_input::backend::crossterm::to_input_request(&event);
             if let Some(req) = req {
               input.handle(req);
-              ret = Some(LoopAction::Render);
+              loop_action.render();
+              ret = true;
             }
           }
           Modal::RenameProc { input } => {
@@ -293,7 +315,7 @@ impl App {
                   })
                   .unwrap();
                 // Skip because RenameProc event will immediately rerender.
-                ret = Some(LoopAction::Skip);
+                ret = true;
               }
               Event::Key(KeyEvent {
                 code: KeyCode::Esc,
@@ -301,7 +323,8 @@ impl App {
                 ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
-                ret = Some(LoopAction::Render);
+                loop_action.render();
+                ret = true;
               }
               _ => (),
             }
@@ -309,7 +332,8 @@ impl App {
             let req = tui_input::backend::crossterm::to_input_request(&event);
             if let Some(req) = req {
               input.handle(req);
-              ret = Some(LoopAction::Render);
+              loop_action.render();
+              ret = true;
             }
           }
           Modal::RemoveProc { id } => {
@@ -322,7 +346,7 @@ impl App {
                 reset_modal = true;
                 self.ev_tx.send(AppEvent::RemoveProc { id: *id }).unwrap();
                 // Skip because RemoveProc event will immediately rerender.
-                ret = Some(LoopAction::Skip);
+                ret = true;
               }
               Event::Key(KeyEvent {
                 code: KeyCode::Esc,
@@ -335,7 +359,8 @@ impl App {
                 ..
               }) if modifiers.is_empty() => {
                 reset_modal = true;
-                ret = Some(LoopAction::Render);
+                loop_action.render();
+                ret = true;
               }
               _ => (),
             }
@@ -348,7 +373,7 @@ impl App {
             }) if modifiers.is_empty() => {
               reset_modal = true;
               self.ev_tx.send(AppEvent::Quit).unwrap();
-              ret = Some(LoopAction::Skip);
+              ret = true;
             }
             Event::Key(KeyEvent {
               code: KeyCode::Esc,
@@ -361,7 +386,8 @@ impl App {
               ..
             }) if modifiers.is_empty() => {
               reset_modal = true;
-              ret = Some(LoopAction::Render);
+              loop_action.render();
+              ret = true;
             }
             _ => (),
           },
@@ -371,8 +397,8 @@ impl App {
       if reset_modal {
         self.state.modal = None;
       }
-      if let Some(ret) = ret {
-        return ret;
+      if ret {
+        return;
       }
     }
 
@@ -382,19 +408,19 @@ impl App {
         let group = self.state.get_keymap_group();
         if let Some(bound) = self.keymap.resolve(group, &key) {
           let bound = bound.clone();
-          self.handle_event(&bound)
+          self.handle_event(loop_action, &bound)
         } else {
           match self.state.scope {
-            Scope::Procs => LoopAction::Skip,
+            Scope::Procs => (),
             Scope::Term | Scope::TermZoom => {
-              self.handle_event(&AppEvent::SendKey { key })
+              self.handle_event(loop_action, &AppEvent::SendKey { key })
             }
           }
         }
       }
       Event::Mouse(mev) => {
         if mev.kind == MouseEventKind::Moved {
-          return LoopAction::Skip;
+          return;
         }
 
         let layout = self.get_layout();
@@ -447,7 +473,7 @@ impl App {
             }
           }
         }
-        LoopAction::Render
+        loop_action.render();
       }
       Event::Resize(width, height) => {
         let area = AppLayout::new(
@@ -471,35 +497,29 @@ impl App {
           })
           .log_ignore();
 
-        LoopAction::Render
+        loop_action.render();
       }
       Event::FocusGained => {
         log::warn!("Ignore input event: {:?}", event);
-        LoopAction::Skip
       }
       Event::FocusLost => {
         log::warn!("Ignore input event: {:?}", event);
-        LoopAction::Skip
       }
       Event::Paste(_) => {
         log::warn!("Ignore input event: {:?}", event);
-        LoopAction::Skip
       }
     }
   }
 
-  fn handle_event(&mut self, event: &AppEvent) -> LoopAction {
+  fn handle_event(&mut self, loop_action: &mut LoopAction, event: &AppEvent) {
     match event {
       AppEvent::Batch { cmds } => {
-        let mut ret = LoopAction::Skip;
         for cmd in cmds {
-          match self.handle_event(cmd) {
-            LoopAction::Render => ret = LoopAction::Render,
-            LoopAction::Skip => (),
-            LoopAction::ForceQuit => return LoopAction::ForceQuit,
-          };
+          self.handle_event(loop_action, cmd);
+          if *loop_action == LoopAction::ForceQuit {
+            return;
+          }
         }
-        ret
       }
 
       AppEvent::QuitOrAsk => {
@@ -509,7 +529,7 @@ impl App {
         } else {
           self.state.quitting = true;
         }
-        LoopAction::Render
+        loop_action.render();
       }
       AppEvent::Quit => {
         self.state.quitting = true;
@@ -518,7 +538,7 @@ impl App {
             proc.stop();
           }
         }
-        LoopAction::Render
+        loop_action.render();
       }
       AppEvent::ForceQuit => {
         for proc in self.state.procs.iter_mut() {
@@ -526,24 +546,24 @@ impl App {
             proc.kill();
           }
         }
-        LoopAction::ForceQuit
+        loop_action.force_quit();
       }
 
       AppEvent::ToggleFocus => {
         self.state.scope = self.state.scope.toggle();
-        LoopAction::Render
+        loop_action.render();
       }
       AppEvent::FocusProcs => {
         self.state.scope = Scope::Procs;
-        LoopAction::Render
+        loop_action.render();
       }
       AppEvent::FocusTerm => {
         self.state.scope = Scope::Term;
-        LoopAction::Render
+        loop_action.render();
       }
       AppEvent::Zoom => {
         self.state.scope = Scope::TermZoom;
-        LoopAction::Render
+        loop_action.render();
       }
 
       AppEvent::NextProc => {
@@ -552,7 +572,7 @@ impl App {
           next = 0;
         }
         self.state.select_proc(next);
-        LoopAction::Render
+        loop_action.render();
       }
       AppEvent::PrevProc => {
         let next = if self.state.selected > 0 {
@@ -561,30 +581,27 @@ impl App {
           self.state.procs.len() - 1
         };
         self.state.select_proc(next);
-        LoopAction::Render
+        loop_action.render();
       }
       AppEvent::SelectProc { index } => {
         self.state.select_proc(*index);
-        LoopAction::Render
+        loop_action.render();
       }
 
       AppEvent::StartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.start();
         }
-        LoopAction::Skip
       }
       AppEvent::TermProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.stop();
         }
-        LoopAction::Skip
       }
       AppEvent::KillProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.kill();
         }
-        LoopAction::Skip
       }
       AppEvent::RestartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
@@ -595,7 +612,6 @@ impl App {
             proc.start();
           }
         }
-        LoopAction::Skip
       }
       AppEvent::ForceRestartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
@@ -606,42 +622,37 @@ impl App {
             proc.start();
           }
         }
-        LoopAction::Skip
       }
 
       AppEvent::ScrollUpLines { n } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.scroll_up_lines(*n);
-          return LoopAction::Render;
+          loop_action.render();
         }
-        LoopAction::Skip
       }
       AppEvent::ScrollDownLines { n } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.scroll_down_lines(*n);
-          return LoopAction::Render;
+          loop_action.render();
         }
-        LoopAction::Skip
       }
       AppEvent::ScrollUp => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.scroll_half_screen_up();
-          return LoopAction::Render;
+          loop_action.render();
         }
-        LoopAction::Skip
       }
       AppEvent::ScrollDown => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.scroll_half_screen_down();
-          return LoopAction::Render;
+          loop_action.render();
         }
-        LoopAction::Skip
       }
       AppEvent::ShowAddProc => {
         self.state.modal = Some(Modal::AddProc {
           input: Input::default(),
         });
-        LoopAction::Render
+        loop_action.render();
       }
       AppEvent::AddProc { cmd } => {
         let proc = Proc::new(
@@ -660,7 +671,7 @@ impl App {
           self.get_layout().term_area(),
         );
         self.state.procs.push(proc);
-        LoopAction::Render
+        loop_action.render();
       }
       AppEvent::ShowRemoveProc => {
         let id = self
@@ -671,9 +682,9 @@ impl App {
         match id {
           Some(id) => {
             self.state.modal = Some(Modal::RemoveProc { id });
-            LoopAction::Render
+            loop_action.render();
           }
-          None => LoopAction::Skip,
+          None => (),
         }
       }
       AppEvent::RemoveProc { id } => {
@@ -681,21 +692,19 @@ impl App {
           .state
           .procs
           .retain(|proc| proc.is_up() || proc.id != *id);
-        LoopAction::Render
+        loop_action.render();
       }
 
       AppEvent::ShowRenameProc => {
         self.state.modal = Some(Modal::RenameProc {
           input: Input::default(),
         });
-        LoopAction::Render
+        loop_action.render();
       }
       AppEvent::RenameProc { name } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.rename(name);
-          LoopAction::Render
-        } else {
-          LoopAction::Skip
+          loop_action.render();
         }
       }
 
@@ -716,13 +725,13 @@ impl App {
         if switched {
           self.state.scope = Scope::Term;
         }
-        LoopAction::Render
+        loop_action.render();
       }
       AppEvent::CopyModeLeave => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.copy_mode = CopyMode::None(None);
         }
-        LoopAction::Render
+        loop_action.render();
       }
       AppEvent::CopyModeMove { dir } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
@@ -762,7 +771,7 @@ impl App {
             ProcState::Error(_) => (),
           }
         }
-        LoopAction::Render
+        loop_action.render();
       }
       AppEvent::CopyModeEnd => {
         if let Some(proc) = self.state.get_current_proc_mut() {
@@ -773,7 +782,7 @@ impl App {
             other => other,
           };
         }
-        LoopAction::Render
+        loop_action.render();
       }
       AppEvent::CopyModeCopy => {
         if let Some(proc) = self.state.get_current_proc_mut() {
@@ -785,19 +794,22 @@ impl App {
           }
           proc.copy_mode = CopyMode::None(None);
         }
-        LoopAction::Render
+        loop_action.render();
       }
 
       AppEvent::SendKey { key } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.send_key(key);
         }
-        LoopAction::Skip
       }
     }
   }
 
-  fn handle_proc_update(&mut self, event: (usize, ProcUpdate)) -> LoopAction {
+  fn handle_proc_update(
+    &mut self,
+    loop_action: &mut LoopAction,
+    event: (usize, ProcUpdate),
+  ) {
     match event.1 {
       ProcUpdate::Render => {
         let cur_proc_id =
@@ -806,9 +818,8 @@ impl App {
           if proc.id != cur_proc_id {
             proc.changed = true;
           }
-          return LoopAction::Render;
+          loop_action.render();
         }
-        LoopAction::Skip
       }
       ProcUpdate::Stopped => {
         if let Some(proc) = self.state.get_proc_mut(event.0) {
@@ -817,9 +828,11 @@ impl App {
             proc.to_restart = false;
           }
         }
-        LoopAction::Render
+        loop_action.render();
       }
-      ProcUpdate::Started => LoopAction::Render,
+      ProcUpdate::Started => {
+        loop_action.render();
+      }
     }
   }
 
