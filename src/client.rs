@@ -25,6 +25,8 @@ pub async fn client_main(
         EnterAlternateScreen,
         Clear(ClearType::All),
         EnableMouseCapture,
+        // https://wezfurlong.org/wezterm/config/key-encoding.html#xterm-modifyotherkeys
+        crossterm::style::Print("\x1b[>4;2m"),
       ) {
         Ok(_) => client_main_inner(tx, rx).await,
         Err(err) => Err(err.into()),
