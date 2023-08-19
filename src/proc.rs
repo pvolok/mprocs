@@ -487,6 +487,8 @@ impl Proc {
             Self::scroll_screen_up(screen, config.mouse_scroll_speed);
           }
         },
+        MouseEventKind::ScrollLeft => (),
+        MouseEventKind::ScrollRight => (),
       }
     } else {
       if let ProcState::Some(inst) = &mut self.inst {
@@ -536,6 +538,8 @@ impl Proc {
                 Self::scroll_vt_up(&mut vt, config.mouse_scroll_speed);
               }
             }
+            MouseEventKind::ScrollLeft => (),
+            MouseEventKind::ScrollRight => (),
           },
           MouseProtocolMode::Press
           | MouseProtocolMode::PressRelease

@@ -1,3 +1,5 @@
+use tui::style::Modifier;
+
 use crate::term::BufWrite as _;
 
 /// Represents a foreground or background color for cells.
@@ -16,6 +18,16 @@ pub enum Color {
 impl Default for Color {
   fn default() -> Self {
     Self::Default
+  }
+}
+
+impl Color {
+  pub fn to_tui(self) -> tui::style::Color {
+    match self {
+      Color::Default => tui::style::Color::Reset,
+      Color::Idx(index) => tui::style::Color::Indexed(index),
+      Color::Rgb(r, g, b) => tui::style::Color::Rgb(r, g, b),
+    }
   }
 }
 
@@ -133,5 +145,16 @@ impl Attrs {
     };
 
     attrs.write_buf(contents);
+  }
+}
+
+impl Attrs {
+  pub fn mods_to_tui(&self) -> tui::style::Modifier {
+    let mut mods = Modifier::empty();
+    mods.set(Modifier::BOLD, self.bold());
+    mods.set(Modifier::ITALIC, self.italic());
+    mods.set(Modifier::UNDERLINED, self.underline());
+    mods.set(Modifier::REVERSED, self.inverse());
+    mods
   }
 }

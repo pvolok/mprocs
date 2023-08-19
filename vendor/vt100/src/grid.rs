@@ -501,7 +501,6 @@ impl Grid {
   pub fn insert_cells(&mut self, count: u16) {
     let size = self.size;
     let pos = self.pos;
-    let wide = pos.col < size.cols && self.is_wide_continuation(pos);
     let row = self.current_row_mut();
     for _ in 0..count {
       row.insert(pos.col, crate::cell::Cell::default());

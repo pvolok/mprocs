@@ -471,6 +471,8 @@ impl App {
                 self.state.select_proc(index);
               }
             }
+            MouseEventKind::ScrollLeft => (),
+            MouseEventKind::ScrollRight => (),
           }
         }
         loop_action.render();

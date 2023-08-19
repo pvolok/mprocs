@@ -213,17 +213,14 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
     F(n) => {
       if mods.is_empty() && n < 5 {
         // F1-F4 are encoded using SS3 if there are no modifiers
-        write!(
-          buf,
-          "{}",
-          match n {
-            1 => "\x1bOP",
-            2 => "\x1bOQ",
-            3 => "\x1bOR",
-            4 => "\x1bOS",
-            _ => unreachable!("wat?"),
-          }
-        )?;
+        let s = match n {
+          1 => "\x1bOP",
+          2 => "\x1bOQ",
+          3 => "\x1bOR",
+          4 => "\x1bOS",
+          _ => unreachable!("wat?"),
+        };
+        write!(buf, "{}", s)?;
       } else {
         // Higher numbered F-keys plus modified F-keys are encoded
         // using CSI instead of SS3.
@@ -576,6 +573,14 @@ pub fn encode_mouse_event(mev: MouseEvent) -> String {
     }
     MouseEventKind::ScrollDown => buf.push_str("65"),
     MouseEventKind::ScrollUp => buf.push_str("64"),
+    MouseEventKind::ScrollLeft => {
+      // TODO
+      return "".to_string();
+    }
+    MouseEventKind::ScrollRight => {
+      // TODO
+      return "".to_string();
+    }
   }
   buf.push(';');
   buf.push_str((mev.column + 1).to_string().as_str());
@@ -589,6 +594,8 @@ pub fn encode_mouse_event(mev: MouseEvent) -> String {
     MouseEventKind::Moved => todo!(),
     MouseEventKind::ScrollDown => 'M',
     MouseEventKind::ScrollUp => 'M',
+    MouseEventKind::ScrollLeft => todo!(),
+    MouseEventKind::ScrollRight => todo!(),
   });
 
   buf

@@ -1,14 +1,13 @@
 use termwiz::escape::csi::CursorStyle;
 use tui::{
   layout::{Margin, Rect},
-  style::Style,
-  text::{Span, Spans, Text},
+  style::{Color, Style},
+  text::{Line, Span, Text},
   widgets::{Clear, Paragraph, Widget, Wrap},
   Frame,
 };
 
 use crate::{
-  dk_screen::{attrs::Color, cell::Cell},
   proc::{CopyMode, Pos, ProcState},
   protocol::ProxyBackend,
   state::{Scope, State},
@@ -45,7 +44,7 @@ pub fn render_term(
       }
     };
 
-    let block = theme.pane(active).title(Spans::from(title));
+    let block = theme.pane(active).title(Line::from(title));
     frame.render_widget(Clear, area);
     frame.render_widget(block, area);
 
@@ -145,7 +144,7 @@ impl Widget for UiTerm<'_> {
         let to_cell = buf.get_mut(area.x + col, area.y + row);
         if let Some(cell) = screen.cell(row, col) {
           if cell.has_contents() {
-            let mut new_cell = Cell::from_vt100(cell);
+            *to_cell = cell.to_tui();
 
             let copy_mode = match self.copy_mode {
               CopyMode::None(_) => None,
@@ -161,12 +160,10 @@ impl Widget for UiTerm<'_> {
                   x: col as i32,
                 },
               ) {
-                new_cell.attrs.fg = Color::Idx(0); // Black
-                new_cell.attrs.bg = Color::Idx(6); // Cyan
+                to_cell.fg = Color::Black; // Black
+                to_cell.bg = Color::Cyan; // Cyan
               }
             }
-
-            *to_cell = new_cell.to_tui();
           } else {
             // Cell doesn't have content.
             to_cell.set_char(' ');

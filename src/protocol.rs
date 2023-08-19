@@ -5,7 +5,7 @@ use tui::{
   style::{Color, Modifier},
 };
 
-use crate::{error::ResultLogger, yaml_val::value_to_string};
+use crate::error::ResultLogger;
 
 #[derive(Debug)]
 pub enum SrvToClt {

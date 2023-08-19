@@ -4,7 +4,6 @@ mod clipboard;
 mod config;
 mod config_lua;
 mod ctl;
-mod dk_screen;
 mod encode_term;
 mod error;
 mod event;

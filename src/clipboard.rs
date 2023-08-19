@@ -1,6 +1,7 @@
 use std::process::Stdio;
 
 use anyhow::Result;
+use base64::Engine;
 use which::which;
 
 #[allow(dead_code)]
@@ -29,9 +30,7 @@ fn detect_copy_provider() -> Provider {
 fn detect_copy_provider() -> Provider {
   // Wayland
   if std::env::var("WAYLAND_DISPLAY").is_ok() {
-    if let Some(provider) =
-      check_prog("wl-copy", &["--type", "text/plain"])
-    {
+    if let Some(provider) = check_prog("wl-copy", &["--type", "text/plain"]) {
       return provider;
     }
   }
@@ -74,7 +73,11 @@ fn copy_impl(s: &str, provider: &Provider) -> Result<()> {
     Provider::OSC52 => {
       let mut stdout = std::io::stdout().lock();
       use std::io::Write;
-      write!(&mut stdout, "\x1b]52;;{}\x07", base64::encode(s))?;
+      write!(
+        &mut stdout,
+        "\x1b]52;;{}\x07",
+        base64::engine::general_purpose::STANDARD.encode(s)
+      )?;
     }
 
     Provider::Exec(prog, args) => {

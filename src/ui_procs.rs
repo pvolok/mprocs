@@ -1,7 +1,7 @@
 use tui::{
   layout::{Margin, Rect},
   style::{Color, Modifier, Style},
-  text::{Span, Spans},
+  text::{Line, Span},
   widgets::{List, ListItem, ListState},
   Frame,
 };
@@ -107,7 +107,7 @@ fn create_proc_item<'a>(
   };
   let name = Span::styled(name, name_style);
 
-  ListItem::new(Spans::from(vec![mark, name, status]))
+  ListItem::new(Line::from(vec![mark, name, status]))
     .style(theme.get_procs_item(is_cur))
 }
 

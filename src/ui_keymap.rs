@@ -1,7 +1,7 @@
 use tui::{
   layout::{Margin, Rect},
   style::{Color, Style},
-  text::{Span, Spans, Text},
+  text::{Line, Span, Text},
   widgets::{Clear, Paragraph},
   Frame,
 };
@@ -64,7 +64,7 @@ pub fn render_keymap(
     .flatten()
     .collect::<Vec<_>>();
 
-  let line = Spans::from(line);
+  let line = Line::from(line);
   let line = Text::from(vec![line]);
 
   let p = Paragraph::new(line);

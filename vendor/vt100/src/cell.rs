@@ -105,3 +105,16 @@ impl Cell {
     self.attrs.inverse()
   }
 }
+
+impl Cell {
+  pub fn to_tui(&self) -> tui::buffer::Cell {
+    let fg = self.attrs.fgcolor.to_tui();
+    tui::buffer::Cell {
+      symbol: self.text.to_string(),
+      fg,
+      bg: self.attrs.bgcolor.to_tui(),
+      modifier: self.attrs.mods_to_tui(),
+      underline_color: fg,
+    }
+  }
+}
