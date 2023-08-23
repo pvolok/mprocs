@@ -2,7 +2,7 @@ use tui_input::Input;
 
 use crate::{
   keymap::KeymapGroup,
-  proc::{CopyMode, Proc},
+  proc::{CopyMode, Proc, ProcHandle},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -32,7 +32,7 @@ impl Scope {
 
 pub struct State {
   pub scope: Scope,
-  pub procs: Vec<Proc>,
+  pub procs: Vec<ProcHandle>,
   pub selected: usize,
 
   pub modal: Option<Modal>,
@@ -42,22 +42,26 @@ pub struct State {
 
 impl State {
   pub fn get_current_proc(&self) -> Option<&Proc> {
-    self.procs.get(self.selected)
+    self.procs.get(self.selected).map(|p| &p.proc)
   }
 
   pub fn get_current_proc_mut(&mut self) -> Option<&mut Proc> {
-    self.procs.get_mut(self.selected)
+    self.procs.get_mut(self.selected).map(|p| &mut p.proc)
   }
 
   pub fn select_proc(&mut self, index: usize) {
     self.selected = index;
-    if let Some(proc) = self.procs.get_mut(index) {
-      proc.changed = false;
+    if let Some(proc_handle) = self.procs.get_mut(index) {
+      proc_handle.proc.changed = false;
     }
   }
 
   pub fn get_proc_mut(&mut self, id: usize) -> Option<&mut Proc> {
-    self.procs.iter_mut().find(|proc| proc.id == id)
+    self
+      .procs
+      .iter_mut()
+      .find(|p| p.proc.id == id)
+      .map(|p| &mut p.proc)
   }
 
   pub fn get_keymap_group(&self) -> KeymapGroup {
@@ -74,7 +78,7 @@ impl State {
   }
 
   pub fn all_procs_down(&self) -> bool {
-    self.procs.iter().all(|proc| !proc.is_up())
+    self.procs.iter().all(|p| !p.proc.is_up())
   }
 }
 

@@ -560,6 +560,10 @@ impl Proc {
   }
 }
 
+pub struct ProcHandle {
+  pub proc: Proc,
+}
+
 fn translate_mouse_pos(
   event: &MouseEvent,
   area: &Rect,

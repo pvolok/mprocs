@@ -19,7 +19,7 @@ use crate::{
   event::{AppEvent, CopyMove},
   key::Key,
   keymap::Keymap,
-  proc::{CopyMode, Pos, Proc, ProcState, ProcUpdate, StopSignal},
+  proc::{CopyMode, Pos, Proc, ProcHandle, ProcState, ProcUpdate, StopSignal},
   protocol::{CltToSrv, ProxyBackend, SrvToClt},
   state::{Modal, Scope, State},
   ui_add_proc::render_input_dialog,
@@ -155,8 +155,8 @@ impl App {
             let term_size = (term_area.width, term_area.height);
             if last_term_size != term_size {
               last_term_size = term_size;
-              for proc in &mut self.state.procs {
-                proc.resize(term_area);
+              for proc_handle in &mut self.state.procs {
+                proc_handle.proc.resize(term_area);
               }
             }
           }
@@ -237,8 +237,13 @@ impl App {
       .config
       .procs
       .iter()
-      .map(|proc_cfg| {
-        Proc::new(proc_cfg.name.clone(), proc_cfg, self.upd_tx.clone(), size)
+      .map(|proc_cfg| ProcHandle {
+        proc: Proc::new(
+          proc_cfg.name.clone(),
+          proc_cfg,
+          self.upd_tx.clone(),
+          size,
+        ),
       })
       .collect::<Vec<_>>();
 
@@ -484,8 +489,8 @@ impl App {
           &self.config,
         )
         .term_area();
-        for proc in &mut self.state.procs {
-          proc.resize(area);
+        for proc_handle in &mut self.state.procs {
+          proc_handle.proc.resize(area);
         }
 
         self.terminal.backend_mut().set_size(width, height);
@@ -525,7 +530,7 @@ impl App {
       }
 
       AppEvent::QuitOrAsk => {
-        let have_running = self.state.procs.iter().any(|p| p.is_up());
+        let have_running = self.state.procs.iter().any(|p| p.proc.is_up());
         if have_running {
           self.state.modal = Some(Modal::Quit);
         } else {
@@ -535,17 +540,17 @@ impl App {
       }
       AppEvent::Quit => {
         self.state.quitting = true;
-        for proc in self.state.procs.iter_mut() {
-          if proc.is_up() {
-            proc.stop();
+        for proc_handle in self.state.procs.iter_mut() {
+          if proc_handle.proc.is_up() {
+            proc_handle.proc.stop();
           }
         }
         loop_action.render();
       }
       AppEvent::ForceQuit => {
-        for proc in self.state.procs.iter_mut() {
-          if proc.is_up() {
-            proc.kill();
+        for proc_handle in self.state.procs.iter_mut() {
+          if proc_handle.proc.is_up() {
+            proc_handle.proc.kill();
           }
         }
         loop_action.force_quit();
@@ -672,7 +677,8 @@ impl App {
           self.upd_tx.clone(),
           self.get_layout().term_area(),
         );
-        self.state.procs.push(proc);
+        let proc_handle = ProcHandle { proc };
+        self.state.procs.push(proc_handle);
         loop_action.render();
       }
       AppEvent::ShowRemoveProc => {
@@ -693,7 +699,7 @@ impl App {
         self
           .state
           .procs
-          .retain(|proc| proc.is_up() || proc.id != *id);
+          .retain(|p| p.proc.is_up() || p.proc.id != *id);
         loop_action.render();
       }
 
