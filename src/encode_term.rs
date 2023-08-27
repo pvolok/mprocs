@@ -1,11 +1,9 @@
 use std::fmt::Write;
 
 use anyhow::Result;
-use crossterm::event::{
-  KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-};
+use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind};
 
-use crate::key::Key;
+use crate::{key::Key, mouse::MouseEvent};
 
 pub const CSI: &str = "\x1b[";
 pub const SS3: &str = "\x1bO";
@@ -583,9 +581,9 @@ pub fn encode_mouse_event(mev: MouseEvent) -> String {
     }
   }
   buf.push(';');
-  buf.push_str((mev.column + 1).to_string().as_str());
+  buf.push_str((mev.x + 1).to_string().as_str());
   buf.push(';');
-  buf.push_str((mev.row + 1).to_string().as_str());
+  buf.push_str((mev.y + 1).to_string().as_str());
 
   buf.push(match mev.kind {
     MouseEventKind::Down(_) => 'M',

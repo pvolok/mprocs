@@ -38,7 +38,12 @@ impl Config {
         .as_object()?
         .into_iter()
         .map(|(name, proc)| {
-          Ok(ProcConfig::from_val(value_to_string(&name)?, proc, ctx)?)
+          Ok(ProcConfig::from_val(
+            value_to_string(&name)?,
+            settings.mouse_scroll_speed,
+            proc,
+            ctx,
+          )?)
         })
         .collect::<Result<Vec<_>>>()?
         .into_iter()
@@ -85,11 +90,14 @@ pub struct ProcConfig {
   pub autostart: bool,
 
   pub stop: StopSignal,
+
+  pub mouse_scroll_speed: usize,
 }
 
 impl ProcConfig {
   fn from_val(
     name: String,
+    mouse_scroll_speed: usize,
     val: Val,
     ctx: &ConfigContext,
   ) -> Result<Option<ProcConfig>> {
@@ -106,6 +114,8 @@ impl ProcConfig {
         env: None,
         autostart: true,
         stop: StopSignal::default(),
+
+        mouse_scroll_speed,
       })),
       Value::Sequence(_) => {
         let cmd = val.as_array()?;
@@ -121,6 +131,7 @@ impl ProcConfig {
           env: None,
           autostart: true,
           stop: StopSignal::default(),
+          mouse_scroll_speed,
         }))
       }
       Value::Mapping(_) => {
@@ -240,6 +251,7 @@ impl ProcConfig {
           env,
           autostart,
           stop: stop_signal,
+          mouse_scroll_speed,
         }))
       }
       Value::Tagged(_) => anyhow::bail!("Yaml tags are not supported"),

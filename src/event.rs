@@ -100,7 +100,7 @@ fn lines_str(n: usize) -> &'static str {
   }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum CopyMove {
   Up,
   Right,

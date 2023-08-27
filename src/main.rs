@@ -9,6 +9,7 @@ mod error;
 mod event;
 mod key;
 mod keymap;
+mod mouse;
 mod package_json;
 mod proc;
 mod protocol;
@@ -128,12 +129,13 @@ async fn run_app() -> anyhow::Result<()> {
           cwd: None,
           autostart: true,
           stop: StopSignal::default(),
+          mouse_scroll_speed: settings.mouse_scroll_speed,
         })
         .collect::<Vec<_>>();
 
       config.procs = procs;
     } else if matches.contains_id("npm") {
-      let procs = load_npm_procs()?;
+      let procs = load_npm_procs(&settings)?;
       config.procs = procs;
     }
 

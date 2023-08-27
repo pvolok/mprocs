@@ -8,7 +8,7 @@ use tui::{
 };
 
 use crate::{
-  proc::{CopyMode, Pos, ProcState},
+  proc::{handle::ProcViewFrame, CopyMode, Pos},
   protocol::ProxyBackend,
   state::{Scope, State},
   theme::Theme,
@@ -36,7 +36,7 @@ pub fn render_term(
   if let Some(proc) = state.get_current_proc() {
     let mut title = Vec::with_capacity(4);
     title.push(Span::styled("Terminal", theme.pane_title(active)));
-    match proc.copy_mode {
+    match proc.copy_mode() {
       CopyMode::None(_) => (),
       CopyMode::Start(_, _) | CopyMode::Range(_, _, _) => {
         title.push(Span::raw(" "));
@@ -48,70 +48,50 @@ pub fn render_term(
     frame.render_widget(Clear, area);
     frame.render_widget(block, area);
 
-    match &proc.inst {
-      ProcState::None => (),
-      ProcState::Some(inst) => {
-        let vt = inst.vt.read();
-        match vt {
-          Ok(vt) => {
-            let (screen, cursor) = match &proc.copy_mode {
-              CopyMode::None(_) => {
-                let screen = vt.screen();
-                let cursor = if screen.hide_cursor() {
-                  None
-                } else {
-                  let cursor = screen.cursor_position();
-                  Some((area.x + 1 + cursor.1, area.y + 1 + cursor.0))
-                };
-                (screen, cursor)
-              }
-              CopyMode::Start(screen, pos)
-              | CopyMode::Range(screen, _, pos) => {
-                let y =
-                  area.y as i32 + 1 + (pos.y + screen.scrollback() as i32);
-                let cursor = if y >= 0 {
-                  Some((area.x + 1 + pos.x as u16, y as u16))
-                } else {
-                  None
-                };
-                (screen, cursor)
-              }
+    match &proc.lock_view() {
+      ProcViewFrame::Empty => (),
+      ProcViewFrame::Vt(vt) => {
+        let (screen, cursor) = match proc.copy_mode() {
+          CopyMode::None(_) => {
+            let screen = vt.screen();
+            let cursor = if screen.hide_cursor() {
+              None
+            } else {
+              let cursor = screen.cursor_position();
+              Some((area.x + 1 + cursor.1, area.y + 1 + cursor.0))
             };
-
-            let term = UiTerm::new(screen, &proc.copy_mode);
-            frame.render_widget(
-              term,
-              area.inner(&Margin {
-                vertical: 1,
-                horizontal: 1,
-              }),
-            );
-
-            if active {
-              if let Some(cursor) = cursor {
-                frame.set_cursor(cursor.0, cursor.1);
-                *cursor_style = vt.screen().cursor_style();
-              }
-            }
+            (screen, cursor)
           }
-          Err(err) => {
-            let text = Text::styled(
-              err.to_string(),
-              Style::default().fg(tui::style::Color::Red),
-            );
-            frame.render_widget(
-              Paragraph::new(text),
-              area.inner(&Margin {
-                vertical: 1,
-                horizontal: 1,
-              }),
-            );
+          CopyMode::Start(screen, pos) | CopyMode::Range(screen, _, pos) => {
+            let y = area.y as i32 + 1 + (pos.y + screen.scrollback() as i32);
+            let cursor = if y >= 0 {
+              Some((area.x + 1 + pos.x as u16, y as u16))
+            } else {
+              None
+            };
+            (screen, cursor)
+          }
+        };
+
+        let term = UiTerm::new(screen, proc.copy_mode());
+        frame.render_widget(
+          term,
+          area.inner(&Margin {
+            vertical: 1,
+            horizontal: 1,
+          }),
+        );
+
+        if active {
+          if let Some(cursor) = cursor {
+            frame.set_cursor(cursor.0, cursor.1);
+            *cursor_style = vt.screen().cursor_style();
           }
         }
       }
-      ProcState::Error(err) => {
+      ProcViewFrame::Err(err) => {
         let text =
-          Text::styled(err, Style::default().fg(tui::style::Color::Red));
+          Text::styled(*err, Style::default().fg(tui::style::Color::Red));
         frame.render_widget(
           Paragraph::new(text).wrap(Wrap { trim: false }),
           area.inner(&Margin {

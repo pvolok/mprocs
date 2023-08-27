@@ -1,3 +1,6 @@
+pub mod handle;
+pub mod msg;
+
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
@@ -5,7 +8,7 @@ use std::thread::{self, spawn};
 use std::time::Duration;
 
 use assert_matches::assert_matches;
-use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{MouseButton, MouseEventKind};
 use portable_pty::MasterPty;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
 use serde::{Deserialize, Serialize};
@@ -14,10 +17,15 @@ use tokio::task::spawn_blocking;
 use tui::layout::Rect;
 use vt100::MouseProtocolMode;
 
-use crate::config::{Config, ProcConfig};
+use crate::config::ProcConfig;
 use crate::encode_term::{encode_key, encode_mouse_event, KeyCodeEncodeModes};
 use crate::error::ResultLogger;
+use crate::event::CopyMove;
 use crate::key::Key;
+use crate::mouse::MouseEvent;
+
+use self::handle::ProcHandle;
+use self::msg::{ProcCmd, ProcEvent};
 
 pub struct Inst {
   pub vt: VtWrap,
@@ -44,7 +52,7 @@ impl Inst {
   fn spawn(
     id: usize,
     cmd: CommandBuilder,
-    tx: UnboundedSender<(usize, ProcUpdate)>,
+    tx: UnboundedSender<(usize, ProcEvent)>,
     size: &Size,
   ) -> anyhow::Result<Self> {
     let vt = vt100::Parser::new(size.height, size.width, 1000);
@@ -62,6 +70,8 @@ impl Inst {
     let mut child = pair.slave.spawn_command(cmd)?;
     let pid = child.process_id().unwrap_or(0);
     let killer = child.clone_killer();
+
+    let _r = tx.send((id, ProcEvent::Started));
 
     let mut reader = pair.master.try_clone_reader().unwrap();
 
@@ -81,7 +91,7 @@ impl Inst {
               if count > 0 {
                 if let Ok(mut vt) = vt.write() {
                   vt.process(&buf[..count]);
-                  match tx.send((id, ProcUpdate::Render)) {
+                  match tx.send((id, ProcEvent::Render)) {
                     Ok(_) => (),
                     Err(_) => break,
                   }
@@ -103,7 +113,7 @@ impl Inst {
         // Block until program exits
         let _status = child.wait();
         running.store(false, Ordering::Relaxed);
-        let _result = tx.send((id, ProcUpdate::Stopped));
+        let _result = tx.send((id, ProcEvent::Stopped));
       });
     }
 
@@ -143,13 +153,13 @@ pub struct Proc {
   pub id: usize,
   pub name: String,
   pub to_restart: bool,
-  pub changed: bool,
   pub cmd: CommandBuilder,
   size: Size,
 
   stop_signal: StopSignal,
+  mouse_scroll_speed: usize,
 
-  pub tx: UnboundedSender<(usize, ProcUpdate)>,
+  pub tx: UnboundedSender<(usize, ProcEvent)>,
 
   pub inst: ProcState,
   pub copy_mode: CopyMode,
@@ -162,13 +172,6 @@ pub enum ProcState {
   None,
   Some(Inst),
   Error(String),
-}
-
-#[derive(Debug)]
-pub enum ProcUpdate {
-  Render,
-  Stopped,
-  Started,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -190,11 +193,21 @@ impl Default for StopSignal {
   }
 }
 
+pub fn create_proc(
+  name: String,
+  cfg: &ProcConfig,
+  tx: UnboundedSender<(usize, ProcEvent)>,
+  size: Rect,
+) -> ProcHandle {
+  let proc = Proc::new(name, cfg, tx, size);
+  ProcHandle::from_proc(proc)
+}
+
 impl Proc {
   pub fn new(
     name: String,
     cfg: &ProcConfig,
-    tx: UnboundedSender<(usize, ProcUpdate)>,
+    tx: UnboundedSender<(usize, ProcEvent)>,
     size: Rect,
   ) -> Self {
     let id = NEXT_PROC_ID.fetch_add(1, Ordering::Relaxed);
@@ -203,11 +216,11 @@ impl Proc {
       id,
       name,
       to_restart: false,
-      changed: false,
       cmd: cfg.into(),
       size,
 
       stop_signal: cfg.stop.clone(),
+      mouse_scroll_speed: cfg.mouse_scroll_speed,
 
       tx,
 
@@ -238,12 +251,10 @@ impl Proc {
     if !self.is_up() {
       self.inst = ProcState::None;
       self.spawn_new_inst();
-
-      let _res = self.tx.send((self.id, ProcUpdate::Started));
     }
   }
 
-  pub fn is_up(&self) -> bool {
+  fn is_up(&self) -> bool {
     if let ProcState::Some(inst) = &self.inst {
       inst.running.load(Ordering::Relaxed)
     } else {
@@ -419,12 +430,7 @@ impl Proc {
     self.scroll_down_lines(self.size.height as usize / 2);
   }
 
-  pub fn handle_mouse(
-    &mut self,
-    event: MouseEvent,
-    term_area: Rect,
-    config: &Config,
-  ) {
+  pub fn handle_mouse(&mut self, event: MouseEvent) {
     let copy_mode = match self.copy_mode {
       CopyMode::None(_) => false,
       CopyMode::Start(_, _) | CopyMode::Range(_, _, _) => true,
@@ -444,17 +450,15 @@ impl Proc {
                 screen.scrollback()
               }
             };
-            self.copy_mode = CopyMode::None(Some(translate_mouse_pos(
-              &event, &term_area, scrollback,
-            )));
+            self.copy_mode =
+              CopyMode::None(Some(translate_mouse_pos(&event, scrollback)));
           }
           MouseButton::Right => {
             self.copy_mode = match std::mem::take(&mut self.copy_mode) {
               CopyMode::None(_) => unreachable!(),
               CopyMode::Start(screen, start)
               | CopyMode::Range(screen, start, _) => {
-                let pos =
-                  translate_mouse_pos(&event, &term_area, screen.scrollback());
+                let pos = translate_mouse_pos(&event, screen.scrollback());
                 CopyMode::Range(screen, start, pos)
               }
             };
@@ -467,8 +471,7 @@ impl Proc {
             CopyMode::None(_) => unreachable!(),
             CopyMode::Start(screen, start)
             | CopyMode::Range(screen, start, _) => {
-              let pos =
-                translate_mouse_pos(&event, &term_area, screen.scrollback());
+              let pos = translate_mouse_pos(&event, screen.scrollback());
               CopyMode::Range(screen, start, pos)
             }
           };
@@ -478,13 +481,13 @@ impl Proc {
         MouseEventKind::ScrollDown => match &mut self.copy_mode {
           CopyMode::None(_) => unreachable!(),
           CopyMode::Start(screen, _) | CopyMode::Range(screen, _, _) => {
-            Self::scroll_screen_down(screen, config.mouse_scroll_speed);
+            Self::scroll_screen_down(screen, self.mouse_scroll_speed);
           }
         },
         MouseEventKind::ScrollUp => match &mut self.copy_mode {
           CopyMode::None(_) => unreachable!(),
           CopyMode::Start(screen, _) | CopyMode::Range(screen, _, _) => {
-            Self::scroll_screen_up(screen, config.mouse_scroll_speed);
+            Self::scroll_screen_up(screen, self.mouse_scroll_speed);
           }
         },
         MouseEventKind::ScrollLeft => (),
@@ -499,7 +502,6 @@ impl Proc {
                 if let Some(vt) = inst.vt.read().log_get() {
                   self.copy_mode = CopyMode::None(Some(translate_mouse_pos(
                     &event,
-                    &term_area,
                     vt.screen().scrollback(),
                   )));
                 }
@@ -509,11 +511,7 @@ impl Proc {
             MouseEventKind::Up(_) => (),
             MouseEventKind::Drag(MouseButton::Left) => {
               if let Some(vt) = inst.vt.read().log_get() {
-                let pos = translate_mouse_pos(
-                  &event,
-                  &term_area,
-                  vt.screen().scrollback(),
-                );
+                let pos = translate_mouse_pos(&event, vt.screen().scrollback());
                 self.copy_mode = match std::mem::take(&mut self.copy_mode) {
                   CopyMode::None(pos_) => CopyMode::Range(
                     vt.screen().clone(),
@@ -530,12 +528,12 @@ impl Proc {
             MouseEventKind::Moved => (),
             MouseEventKind::ScrollDown => {
               if let Some(mut vt) = inst.vt.write().log_get() {
-                Self::scroll_vt_down(&mut vt, config.mouse_scroll_speed);
+                Self::scroll_vt_down(&mut vt, self.mouse_scroll_speed);
               }
             }
             MouseEventKind::ScrollUp => {
               if let Some(mut vt) = inst.vt.write().log_get() {
-                Self::scroll_vt_up(&mut vt, config.mouse_scroll_speed);
+                Self::scroll_vt_up(&mut vt, self.mouse_scroll_speed);
               }
             }
             MouseEventKind::ScrollLeft => (),
@@ -545,13 +543,7 @@ impl Proc {
           | MouseProtocolMode::PressRelease
           | MouseProtocolMode::ButtonMotion
           | MouseProtocolMode::AnyMotion => {
-            let ev = MouseEvent {
-              kind: event.kind,
-              column: event.column - term_area.x,
-              row: event.row - term_area.y,
-              modifiers: event.modifiers,
-            };
-            let seq = encode_mouse_event(ev);
+            let seq = encode_mouse_event(event);
             let _r = inst.master.write_all(seq.as_bytes());
           }
         }
@@ -560,18 +552,104 @@ impl Proc {
   }
 }
 
-pub struct ProcHandle {
-  pub proc: Proc,
+impl Proc {
+  pub fn handle_cmd(&mut self, cmd: ProcCmd) {
+    match cmd {
+      ProcCmd::Start => self.start(),
+      ProcCmd::Stop => self.stop(),
+      ProcCmd::Kill => self.kill(),
+
+      ProcCmd::SendKey(key) => self.send_key(&key),
+      ProcCmd::SendMouse(event) => self.handle_mouse(event),
+
+      ProcCmd::ScrollUp => self.scroll_half_screen_up(),
+      ProcCmd::ScrollDown => self.scroll_half_screen_down(),
+      ProcCmd::ScrollUpLines { n } => self.scroll_up_lines(n),
+      ProcCmd::ScrollDownLines { n } => self.scroll_down_lines(n),
+
+      ProcCmd::CopyModeEnter => match &mut self.inst {
+        ProcState::None => (),
+        ProcState::Some(inst) => {
+          let screen = inst.vt.read().unwrap().screen().clone();
+          let y = (screen.size().0 - 1) as i32;
+          self.copy_mode = CopyMode::Start(screen, Pos { y, x: 0 });
+        }
+        ProcState::Error(_) => (),
+      },
+      ProcCmd::CopyModeLeave => {
+        self.copy_mode = CopyMode::None(None);
+      }
+      ProcCmd::CopyModeMove { dir } => match &self.inst {
+        ProcState::None => (),
+        ProcState::Some(inst) => {
+          let vt = inst.vt.read().unwrap();
+          let screen = vt.screen();
+          match &mut self.copy_mode {
+            CopyMode::None(_) => (),
+            CopyMode::Start(_, pos_) | CopyMode::Range(_, _, pos_) => {
+              match dir {
+                CopyMove::Up => {
+                  if pos_.y > -(screen.scrollback_len() as i32) {
+                    pos_.y -= 1
+                  }
+                }
+                CopyMove::Right => {
+                  if pos_.x + 1 < screen.size().1 as i32 {
+                    pos_.x += 1
+                  }
+                }
+                CopyMove::Left => {
+                  if pos_.x > 0 {
+                    pos_.x -= 1
+                  }
+                }
+                CopyMove::Down => {
+                  if pos_.y + 1 < screen.size().0 as i32 {
+                    pos_.y += 1
+                  }
+                }
+              };
+            }
+          }
+        }
+        ProcState::Error(_) => (),
+      },
+      ProcCmd::CopyModeEnd => {
+        self.copy_mode = match std::mem::take(&mut self.copy_mode) {
+          CopyMode::Start(screen, start) => {
+            CopyMode::Range(screen, start.clone(), start)
+          }
+          other => other,
+        };
+      }
+      ProcCmd::CopyModeCopy => {
+        if let CopyMode::Range(screen, start, end) = &self.copy_mode {
+          let (low, high) = Pos::to_low_high(start, end);
+          let text = screen.get_selected_text(low.x, low.y, high.x, high.y);
+
+          // TODO: send copy event instead
+          crate::clipboard::copy(text.as_str());
+        }
+        self.copy_mode = CopyMode::None(None);
+      }
+
+      ProcCmd::Resize { x, y, w, h } => self.resize(Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+      }),
+
+      ProcCmd::Rename { name } => self.rename(&name),
+    }
+  }
 }
 
-fn translate_mouse_pos(
-  event: &MouseEvent,
-  area: &Rect,
-  scrollback: usize,
-) -> Pos {
-  let x = (event.column - area.x) as i32;
-  let y = (event.row - area.y) as i32 - scrollback as i32;
-  Pos { y, x }
+fn translate_mouse_pos(event: &MouseEvent, scrollback: usize) -> Pos {
+  Pos {
+    y: event.y - scrollback as i32,
+    x: event.x,
+  }
 }
 
 struct Size {

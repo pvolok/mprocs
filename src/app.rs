@@ -13,13 +13,17 @@ use tui::{
 use tui_input::Input;
 
 use crate::{
-  clipboard::copy,
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
   error::ResultLogger,
-  event::{AppEvent, CopyMove},
+  event::AppEvent,
   key::Key,
   keymap::Keymap,
-  proc::{CopyMode, Pos, Proc, ProcHandle, ProcState, ProcUpdate, StopSignal},
+  mouse::MouseEvent,
+  proc::{
+    create_proc,
+    msg::{ProcCmd, ProcEvent},
+    StopSignal,
+  },
   protocol::{CltToSrv, ProxyBackend, SrvToClt},
   state::{Modal, Scope, State},
   ui_add_proc::render_input_dialog,
@@ -67,8 +71,8 @@ pub struct App {
   state: State,
   client_rx: Receiver<CltToSrv>,
   client_tx: UnboundedSender<SrvToClt>,
-  upd_rx: UnboundedReceiver<(usize, ProcUpdate)>,
-  upd_tx: UnboundedSender<(usize, ProcUpdate)>,
+  proc_rx: UnboundedReceiver<(usize, ProcEvent)>,
+  proc_tx: UnboundedSender<(usize, ProcEvent)>,
   ev_rx: UnboundedReceiver<AppEvent>,
   ev_tx: UnboundedSender<AppEvent>,
 }
@@ -156,7 +160,12 @@ impl App {
             if last_term_size != term_size {
               last_term_size = term_size;
               for proc_handle in &mut self.state.procs {
-                proc_handle.proc.resize(term_area);
+                proc_handle.send(ProcCmd::Resize {
+                  x: term_area.x,
+                  y: term_area.y,
+                  w: term_area.width,
+                  h: term_area.height,
+                });
               }
             }
           }
@@ -202,9 +211,9 @@ impl App {
             self.handle_client_msg(&mut loop_action, event)?
           }
         }
-        event = self.upd_rx.recv().fuse() => {
+        event = self.proc_rx.recv().fuse() => {
           if let Some(event) = event {
-            self.handle_proc_update(&mut loop_action, event)
+            self.handle_proc_event(&mut loop_action, event)
           }
         }
         event = self.ev_rx.recv().fuse() => {
@@ -237,13 +246,8 @@ impl App {
       .config
       .procs
       .iter()
-      .map(|proc_cfg| ProcHandle {
-        proc: Proc::new(
-          proc_cfg.name.clone(),
-          proc_cfg,
-          self.upd_tx.clone(),
-          size,
-        ),
+      .map(|proc_cfg| {
+        create_proc(proc_cfg.name.clone(), proc_cfg, self.proc_tx.clone(), size)
       })
       .collect::<Vec<_>>();
 
@@ -428,6 +432,8 @@ impl App {
           return;
         }
 
+        let mouse_event = MouseEvent::from_crossterm(mev);
+
         let layout = self.get_layout();
         if term_check_hit(layout.term_area(), mev.column, mev.row) {
           match (self.state.scope, mev.kind) {
@@ -437,7 +443,9 @@ impl App {
             _ => (),
           }
           if let Some(proc) = self.state.get_current_proc_mut() {
-            proc.handle_mouse(mev, layout.term_area(), &self.config);
+            proc.send(ProcCmd::SendMouse(
+              mouse_event.translate(layout.term_area()),
+            ));
           }
         } else if procs_check_hit(layout.procs, mev.column, mev.row) {
           match (self.state.scope, mev.kind) {
@@ -490,7 +498,12 @@ impl App {
         )
         .term_area();
         for proc_handle in &mut self.state.procs {
-          proc_handle.proc.resize(area);
+          proc_handle.send(ProcCmd::Resize {
+            x: area.x,
+            y: area.y,
+            w: area.width,
+            h: area.height,
+          });
         }
 
         self.terminal.backend_mut().set_size(width, height);
@@ -530,7 +543,7 @@ impl App {
       }
 
       AppEvent::QuitOrAsk => {
-        let have_running = self.state.procs.iter().any(|p| p.proc.is_up());
+        let have_running = self.state.procs.iter().any(|p| p.is_up());
         if have_running {
           self.state.modal = Some(Modal::Quit);
         } else {
@@ -541,16 +554,16 @@ impl App {
       AppEvent::Quit => {
         self.state.quitting = true;
         for proc_handle in self.state.procs.iter_mut() {
-          if proc_handle.proc.is_up() {
-            proc_handle.proc.stop();
+          if proc_handle.is_up() {
+            proc_handle.send(ProcCmd::Stop);
           }
         }
         loop_action.render();
       }
       AppEvent::ForceQuit => {
         for proc_handle in self.state.procs.iter_mut() {
-          if proc_handle.proc.is_up() {
-            proc_handle.proc.kill();
+          if proc_handle.is_up() {
+            proc_handle.send(ProcCmd::Kill);
           }
         }
         loop_action.force_quit();
@@ -597,61 +610,61 @@ impl App {
 
       AppEvent::StartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.start();
+          proc.send(ProcCmd::Start);
         }
       }
       AppEvent::TermProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.stop();
+          proc.send(ProcCmd::Stop);
         }
       }
       AppEvent::KillProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.kill();
+          proc.send(ProcCmd::Kill);
         }
       }
       AppEvent::RestartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           if proc.is_up() {
-            proc.stop();
             proc.to_restart = true;
+            proc.send(ProcCmd::Stop);
           } else {
-            proc.start();
+            proc.send(ProcCmd::Start);
           }
         }
       }
       AppEvent::ForceRestartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           if proc.is_up() {
-            proc.kill();
             proc.to_restart = true;
+            proc.send(ProcCmd::Kill);
           } else {
-            proc.start();
+            proc.send(ProcCmd::Start);
           }
         }
       }
 
       AppEvent::ScrollUpLines { n } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.scroll_up_lines(*n);
+          proc.send(ProcCmd::ScrollUpLines { n: *n });
           loop_action.render();
         }
       }
       AppEvent::ScrollDownLines { n } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.scroll_down_lines(*n);
+          proc.send(ProcCmd::ScrollDownLines { n: *n });
           loop_action.render();
         }
       }
       AppEvent::ScrollUp => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.scroll_half_screen_up();
+          proc.send(ProcCmd::ScrollUp);
           loop_action.render();
         }
       }
       AppEvent::ScrollDown => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.scroll_half_screen_down();
+          proc.send(ProcCmd::ScrollDown);
           loop_action.render();
         }
       }
@@ -662,7 +675,7 @@ impl App {
         loop_action.render();
       }
       AppEvent::AddProc { cmd } => {
-        let proc = Proc::new(
+        let proc_handle = create_proc(
           cmd.to_string(),
           &ProcConfig {
             name: cmd.to_string(),
@@ -673,11 +686,11 @@ impl App {
             env: None,
             autostart: true,
             stop: StopSignal::default(),
+            mouse_scroll_speed: self.config.mouse_scroll_speed,
           },
-          self.upd_tx.clone(),
+          self.proc_tx.clone(),
           self.get_layout().term_area(),
         );
-        let proc_handle = ProcHandle { proc };
         self.state.procs.push(proc_handle);
         loop_action.render();
       }
@@ -685,7 +698,7 @@ impl App {
         let id = self
           .state
           .get_current_proc()
-          .map(|proc| if proc.is_up() { None } else { Some(proc.id) })
+          .map(|proc| if proc.is_up() { None } else { Some(proc.id()) })
           .flatten();
         match id {
           Some(id) => {
@@ -696,10 +709,7 @@ impl App {
         }
       }
       AppEvent::RemoveProc { id } => {
-        self
-          .state
-          .procs
-          .retain(|p| p.proc.is_up() || p.proc.id != *id);
+        self.state.procs.retain(|p| p.is_up() || p.id() != *id);
         loop_action.render();
       }
 
@@ -711,136 +721,66 @@ impl App {
       }
       AppEvent::RenameProc { name } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.rename(name);
+          proc.send(ProcCmd::Rename { name: name.clone() });
           loop_action.render();
         }
       }
 
       AppEvent::CopyModeEnter => {
-        let switched = match self.state.get_current_proc_mut() {
-          Some(proc) => match &mut proc.inst {
-            ProcState::None => false,
-            ProcState::Some(inst) => {
-              let screen = inst.vt.read().unwrap().screen().clone();
-              let y = (screen.size().0 - 1) as i32;
-              proc.copy_mode = CopyMode::Start(screen, Pos { y, x: 0 });
-              true
-            }
-            ProcState::Error(_) => false,
-          },
-          None => false,
+        match self.state.get_current_proc_mut() {
+          Some(proc) => {
+            proc.send(ProcCmd::CopyModeEnter);
+            self.state.scope = Scope::Term;
+            loop_action.render();
+          }
+          None => (),
         };
-        if switched {
-          self.state.scope = Scope::Term;
-        }
-        loop_action.render();
       }
       AppEvent::CopyModeLeave => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.copy_mode = CopyMode::None(None);
+          proc.send(ProcCmd::CopyModeLeave);
         }
         loop_action.render();
       }
       AppEvent::CopyModeMove { dir } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          match &proc.inst {
-            ProcState::None => (),
-            ProcState::Some(inst) => {
-              let vt = inst.vt.read().unwrap();
-              let screen = vt.screen();
-              match &mut proc.copy_mode {
-                CopyMode::None(_) => (),
-                CopyMode::Start(_, pos_) | CopyMode::Range(_, _, pos_) => {
-                  match dir {
-                    CopyMove::Up => {
-                      if pos_.y > -(screen.scrollback_len() as i32) {
-                        pos_.y -= 1
-                      }
-                    }
-                    CopyMove::Right => {
-                      if pos_.x + 1 < screen.size().1 as i32 {
-                        pos_.x += 1
-                      }
-                    }
-                    CopyMove::Left => {
-                      if pos_.x > 0 {
-                        pos_.x -= 1
-                      }
-                    }
-                    CopyMove::Down => {
-                      if pos_.y + 1 < screen.size().0 as i32 {
-                        pos_.y += 1
-                      }
-                    }
-                  };
-                }
-              }
-            }
-            ProcState::Error(_) => (),
-          }
+          proc.send(ProcCmd::CopyModeMove { dir: *dir });
         }
         loop_action.render();
       }
       AppEvent::CopyModeEnd => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.copy_mode = match std::mem::take(&mut proc.copy_mode) {
-            CopyMode::Start(screen, start) => {
-              CopyMode::Range(screen, start.clone(), start)
-            }
-            other => other,
-          };
+          proc.send(ProcCmd::CopyModeEnd);
         }
         loop_action.render();
       }
       AppEvent::CopyModeCopy => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          if let CopyMode::Range(screen, start, end) = &proc.copy_mode {
-            let (low, high) = Pos::to_low_high(start, end);
-            let text = screen.get_selected_text(low.x, low.y, high.x, high.y);
-
-            copy(text.as_str());
-          }
-          proc.copy_mode = CopyMode::None(None);
+          proc.send(ProcCmd::CopyModeCopy);
         }
         loop_action.render();
       }
 
       AppEvent::SendKey { key } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.send_key(key);
+          proc.send(ProcCmd::SendKey(key.clone()));
         }
       }
     }
   }
 
-  fn handle_proc_update(
+  fn handle_proc_event(
     &mut self,
     loop_action: &mut LoopAction,
-    event: (usize, ProcUpdate),
+    event: (usize, ProcEvent),
   ) {
-    match event.1 {
-      ProcUpdate::Render => {
-        let cur_proc_id =
-          self.state.get_current_proc().map_or(usize::MAX, |p| p.id);
-        if let Some(proc) = self.state.get_proc_mut(event.0) {
-          if proc.id != cur_proc_id {
-            proc.changed = true;
-          }
-          loop_action.render();
-        }
-      }
-      ProcUpdate::Stopped => {
-        if let Some(proc) = self.state.get_proc_mut(event.0) {
-          if proc.to_restart {
-            proc.start();
-            proc.to_restart = false;
-          }
-        }
-        loop_action.render();
-      }
-      ProcUpdate::Started => {
-        loop_action.render();
-      }
+    let selected = self
+      .state
+      .get_current_proc()
+      .map_or(false, |p| p.id() == event.0);
+    if let Some(proc) = self.state.get_proc_mut(event.0) {
+      proc.handle_event(event.1, selected);
+      loop_action.render();
     }
   }
 
@@ -927,7 +867,7 @@ pub async fn server_main(
   let terminal = Terminal::new(backend)?;
 
   let (upd_tx, upd_rx) =
-    tokio::sync::mpsc::unbounded_channel::<(usize, ProcUpdate)>();
+    tokio::sync::mpsc::unbounded_channel::<(usize, ProcEvent)>();
   let (ev_tx, ev_rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
 
   let state = State {
@@ -947,8 +887,8 @@ pub async fn server_main(
     state,
     client_rx,
     client_tx,
-    upd_rx,
-    upd_tx,
+    proc_rx: upd_rx,
+    proc_tx: upd_tx,
 
     ev_rx,
     ev_tx,

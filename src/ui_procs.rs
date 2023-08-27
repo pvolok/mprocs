@@ -7,7 +7,7 @@ use tui::{
 };
 
 use crate::{
-  proc::ProcHandle,
+  proc::handle::ProcHandle,
   protocol::ProxyBackend,
   state::{Scope, State},
   theme::Theme,
@@ -63,7 +63,7 @@ fn create_proc_item<'a>(
   width: u16,
   theme: &Theme,
 ) -> ListItem<'a> {
-  let status = if proc_handle.proc.is_up() {
+  let status = if proc_handle.is_up() {
     Span::styled(
       " UP ",
       Style::default()
@@ -80,7 +80,7 @@ fn create_proc_item<'a>(
     Span::raw(" ")
   };
 
-  let mut name = proc_handle.proc.name.clone();
+  let mut name = proc_handle.name().to_string();
   let name_max = (width as usize)
     .saturating_sub(mark.width())
     .saturating_sub(status.width());
@@ -100,7 +100,7 @@ fn create_proc_item<'a>(
   }
 
   let name_style = Style::default();
-  let name_style = if proc_handle.proc.changed {
+  let name_style = if proc_handle.changed() {
     name_style.add_modifier(Modifier::BOLD)
   } else {
     name_style

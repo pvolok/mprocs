@@ -7,6 +7,7 @@ use serde::Deserialize;
 use crate::{
   config::{CmdConfig, ProcConfig},
   proc::StopSignal,
+  settings::Settings,
 };
 
 #[derive(Deserialize)]
@@ -14,7 +15,7 @@ struct Package {
   scripts: IndexMap<String, String>,
 }
 
-pub fn load_npm_procs() -> Result<Vec<ProcConfig>> {
+pub fn load_npm_procs(settings: &Settings) -> Result<Vec<ProcConfig>> {
   let file = File::open("package.json")?;
   let reader = BufReader::new(file);
   let package: Package = serde_yaml::from_reader(reader)?;
@@ -46,6 +47,7 @@ pub fn load_npm_procs() -> Result<Vec<ProcConfig>> {
     autostart: false,
 
     stop: StopSignal::default(),
+    mouse_scroll_speed: settings.mouse_scroll_speed,
   });
   Ok(procs.collect())
 }
