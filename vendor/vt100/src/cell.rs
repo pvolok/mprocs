@@ -115,6 +115,7 @@ impl Cell {
       bg: self.attrs.bgcolor.to_tui(),
       modifier: self.attrs.mods_to_tui(),
       underline_color: fg,
+      skip: false,
     }
   }
 }

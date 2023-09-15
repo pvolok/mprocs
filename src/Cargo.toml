@@ -35,7 +35,7 @@ clipboard-win = "4.5.0"
 crossterm = { version = "0.27.0", features = ["event-stream"] }
 dunce = "1.0.4"
 # Excluded "textfilter" feature that depends on regex (~0.7 MiB).
-flexi_logger = { version = "0.25.6", default-features = false, features = [
+flexi_logger = { version = "0.26.0", default-features = false, features = [
   "colors",
 ] }
 futures = { version = "0.3.28" }
@@ -46,7 +46,7 @@ log = "0.4.19"
 mlua = { version = "0.9.0", features = ["luajit52", "vendored", "serialize"] }
 phf = { version = "0.11.2", features = ["macros"] }
 portable-pty = { package = "mprocs-pty", path = "../vendor/pty", version = "0.1.0" }
-tui = { package = "ratatui", version = "0.22.0" }
+tui = { package = "ratatui", version = "0.23.0" }
 serde = { version = "1.0.177", features = ["derive"] }
 serde_yaml = "0.9.25"
 tokio = { version = "1", features = ["full"] }

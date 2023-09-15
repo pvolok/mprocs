@@ -41,6 +41,7 @@ impl From<&Cell> for tui::buffer::Cell {
       bg: value.bg,
       underline_color: value.fg,
       modifier: value.mods,
+      skip: false,
     }
   }
 }

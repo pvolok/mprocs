@@ -1901,8 +1901,8 @@ impl Screen {
       OperatingSystemCommand::ChangeColorNumber(_) => {
         skip!("ChangeColorNumber")
       }
-      OperatingSystemCommand::ChangeDynamicColors(_, _) => {
-        skip!("ChangeDynamicColors")
+      OperatingSystemCommand::ChangeDynamicColors(first_color, colors) => {
+        skip!("ChangeDynamicColors {:?} {:?}", first_color, colors)
       }
       OperatingSystemCommand::ResetDynamicColor(_) => {
         skip!("ResetDynamicColor")
