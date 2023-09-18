@@ -1,5 +1,3 @@
-use tui_input::Input;
-
 use crate::{
   keymap::KeymapGroup,
   proc::{handle::ProcHandle, CopyMode},
@@ -34,8 +32,6 @@ pub struct State {
   pub scope: Scope,
   pub procs: Vec<ProcHandle>,
   pub selected: usize,
-
-  pub modal: Option<Modal>,
 
   pub quitting: bool,
 }
@@ -76,11 +72,4 @@ impl State {
   pub fn all_procs_down(&self) -> bool {
     self.procs.iter().all(|p| !p.is_up())
   }
-}
-
-pub enum Modal {
-  AddProc { input: Input },
-  RenameProc { input: Input },
-  RemoveProc { id: usize },
-  Quit,
 }

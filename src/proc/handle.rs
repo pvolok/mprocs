@@ -15,10 +15,10 @@ pub struct ProcHandle {
 }
 
 impl ProcHandle {
-  pub fn from_proc(proc: Proc) -> Self {
+  pub fn from_proc(name: String, proc: Proc) -> Self {
     Self {
       id: proc.id,
-      name: proc.name.clone(),
+      name,
       is_up: false,
       to_restart: false,
       changed: false,
@@ -28,6 +28,10 @@ impl ProcHandle {
 
   pub fn send(&mut self, cmd: ProcCmd) {
     self.proc.handle_cmd(cmd)
+  }
+
+  pub fn rename(&mut self, name: &str) {
+    self.name.replace_range(.., &name);
   }
 
   pub fn id(&self) -> usize {

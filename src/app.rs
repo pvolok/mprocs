@@ -1,5 +1,5 @@
 use anyhow::bail;
-use crossterm::event::{Event, KeyCode, KeyEvent, MouseButton, MouseEventKind};
+use crossterm::event::{Event, MouseButton, MouseEventKind};
 use futures::{future::FutureExt, select};
 use termwiz::escape::csi::CursorStyle;
 use tokio::{
@@ -10,7 +10,6 @@ use tui::{
   layout::{Constraint, Direction, Layout, Margin, Rect},
   Terminal,
 };
-use tui_input::Input;
 
 use crate::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
@@ -18,6 +17,10 @@ use crate::{
   event::AppEvent,
   key::Key,
   keymap::Keymap,
+  modal::{
+    add_proc::AddProcModal, modal::Modal, quit::QuitModal,
+    remove_proc::RemoveProcModal, rename_proc::RenameProcModal,
+  },
   mouse::MouseEvent,
   proc::{
     create_proc,
@@ -25,12 +28,9 @@ use crate::{
     StopSignal,
   },
   protocol::{CltToSrv, ProxyBackend, SrvToClt},
-  state::{Modal, Scope, State},
-  ui_add_proc::render_input_dialog,
-  ui_confirm_quit::render_confirm_quit,
+  state::{Scope, State},
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
-  ui_remove_proc::render_remove_proc,
   ui_term::{render_term, term_check_hit},
   ui_zoom_tip::render_zoom_tip,
 };
@@ -38,7 +38,7 @@ use crate::{
 type Term = Terminal<ProxyBackend>;
 
 #[derive(Debug, PartialEq)]
-enum LoopAction {
+pub enum LoopAction {
   Render,
   Skip,
   ForceQuit,
@@ -51,7 +51,7 @@ impl Default for LoopAction {
 }
 
 impl LoopAction {
-  fn render(&mut self) {
+  pub fn render(&mut self) {
     match self {
       LoopAction::Render => (),
       LoopAction::Skip => *self = LoopAction::Render,
@@ -69,6 +69,7 @@ pub struct App {
   keymap: Keymap,
   terminal: Term,
   state: State,
+  modal: Option<Box<dyn Modal>>,
   client_rx: Receiver<CltToSrv>,
   client_tx: UnboundedSender<SrvToClt>,
   proc_rx: UnboundedReceiver<(usize, ProcEvent)>,
@@ -175,23 +176,9 @@ impl App {
           render_keymap(layout.keymap, f, &mut self.state, &self.keymap);
           render_zoom_tip(layout.zoom_banner, f, &self.keymap);
 
-          if let Some(modal) = &mut self.state.modal {
+          if let Some(modal) = &mut self.modal {
             cursor_style = CursorStyle::Default;
-
-            match modal {
-              Modal::AddProc { input } => {
-                render_input_dialog(f.size(), "Add process", f, input);
-              }
-              Modal::RenameProc { input } => {
-                render_input_dialog(f.size(), "Rename process", f, input);
-              }
-              Modal::RemoveProc { id: _ } => {
-                render_remove_proc(f.size(), f);
-              }
-              Modal::Quit => {
-                render_confirm_quit(f.size(), f);
-              }
-            }
+            modal.render(f);
           }
 
           if current_cursor_shape != cursor_style {
@@ -268,145 +255,9 @@ impl App {
   }
 
   fn handle_input(&mut self, loop_action: &mut LoopAction, event: Event) {
-    {
-      let mut ret: bool = false;
-      let mut reset_modal = false;
-      if let Some(modal) = &mut self.state.modal {
-        match modal {
-          Modal::AddProc { input } => {
-            match event {
-              Event::Key(KeyEvent {
-                code: KeyCode::Enter,
-                modifiers,
-                ..
-              }) if modifiers.is_empty() => {
-                reset_modal = true;
-                self
-                  .ev_tx
-                  .send(AppEvent::AddProc {
-                    cmd: input.value().to_string(),
-                  })
-                  .unwrap();
-                // Skip because AddProc event will immediately rerender.
-                ret = true;
-              }
-              Event::Key(KeyEvent {
-                code: KeyCode::Esc,
-                modifiers,
-                ..
-              }) if modifiers.is_empty() => {
-                reset_modal = true;
-                loop_action.render();
-                ret = true;
-              }
-              _ => (),
-            }
-
-            let req = tui_input::backend::crossterm::to_input_request(&event);
-            if let Some(req) = req {
-              input.handle(req);
-              loop_action.render();
-              ret = true;
-            }
-          }
-          Modal::RenameProc { input } => {
-            match event {
-              Event::Key(KeyEvent {
-                code: KeyCode::Enter,
-                modifiers,
-                ..
-              }) if modifiers.is_empty() => {
-                reset_modal = true;
-                self
-                  .ev_tx
-                  .send(AppEvent::RenameProc {
-                    name: input.value().to_string(),
-                  })
-                  .unwrap();
-                // Skip because RenameProc event will immediately rerender.
-                ret = true;
-              }
-              Event::Key(KeyEvent {
-                code: KeyCode::Esc,
-                modifiers,
-                ..
-              }) if modifiers.is_empty() => {
-                reset_modal = true;
-                loop_action.render();
-                ret = true;
-              }
-              _ => (),
-            }
-
-            let req = tui_input::backend::crossterm::to_input_request(&event);
-            if let Some(req) = req {
-              input.handle(req);
-              loop_action.render();
-              ret = true;
-            }
-          }
-          Modal::RemoveProc { id } => {
-            match event {
-              Event::Key(KeyEvent {
-                code: KeyCode::Char('y'),
-                modifiers,
-                ..
-              }) if modifiers.is_empty() => {
-                reset_modal = true;
-                self.ev_tx.send(AppEvent::RemoveProc { id: *id }).unwrap();
-                // Skip because RemoveProc event will immediately rerender.
-                ret = true;
-              }
-              Event::Key(KeyEvent {
-                code: KeyCode::Esc,
-                modifiers,
-                ..
-              })
-              | Event::Key(KeyEvent {
-                code: KeyCode::Char('n'),
-                modifiers,
-                ..
-              }) if modifiers.is_empty() => {
-                reset_modal = true;
-                loop_action.render();
-                ret = true;
-              }
-              _ => (),
-            }
-          }
-          Modal::Quit => match event {
-            Event::Key(KeyEvent {
-              code: KeyCode::Char('y'),
-              modifiers,
-              ..
-            }) if modifiers.is_empty() => {
-              reset_modal = true;
-              self.ev_tx.send(AppEvent::Quit).unwrap();
-              ret = true;
-            }
-            Event::Key(KeyEvent {
-              code: KeyCode::Esc,
-              modifiers,
-              ..
-            })
-            | Event::Key(KeyEvent {
-              code: KeyCode::Char('n'),
-              modifiers,
-              ..
-            }) if modifiers.is_empty() => {
-              reset_modal = true;
-              loop_action.render();
-              ret = true;
-            }
-            _ => (),
-          },
-        };
-      }
-
-      if reset_modal {
-        self.state.modal = None;
-      }
-      if ret {
+    if let Some(modal) = &mut self.modal {
+      let handled = modal.handle_input(&mut self.state, loop_action, &event);
+      if handled {
         return;
       }
     }
@@ -545,7 +396,7 @@ impl App {
       AppEvent::QuitOrAsk => {
         let have_running = self.state.procs.iter().any(|p| p.is_up());
         if have_running {
-          self.state.modal = Some(Modal::Quit);
+          self.modal = Some(QuitModal::new(self.ev_tx.clone()).boxed());
         } else {
           self.state.quitting = true;
         }
@@ -669,9 +520,7 @@ impl App {
         }
       }
       AppEvent::ShowAddProc => {
-        self.state.modal = Some(Modal::AddProc {
-          input: Input::default(),
-        });
+        self.modal = Some(AddProcModal::new(self.ev_tx.clone()).boxed());
         loop_action.render();
       }
       AppEvent::AddProc { cmd } => {
@@ -702,7 +551,8 @@ impl App {
           .flatten();
         match id {
           Some(id) => {
-            self.state.modal = Some(Modal::RemoveProc { id });
+            self.modal =
+              Some(RemoveProcModal::new(id, self.ev_tx.clone()).boxed());
             loop_action.render();
           }
           None => (),
@@ -713,15 +563,18 @@ impl App {
         loop_action.render();
       }
 
+      AppEvent::CloseCurrentModal => {
+        self.modal = None;
+        loop_action.render();
+      }
+
       AppEvent::ShowRenameProc => {
-        self.state.modal = Some(Modal::RenameProc {
-          input: Input::default(),
-        });
+        self.modal = Some(RenameProcModal::new(self.ev_tx.clone()).boxed());
         loop_action.render();
       }
       AppEvent::RenameProc { name } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.send(ProcCmd::Rename { name: name.clone() });
+          proc.rename(name);
           loop_action.render();
         }
       }
@@ -875,8 +728,6 @@ pub async fn server_main(
     procs: Vec::new(),
     selected: 0,
 
-    modal: None,
-
     quitting: false,
   };
 
@@ -885,6 +736,7 @@ pub async fn server_main(
     keymap,
     terminal,
     state,
+    modal: None,
     client_rx,
     client_tx,
     proc_rx: upd_rx,

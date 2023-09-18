@@ -151,7 +151,6 @@ impl Inst {
 
 pub struct Proc {
   pub id: usize,
-  pub name: String,
   pub to_restart: bool,
   pub cmd: CommandBuilder,
   size: Size,
@@ -199,13 +198,12 @@ pub fn create_proc(
   tx: UnboundedSender<(usize, ProcEvent)>,
   size: Rect,
 ) -> ProcHandle {
-  let proc = Proc::new(name, cfg, tx, size);
-  ProcHandle::from_proc(proc)
+  let proc = Proc::new(cfg, tx, size);
+  ProcHandle::from_proc(name, proc)
 }
 
 impl Proc {
   pub fn new(
-    name: String,
     cfg: &ProcConfig,
     tx: UnboundedSender<(usize, ProcEvent)>,
     size: Rect,
@@ -214,7 +212,6 @@ impl Proc {
     let size = Size::new(size);
     let mut proc = Proc {
       id,
-      name,
       to_restart: false,
       cmd: cfg.into(),
       size,
@@ -318,10 +315,6 @@ impl Proc {
       }
       StopSignal::HardKill => self.kill(),
     }
-  }
-
-  pub fn rename(&mut self, name: &str) {
-    self.name.replace_range(.., &name);
   }
 
   #[cfg(not(windows))]
@@ -639,8 +632,6 @@ impl Proc {
         width: w,
         height: h,
       }),
-
-      ProcCmd::Rename { name } => self.rename(&name),
     }
   }
 }

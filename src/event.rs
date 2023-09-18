@@ -33,6 +33,8 @@ pub enum AppEvent {
   ShowRemoveProc,
   RemoveProc { id: usize },
 
+  CloseCurrentModal,
+
   ScrollDownLines { n: usize },
   ScrollUpLines { n: usize },
   ScrollDown,
@@ -72,6 +74,7 @@ impl AppEvent {
       AppEvent::AddProc { cmd } => format!("New process `{}`", cmd),
       AppEvent::ShowRemoveProc => "Remove process dialog".to_string(),
       AppEvent::RemoveProc { id } => format!("Remove process by id {}", id),
+      AppEvent::CloseCurrentModal => format!("Close current modal"),
       AppEvent::ScrollDownLines { n } => {
         format!("Scroll down {} {}", n, lines_str(*n))
       }
