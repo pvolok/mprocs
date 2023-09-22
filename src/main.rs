@@ -37,7 +37,7 @@ use flexi_logger::FileSpec;
 use keymap::Keymap;
 use package_json::load_npm_procs;
 use proc::StopSignal;
-use protocol::{CltToSrv, SrvToClt};
+use protocol::{CltToSrv, MsgReceiver, MsgSender, SrvToClt};
 use serde_yaml::Value;
 use settings::Settings;
 use yaml_val::Val;
@@ -56,6 +56,11 @@ async fn main() -> Result<(), std::io::Error> {
     .use_utc()
     .start()
     .unwrap();
+
+  std::panic::set_hook(Box::new(|info| {
+    let stacktrace = std::backtrace::Backtrace::capture();
+    log::error!("Got panic. @info:{}\n@stackTrace:{}", info, stacktrace);
+  }));
 
   match run_app().await {
     Ok(()) => Ok(()),
@@ -145,12 +150,21 @@ async fn run_app() -> anyhow::Result<()> {
 }
 
 async fn run_client_and_server(config: Config, keymap: Keymap) -> Result<()> {
-  let (clt_tx, srv_rx) = tokio::sync::mpsc::channel::<CltToSrv>(64);
-  let (srv_tx, clt_rx) = tokio::sync::mpsc::unbounded_channel::<SrvToClt>();
+  let (server_socket, client_socket) = tokio::net::UnixStream::pair()?;
 
-  let client = tokio::spawn(async { client_main(clt_tx, clt_rx).await });
-  let server =
-    tokio::spawn(async { server_main(config, keymap, srv_tx, srv_rx).await });
+  let (client_read, client_write) = client_socket.into_split();
+  let client_sender = MsgSender::<CltToSrv>::new(client_write);
+  let client_receiver = MsgReceiver::<SrvToClt>::new(client_read);
+
+  let (server_read, server_write) = server_socket.into_split();
+  let server_sender = MsgSender::<SrvToClt>::new(server_write);
+  let server_receiver = MsgReceiver::<CltToSrv>::new(server_read);
+
+  let client =
+    tokio::spawn(async { client_main(client_sender, client_receiver).await });
+  let server = tokio::spawn(async {
+    server_main(config, keymap, server_sender, server_receiver).await
+  });
 
   let r1 = server
     .await

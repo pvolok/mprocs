@@ -8,15 +8,16 @@ use crossterm::{
   },
 };
 use futures::{FutureExt, StreamExt};
-use termwiz::escape::csi::CursorStyle;
 use tokio::select;
 use tui::backend::{Backend, CrosstermBackend};
 
-use crate::protocol::{CltToSrv, SrvToClt};
+use crate::protocol::{
+  CltToSrv, CursorStyle, MsgReceiver, MsgSender, SrvToClt,
+};
 
 pub async fn client_main(
-  tx: tokio::sync::mpsc::Sender<CltToSrv>,
-  rx: tokio::sync::mpsc::UnboundedReceiver<SrvToClt>,
+  tx: MsgSender<CltToSrv>,
+  rx: MsgReceiver<SrvToClt>,
 ) -> anyhow::Result<()> {
   let res1 = match enable_raw_mode() {
     Ok(_) => {
@@ -46,8 +47,8 @@ pub async fn client_main(
 }
 
 async fn client_main_inner(
-  tx: tokio::sync::mpsc::Sender<CltToSrv>,
-  mut rx: tokio::sync::mpsc::UnboundedReceiver<SrvToClt>,
+  mut tx: MsgSender<CltToSrv>,
+  mut rx: MsgReceiver<SrvToClt>,
 ) -> anyhow::Result<()> {
   let mut backend = CrosstermBackend::new(std::io::stdout());
 
@@ -55,8 +56,7 @@ async fn client_main_inner(
   tx.send(CltToSrv::Init {
     width: init_size.width,
     height: init_size.height,
-  })
-  .await?;
+  })?;
 
   let mut term_events = EventStream::new();
   loop {
@@ -65,7 +65,7 @@ async fn client_main_inner(
       TermEvent(Option<std::io::Result<Event>>),
     }
     let event: LocalEvent = select! {
-      msg = rx.recv().fuse() => LocalEvent::ServerMsg(msg),
+      msg = rx.recv().fuse() => LocalEvent::ServerMsg(msg.transpose()?),
       event = term_events.next().fuse() => LocalEvent::TermEvent(event),
     };
     match event {
@@ -102,7 +102,7 @@ async fn client_main_inner(
         _ => break,
       },
       LocalEvent::TermEvent(event) => match event {
-        Some(Ok(event)) => tx.send(CltToSrv::Key(event)).await?,
+        Some(Ok(event)) => tx.send(CltToSrv::Key(event))?,
         _ => break,
       },
     }

@@ -4,7 +4,7 @@ use futures::{future::FutureExt, select};
 use termwiz::escape::csi::CursorStyle;
 use tokio::{
   io::AsyncReadExt,
-  sync::mpsc::{Receiver, UnboundedReceiver, UnboundedSender},
+  sync::mpsc::{UnboundedReceiver, UnboundedSender},
 };
 use tui::{
   layout::{Constraint, Direction, Layout, Margin, Rect},
@@ -27,7 +27,7 @@ use crate::{
     msg::{ProcCmd, ProcEvent},
     StopSignal,
   },
-  protocol::{CltToSrv, ProxyBackend, SrvToClt},
+  protocol::{CltToSrv, MsgReceiver, MsgSender, ProxyBackend, SrvToClt},
   state::{Scope, State},
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
@@ -70,8 +70,8 @@ pub struct App {
   terminal: Term,
   state: State,
   modal: Option<Box<dyn Modal>>,
-  client_rx: Receiver<CltToSrv>,
-  client_tx: UnboundedSender<SrvToClt>,
+  client_rx: MsgReceiver<CltToSrv>,
+  client_tx: MsgSender<SrvToClt>,
   proc_rx: UnboundedReceiver<(usize, ProcEvent)>,
   proc_tx: UnboundedSender<(usize, ProcEvent)>,
   ev_rx: UnboundedReceiver<AppEvent>,
@@ -184,7 +184,7 @@ impl App {
           if current_cursor_shape != cursor_style {
             self
               .client_tx
-              .send(SrvToClt::CursorShape(cursor_style))
+              .send(SrvToClt::CursorShape(cursor_style.into()))
               .log_ignore();
             current_cursor_shape = cursor_style;
           }
@@ -194,7 +194,7 @@ impl App {
       let mut loop_action = LoopAction::default();
       let () = select! {
         event = self.client_rx.recv().fuse() => {
-          if let Some(event) = event {
+          if let Some(Ok(event)) = event {
             self.handle_client_msg(&mut loop_action, event)?
           }
         }
@@ -698,13 +698,13 @@ impl AppLayout {
 pub async fn server_main(
   config: Config,
   keymap: Keymap,
-  client_tx: tokio::sync::mpsc::UnboundedSender<SrvToClt>,
-  mut client_rx: tokio::sync::mpsc::Receiver<CltToSrv>,
+  client_tx: MsgSender<SrvToClt>,
+  mut client_rx: MsgReceiver<CltToSrv>,
 ) -> anyhow::Result<()> {
   let init = client_rx
     .recv()
     .await
-    .ok_or_else(|| anyhow::Error::msg("Expected init message."))?;
+    .ok_or_else(|| anyhow::Error::msg("Expected init message."))??;
   let backend = match init {
     CltToSrv::Init { width, height } => {
       let proxy_backend = ProxyBackend {
@@ -745,7 +745,7 @@ pub async fn server_main(
     ev_rx,
     ev_tx,
   };
-  let client_tx = app.client_tx.clone();
+  let mut client_tx = app.client_tx.clone();
   app.run().await?;
   client_tx.send(SrvToClt::Quit).unwrap();
 

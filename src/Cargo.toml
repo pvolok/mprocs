@@ -32,7 +32,7 @@ assert_matches = "1.5.0"
 base64 = "0.21.2"
 clap = { version = "4.3.19", features = ["cargo"] }
 clipboard-win = "4.5.0"
-crossterm = { version = "0.27.0", features = ["event-stream"] }
+crossterm = { version = "0.27.0", features = ["event-stream", "serde"] }
 dunce = "1.0.4"
 # Excluded "textfilter" feature that depends on regex (~0.7 MiB).
 flexi_logger = { version = "0.26.0", default-features = false, features = [
@@ -46,7 +46,7 @@ log = "0.4.19"
 mlua = { version = "0.9.0", features = ["luajit52", "vendored", "serialize"] }
 phf = { version = "0.11.2", features = ["macros"] }
 portable-pty = { package = "mprocs-pty", path = "../vendor/pty", version = "0.1.0" }
-tui = { package = "ratatui", version = "0.23.0" }
+tui = { package = "ratatui", version = "0.23.0", features = ["serde"] }
 serde = { version = "1.0.177", features = ["derive"] }
 serde_yaml = "0.9.25"
 tokio = { version = "1", features = ["full"] }
@@ -60,6 +60,10 @@ xdg = "2.5.2"
 termwiz = "0.20.0"
 bitflags = { version = "2.3.3", features = ["serde"] }
 compact_str = { version = "0.7.1", features = ["serde"] }
+bincode = "1.3.3"
+tokio-util = { version = "0.7.8", features = ["full"] }
+bytes = "1.5.0"
+log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 
 [target."cfg(windows)".dependencies]
 winapi = { version = "0.3", features = ["consoleapi", "winuser"] }
