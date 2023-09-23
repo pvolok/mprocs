@@ -15,6 +15,7 @@ use crate::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
   error::ResultLogger,
   event::AppEvent,
+  host::create_server_socket,
   key::Key,
   keymap::Keymap,
   modal::{
@@ -695,12 +696,13 @@ impl AppLayout {
   }
 }
 
-pub async fn server_main(
-  config: Config,
-  keymap: Keymap,
-  client_tx: MsgSender<SrvToClt>,
-  mut client_rx: MsgReceiver<CltToSrv>,
-) -> anyhow::Result<()> {
+pub async fn server_main(config: Config, keymap: Keymap) -> anyhow::Result<()> {
+  let mut server_socket = create_server_socket()?;
+  let (client_socket, _) = server_socket.listener().accept().await?;
+  let (client_read, client_write) = client_socket.into_split();
+  let client_tx = MsgSender::new(client_write);
+  let mut client_rx = MsgReceiver::new(client_read);
+
   let init = client_rx
     .recv()
     .await

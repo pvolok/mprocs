@@ -11,14 +11,17 @@ use futures::{FutureExt, StreamExt};
 use tokio::select;
 use tui::backend::{Backend, CrosstermBackend};
 
-use crate::protocol::{
-  CltToSrv, CursorStyle, MsgReceiver, MsgSender, SrvToClt,
+use crate::{
+  host::connect_client_socket,
+  protocol::{CltToSrv, CursorStyle, MsgReceiver, MsgSender, SrvToClt},
 };
 
-pub async fn client_main(
-  tx: MsgSender<CltToSrv>,
-  rx: MsgReceiver<SrvToClt>,
-) -> anyhow::Result<()> {
+pub async fn client_main() -> anyhow::Result<()> {
+  let client_socket = connect_client_socket().await?;
+  let (client_read, client_write) = client_socket.into_split();
+  let tx = MsgSender::<CltToSrv>::new(client_write);
+  let rx = MsgReceiver::<SrvToClt>::new(client_read);
+
   let res1 = match enable_raw_mode() {
     Ok(_) => {
       let res1 = match execute!(
