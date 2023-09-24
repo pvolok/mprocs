@@ -56,7 +56,7 @@ impl Default for CursorStyle {
   }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum CltToSrv {
   Init { width: u16, height: u16 },
   Key(Event),

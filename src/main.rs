@@ -8,6 +8,7 @@ mod encode_term;
 mod error;
 mod event;
 mod host;
+mod kernel;
 mod key;
 mod keymap;
 mod modal;
@@ -29,12 +30,12 @@ use std::{io::Read, path::Path};
 
 use anyhow::{bail, Result};
 use app::server_main;
-use clap::{arg, command, ArgMatches};
+use clap::{arg, command, ArgMatches, Command};
 use client::client_main;
 use config::{CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig};
 use config_lua::load_lua_config;
 use ctl::run_ctl;
-use flexi_logger::FileSpec;
+use flexi_logger::{FileSpec, LoggerHandle};
 use keymap::Keymap;
 use package_json::load_npm_procs;
 use proc::StopSignal;
@@ -42,30 +43,39 @@ use serde_yaml::Value;
 use settings::Settings;
 use yaml_val::Val;
 
-#[tokio::main]
-async fn main() -> Result<(), std::io::Error> {
+enum LogTarget {
+  File,
+  Stderr,
+}
+
+fn setup_logger(target: LogTarget) -> LoggerHandle {
   let logger_str = if cfg!(debug_assertions) {
     "debug"
   } else {
     "warn"
   };
-  let _logger = flexi_logger::Logger::try_with_str(logger_str)
-    .unwrap()
-    .log_to_file(FileSpec::default().suppress_timestamp())
-    .append()
-    .use_utc()
-    .start()
-    .unwrap();
+  let logger = flexi_logger::Logger::try_with_str(logger_str).unwrap();
+  let logger = match target {
+    LogTarget::File => logger
+      .log_to_file(FileSpec::default().suppress_timestamp())
+      .append(),
+    LogTarget::Stderr => logger.log_to_stderr(),
+  };
 
   std::panic::set_hook(Box::new(|info| {
     let stacktrace = std::backtrace::Backtrace::capture();
     log::error!("Got panic. @info:{}\n@stackTrace:{}", info, stacktrace);
   }));
 
+  logger.use_utc().start().unwrap()
+}
+
+#[tokio::main]
+async fn main() -> Result<(), std::io::Error> {
   match run_app().await {
     Ok(()) => Ok(()),
     Err(err) => {
-      eprintln!("Error: {}", err);
+      eprintln!("Error: {:?}", err);
       Ok(())
     }
   }
@@ -79,6 +89,8 @@ async fn run_app() -> anyhow::Result<()> {
     .arg(arg!(--names [NAMES] "Names for processes provided by cli arguments. Separated by comma."))
     .arg(arg!(--npm "Run scripts from package.json. Scripts are not started by default."))
     .arg(arg!([COMMANDS]... "Commands to run (if omitted, commands from config will be run)"))
+    .subcommand(Command::new("server"))
+    .subcommand(Command::new("attach"))
     .get_matches();
 
   let config_value = load_config_value(&matches)
@@ -138,7 +150,7 @@ async fn run_app() -> anyhow::Result<()> {
         .collect::<Vec<_>>();
 
       config.procs = procs;
-    } else if matches.contains_id("npm") {
+    } else if matches.get_flag("npm") {
       let procs = load_npm_procs(&settings)?;
       config.procs = procs;
     }
@@ -146,7 +158,30 @@ async fn run_app() -> anyhow::Result<()> {
     config
   };
 
-  run_client_and_server(config, keymap).await
+  match matches.subcommand() {
+    Some(("attach", _args)) => {
+      let logger = setup_logger(LogTarget::File);
+      let ret = client_main().await;
+      drop(logger);
+      ret
+    }
+    Some(("server", _args)) => {
+      let logger = setup_logger(LogTarget::Stderr);
+      let ret = server_main(config, keymap).await;
+      drop(logger);
+      ret
+    }
+    Some((cmd, _args)) => {
+      bail!("Unexpected command: {}", cmd);
+    }
+    None => {
+      println!("run_client_and_server");
+      let logger = setup_logger(LogTarget::File);
+      let ret = run_client_and_server(config, keymap).await;
+      drop(logger);
+      ret
+    }
+  }
 }
 
 async fn run_client_and_server(config: Config, keymap: Keymap) -> Result<()> {

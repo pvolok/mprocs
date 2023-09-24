@@ -1,6 +1,7 @@
 use anyhow::bail;
 use crossterm::event::{Event, MouseButton, MouseEventKind};
 use futures::{future::FutureExt, select};
+use serde::{Deserialize, Serialize};
 use termwiz::escape::csi::CursorStyle;
 use tokio::{
   io::AsyncReadExt,
@@ -8,14 +9,17 @@ use tokio::{
 };
 use tui::{
   layout::{Constraint, Direction, Layout, Margin, Rect},
+  widgets::Widget,
   Terminal,
 };
+use vt100::Size;
 
 use crate::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
   error::ResultLogger,
   event::AppEvent,
   host::create_server_socket,
+  kernel::kernel_message::{KernelMessage, KernelSender},
   key::Key,
   keymap::Keymap,
   modal::{
@@ -68,15 +72,18 @@ impl LoopAction {
 pub struct App {
   config: Config,
   keymap: Keymap,
-  terminal: Term,
   state: State,
   modal: Option<Box<dyn Modal>>,
-  client_rx: MsgReceiver<CltToSrv>,
-  client_tx: MsgSender<SrvToClt>,
   proc_rx: UnboundedReceiver<(usize, ProcEvent)>,
   proc_tx: UnboundedSender<(usize, ProcEvent)>,
   ev_rx: UnboundedReceiver<AppEvent>,
   ev_tx: UnboundedSender<AppEvent>,
+  kernel_sender: KernelSender,
+  kernel_receiver: tokio::sync::mpsc::UnboundedReceiver<KernelMessage>,
+
+  screen_size: Size,
+  pending_clients: Vec<ClientConnector>,
+  clients: Vec<ClientHandle>,
 }
 
 impl App {
@@ -137,66 +144,35 @@ impl App {
   }
 
   async fn main_loop(mut self) -> anyhow::Result<()> {
-    let mut last_term_size = {
-      let area = self.get_layout().term_area();
-      self.start_procs(area)?;
-      (area.width, area.height)
-    };
+    self.start_procs(Rect::new(
+      0,
+      0,
+      self.screen_size.width,
+      self.screen_size.height,
+    ))?;
 
     let mut render_needed = true;
-    let mut current_cursor_shape = CursorStyle::Default;
     loop {
       if render_needed {
-        self.terminal.draw(|f| {
-          let mut cursor_style = current_cursor_shape;
+        let layout = self.get_layout();
 
-          let layout = AppLayout::new(
-            f.size(),
-            self.state.scope.is_zoomed(),
+        if let Some((first, rest)) = self.clients.split_first_mut() {
+          first.render(
+            &mut self.state,
+            &layout,
             &self.config,
-          );
-
-          {
-            let term_area = layout.term_area();
-            let term_size = (term_area.width, term_area.height);
-            if last_term_size != term_size {
-              last_term_size = term_size;
-              for proc_handle in &mut self.state.procs {
-                proc_handle.send(ProcCmd::Resize {
-                  x: term_area.x,
-                  y: term_area.y,
-                  w: term_area.width,
-                  h: term_area.height,
-                });
-              }
-            }
-          }
-
-          render_procs(layout.procs, f, &mut self.state);
-          render_term(layout.term, f, &mut self.state, &mut cursor_style);
-          render_keymap(layout.keymap, f, &mut self.state, &self.keymap);
-          render_zoom_tip(layout.zoom_banner, f, &self.keymap);
-
-          if let Some(modal) = &mut self.modal {
-            cursor_style = CursorStyle::Default;
-            modal.render(f);
-          }
-
-          if current_cursor_shape != cursor_style {
-            self
-              .client_tx
-              .send(SrvToClt::CursorShape(cursor_style.into()))
-              .log_ignore();
-            current_cursor_shape = cursor_style;
-          }
-        })?;
+            &self.keymap,
+            &mut self.modal,
+            rest,
+          )?;
+        }
       }
 
       let mut loop_action = LoopAction::default();
       let () = select! {
-        event = self.client_rx.recv().fuse() => {
-          if let Some(Ok(event)) = event {
-            self.handle_client_msg(&mut loop_action, event)?
+        event = self.kernel_receiver.recv().fuse() => {
+          if let Some(event) = event {
+            self.handle_kernel_message(&mut loop_action, event)?
           }
         }
         event = self.proc_rx.recv().fuse() => {
@@ -226,6 +202,12 @@ impl App {
       };
     }
 
+    for client in self.clients.into_iter() {
+      let mut sender = client.sender.clone();
+      drop(client);
+      sender.send(SrvToClt::Quit).log_ignore();
+    }
+
     Ok(())
   }
 
@@ -244,18 +226,63 @@ impl App {
     Ok(())
   }
 
+  fn handle_kernel_message(
+    &mut self,
+    loop_action: &mut LoopAction,
+    msg: KernelMessage,
+  ) -> anyhow::Result<()> {
+    match msg {
+      KernelMessage::ClientMessage { client_id, msg } => {
+        self.handle_client_msg(loop_action, client_id, msg)?;
+      }
+      KernelMessage::ClientConnected { handle } => {
+        self.clients.push(handle);
+        self.update_screen_size();
+      }
+      KernelMessage::ClientDisconnected { client_id } => todo!(),
+    }
+    Ok(())
+  }
+
+  fn update_screen_size(&mut self) {
+    if let Some(client) = self.clients.first_mut() {
+      let size = client.size();
+      if self.screen_size != size {
+        self.screen_size = size;
+
+        let area = self.get_layout().term_area();
+        for proc_handle in &mut self.state.procs {
+          proc_handle.send(ProcCmd::Resize {
+            x: area.x,
+            y: area.y,
+            w: area.width,
+            h: area.height,
+          });
+        }
+      }
+    }
+  }
+
   fn handle_client_msg(
     &mut self,
     loop_action: &mut LoopAction,
+    client_id: ClientId,
     msg: CltToSrv,
   ) -> anyhow::Result<()> {
     match msg {
       CltToSrv::Init { .. } => bail!("Init message is unexpected."),
-      CltToSrv::Key(event) => Ok(self.handle_input(loop_action, event)),
+      CltToSrv::Key(event) => {
+        Ok(self.handle_input(loop_action, client_id, event))
+      }
     }
   }
 
-  fn handle_input(&mut self, loop_action: &mut LoopAction, event: Event) {
+  fn handle_input(
+    &mut self,
+    loop_action: &mut LoopAction,
+    client_id: ClientId,
+    event: Event,
+  ) {
     if let Some(modal) = &mut self.modal {
       let handled = modal.handle_input(&mut self.state, loop_action, &event);
       if handled {
@@ -343,31 +370,13 @@ impl App {
         loop_action.render();
       }
       Event::Resize(width, height) => {
-        let area = AppLayout::new(
-          Rect::new(0, 0, width, height),
-          self.state.scope.is_zoomed(),
-          &self.config,
-        )
-        .term_area();
-        for proc_handle in &mut self.state.procs {
-          proc_handle.send(ProcCmd::Resize {
-            x: area.x,
-            y: area.y,
-            w: area.width,
-            h: area.height,
-          });
+        if let Some(client) =
+          self.clients.iter_mut().find(|c| c.id == client_id)
+        {
+          let size = Size { width, height };
+          client.resize(size);
         }
-
-        self.terminal.backend_mut().set_size(width, height);
-        self
-          .terminal
-          .resize(Rect {
-            x: 0,
-            y: 0,
-            width,
-            height,
-          })
-          .log_ignore();
+        self.update_screen_size();
 
         loop_action.render();
       }
@@ -450,7 +459,7 @@ impl App {
         let next = if self.state.selected > 0 {
           self.state.selected - 1
         } else {
-          self.state.procs.len() - 1
+          self.state.procs.len().saturating_sub(1)
         };
         self.state.select_proc(next);
         loop_action.render();
@@ -639,8 +648,9 @@ impl App {
   }
 
   fn get_layout(&mut self) -> AppLayout {
+    let size = self.screen_size;
     AppLayout::new(
-      self.terminal.get_frame().size(),
+      Rect::new(0, 0, size.width, size.height),
       self.state.scope.is_zoomed(),
       &self.config,
     )
@@ -696,30 +706,217 @@ impl AppLayout {
   }
 }
 
-pub async fn server_main(config: Config, keymap: Keymap) -> anyhow::Result<()> {
-  let mut server_socket = create_server_socket()?;
-  let (client_socket, _) = server_socket.listener().accept().await?;
-  let (client_read, client_write) = client_socket.into_split();
-  let client_tx = MsgSender::new(client_write);
-  let mut client_rx = MsgReceiver::new(client_read);
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct ClientId(u32);
 
-  let init = client_rx
-    .recv()
-    .await
-    .ok_or_else(|| anyhow::Error::msg("Expected init message."))??;
-  let backend = match init {
-    CltToSrv::Init { width, height } => {
-      let proxy_backend = ProxyBackend {
-        tx: client_tx.clone(),
-        width,
-        height,
-      };
-      proxy_backend
+struct ClientConnector;
+
+impl ClientConnector {
+  fn connect(
+    id: ClientId,
+    socket: tokio::net::UnixStream,
+    kernel_sender: KernelSender,
+  ) -> Self {
+    let (client_read, client_write) = socket.into_split();
+    let client_tx = MsgSender::new(client_write);
+    let mut client_rx = MsgReceiver::new(client_read);
+
+    tokio::spawn(async move {
+      let init_msg = client_rx.recv().await;
+      match init_msg {
+        Some(Ok(CltToSrv::Init { width, height })) => {
+          let client_handle = ClientHandle::create(
+            id,
+            (client_rx, client_tx),
+            kernel_sender.clone(),
+            Size { width, height },
+          );
+          match client_handle {
+            Ok(handle) => {
+              kernel_sender
+                .send(KernelMessage::ClientConnected { handle })
+                .log_ignore();
+            }
+            Err(err) => {
+              log::error!("Client creation error: {:?}", err);
+            }
+          }
+        }
+        _ => todo!(),
+      }
+    });
+
+    ClientConnector
+  }
+}
+
+pub struct ClientHandle {
+  id: ClientId,
+  sender: MsgSender<SrvToClt>,
+  terminal: Term,
+
+  cursor_style: CursorStyle,
+}
+
+impl ClientHandle {
+  fn create(
+    id: ClientId,
+    (mut read, write): (MsgReceiver<CltToSrv>, MsgSender<SrvToClt>),
+    kernel_sender: KernelSender,
+    size: Size,
+  ) -> anyhow::Result<Self> {
+    {
+      let kernel_sender = kernel_sender.clone();
+      tokio::spawn(async move {
+        loop {
+          let msg = if let Some(msg) = read.recv().await {
+            msg
+          } else {
+            break;
+          };
+
+          match msg {
+            Ok(msg) => {
+              kernel_sender
+                .send(
+                  crate::kernel::kernel_message::KernelMessage::ClientMessage {
+                    client_id: id,
+                    msg,
+                  },
+                )
+                .log_ignore();
+            }
+            Err(_err) => break,
+          }
+        }
+      });
     }
-    _ => bail!("Expected init message."),
-  };
 
-  let terminal = Terminal::new(backend)?;
+    let backend = ProxyBackend {
+      tx: write.clone(),
+      width: size.width,
+      height: size.height,
+    };
+    let terminal = Terminal::new(backend)?;
+
+    Ok(Self {
+      id,
+      sender: write,
+      terminal,
+
+      cursor_style: CursorStyle::Default,
+    })
+  }
+
+  fn size(&self) -> Size {
+    let backend = self.terminal.backend();
+    Size {
+      width: backend.width,
+      height: backend.height,
+    }
+  }
+
+  fn resize(&mut self, size: Size) {
+    self
+      .terminal
+      .backend_mut()
+      .set_size(size.width, size.height);
+    self
+      .terminal
+      .resize(Rect::new(0, 0, size.width, size.height))
+      .log_ignore();
+  }
+
+  fn render(
+    &mut self,
+    state: &mut State,
+    layout: &AppLayout,
+    _config: &Config,
+    keymap: &Keymap,
+    modal: &mut Option<Box<dyn Modal>>,
+    rest: &mut [ClientHandle],
+  ) -> anyhow::Result<()> {
+    self.terminal.draw(|f| {
+      let mut cursor_style = self.cursor_style;
+
+      render_procs(layout.procs, f, state);
+      render_term(layout.term, f, state, &mut cursor_style);
+      render_keymap(layout.keymap, f, state, keymap);
+      render_zoom_tip(layout.zoom_banner, f, keymap);
+
+      if let Some(modal) = modal {
+        cursor_style = CursorStyle::Default;
+        modal.render(f);
+      }
+
+      for client_handle in rest {
+        f.render_widget(RenderOtherClient(client_handle), f.size());
+      }
+
+      if self.cursor_style != cursor_style {
+        self
+          .sender
+          .send(SrvToClt::CursorShape(cursor_style.into()))
+          .log_ignore();
+        self.cursor_style = cursor_style;
+      }
+    })?;
+
+    Ok(())
+  }
+
+  fn render_from(&mut self, buf: &tui::buffer::Buffer) -> anyhow::Result<()> {
+    self.terminal.draw(|f| {
+      let area = buf.area().intersection(f.size());
+      f.render_widget(CopyBuffer(buf), area);
+    })?;
+    Ok(())
+  }
+}
+
+struct RenderOtherClient<'a>(&'a mut ClientHandle);
+
+impl Widget for RenderOtherClient<'_> {
+  fn render(self, _area: Rect, buf: &mut tui::prelude::Buffer) {
+    self.0.render_from(buf).log_ignore();
+  }
+}
+
+struct CopyBuffer<'a>(&'a tui::buffer::Buffer);
+
+impl Widget for CopyBuffer<'_> {
+  fn render(self, area: Rect, buf: &mut tui::prelude::Buffer) {
+    for row in area.y..area.height {
+      for col in area.x..area.width {
+        let from = self.0.get(col, row);
+        *buf.get_mut(col, row) = from.clone();
+      }
+    }
+  }
+}
+
+pub async fn server_main(config: Config, keymap: Keymap) -> anyhow::Result<()> {
+  let (kernel_sender, kernel_receiver) = tokio::sync::mpsc::unbounded_channel();
+
+  let mut server_socket = create_server_socket()?;
+  let _accept_thread = {
+    let kernel_sender = kernel_sender.clone();
+    tokio::spawn(async move {
+      let mut last_client_id = 0;
+
+      log::debug!("Waiting for clients...");
+      loop {
+        match server_socket.listener().accept().await {
+          Ok((socket, _addr)) => {
+            last_client_id += 1;
+            let id = ClientId(last_client_id);
+            ClientConnector::connect(id, socket, kernel_sender.clone());
+          }
+          Err(_) => break,
+        }
+      }
+    })
+  };
 
   let (upd_tx, upd_rx) =
     tokio::sync::mpsc::unbounded_channel::<(usize, ProcEvent)>();
@@ -736,20 +933,25 @@ pub async fn server_main(config: Config, keymap: Keymap) -> anyhow::Result<()> {
   let app = App {
     config,
     keymap,
-    terminal,
     state,
     modal: None,
-    client_rx,
-    client_tx,
     proc_rx: upd_rx,
     proc_tx: upd_tx,
 
     ev_rx,
     ev_tx,
+
+    kernel_sender,
+    kernel_receiver,
+
+    screen_size: Size {
+      width: 160,
+      height: 50,
+    },
+    pending_clients: Vec::new(),
+    clients: Vec::new(),
   };
-  let mut client_tx = app.client_tx.clone();
   app.run().await?;
-  client_tx.send(SrvToClt::Quit).unwrap();
 
   Ok(())
 }
