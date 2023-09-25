@@ -161,7 +161,7 @@ async fn run_app() -> anyhow::Result<()> {
   match matches.subcommand() {
     Some(("attach", _args)) => {
       let logger = setup_logger(LogTarget::File);
-      let ret = client_main().await;
+      let ret = client_main(false).await;
       drop(logger);
       ret
     }
@@ -175,28 +175,12 @@ async fn run_app() -> anyhow::Result<()> {
       bail!("Unexpected command: {}", cmd);
     }
     None => {
-      println!("run_client_and_server");
       let logger = setup_logger(LogTarget::File);
-      let ret = run_client_and_server(config, keymap).await;
+      let ret = client_main(true).await;
       drop(logger);
       ret
     }
   }
-}
-
-async fn run_client_and_server(config: Config, keymap: Keymap) -> Result<()> {
-  let client = tokio::spawn(async { client_main().await });
-  let server = tokio::spawn(async { server_main(config, keymap).await });
-
-  let r1 = server
-    .await
-    .unwrap_or_else(|err| Err(anyhow::Error::from(err)));
-  let r2 = client
-    .await
-    .unwrap_or_else(|err| Err(anyhow::Error::from(err)));
-
-  r1.and(r2)
-    .map_err(|err| anyhow::Error::msg(err.to_string()))
 }
 
 fn load_config_value(

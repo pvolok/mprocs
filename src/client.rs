@@ -16,8 +16,8 @@ use crate::{
   protocol::{CltToSrv, CursorStyle, MsgReceiver, MsgSender, SrvToClt},
 };
 
-pub async fn client_main() -> anyhow::Result<()> {
-  let client_socket = connect_client_socket().await?;
+pub async fn client_main(spawn_server: bool) -> anyhow::Result<()> {
+  let client_socket = connect_client_socket(spawn_server).await?;
   let (client_read, client_write) = client_socket.into_split();
   let tx = MsgSender::<CltToSrv>::new(client_write);
   let rx = MsgReceiver::<SrvToClt>::new(client_read);

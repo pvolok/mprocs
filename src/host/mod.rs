@@ -1,6 +1,10 @@
+mod daemon;
+
 use std::{path::PathBuf, time::Duration};
 
 use crate::error::ResultLogger;
+
+use self::daemon::spawn_server_daemon;
 
 fn get_socket_path() -> PathBuf {
   let mut path = std::env::temp_dir();
@@ -43,12 +47,26 @@ impl ServerSocket {
   }
 }
 
-pub async fn connect_client_socket() -> anyhow::Result<tokio::net::UnixStream> {
+pub async fn connect_client_socket(
+  mut spawn_server: bool,
+) -> anyhow::Result<tokio::net::UnixStream> {
   let path = get_socket_path();
   loop {
     match tokio::net::UnixStream::connect(&path).await {
       Ok(socket) => return Ok(socket),
-      Err(_) => {
+      Err(err) => {
+        match err.kind() {
+          std::io::ErrorKind::NotFound
+          | std::io::ErrorKind::ConnectionRefused => {
+            // ConnectionRefused: Socket exists, but no process is listening.
+
+            if spawn_server {
+              spawn_server = false;
+              spawn_server_daemon()?;
+            }
+          }
+          _ => (),
+        }
         tokio::time::sleep(Duration::from_millis(20)).await;
       }
     }
