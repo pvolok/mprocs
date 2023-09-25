@@ -3,7 +3,11 @@ use std::{fmt::Debug, marker::PhantomData};
 use bytes::{Buf, BufMut, BytesMut};
 use crossterm::event::Event;
 use futures::{SinkExt, StreamExt};
+use interprocess::local_socket::tokio::{OwnedReadHalf, OwnedWriteHalf};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use tokio_util::compat::{
+  FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt,
+};
 use tui::{
   backend::Backend,
   style::{Color, Modifier},
@@ -256,9 +260,11 @@ pub struct MsgSender<T: Serialize> {
 }
 
 impl<T: Serialize + Send + Debug + 'static> MsgSender<T> {
-  pub fn new(write: tokio::net::unix::OwnedWriteHalf) -> Self {
-    let mut framed =
-      tokio_util::codec::FramedWrite::new(write, MsgEncoder::<T>::new());
+  pub fn new(write: OwnedWriteHalf) -> Self {
+    let mut framed = tokio_util::codec::FramedWrite::new(
+      write.compat_write(),
+      MsgEncoder::<T>::new(),
+    );
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -296,9 +302,9 @@ pub struct MsgReceiver<T: DeserializeOwned> {
 }
 
 impl<T: DeserializeOwned + Send + 'static> MsgReceiver<T> {
-  pub fn new(read: tokio::net::unix::OwnedReadHalf) -> Self {
+  pub fn new(read: OwnedReadHalf) -> Self {
     let mut framed =
-      tokio_util::codec::FramedRead::new(read, MsgDecoder::<T>::new());
+      tokio_util::codec::FramedRead::new(read.compat(), MsgDecoder::<T>::new());
 
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(async move {

@@ -1,6 +1,7 @@
 use anyhow::bail;
 use crossterm::event::{Event, MouseButton, MouseEventKind};
 use futures::{future::FutureExt, select};
+use interprocess::local_socket::tokio::LocalSocketStream;
 use serde::{Deserialize, Serialize};
 use termwiz::escape::csi::CursorStyle;
 use tokio::{
@@ -238,6 +239,7 @@ impl App {
       KernelMessage::ClientConnected { handle } => {
         self.clients.push(handle);
         self.update_screen_size();
+        loop_action.render();
       }
       KernelMessage::ClientDisconnected { client_id } => todo!(),
     }
@@ -714,7 +716,7 @@ struct ClientConnector;
 impl ClientConnector {
   fn connect(
     id: ClientId,
-    socket: tokio::net::UnixStream,
+    socket: LocalSocketStream,
     kernel_sender: KernelSender,
   ) -> Self {
     let (client_read, client_write) = socket.into_split();
@@ -907,7 +909,7 @@ pub async fn server_main(config: Config, keymap: Keymap) -> anyhow::Result<()> {
       log::debug!("Waiting for clients...");
       loop {
         match server_socket.listener().accept().await {
-          Ok((socket, _addr)) => {
+          Ok(socket) => {
             last_client_id += 1;
             let id = ClientId(last_client_id);
             ClientConnector::connect(id, socket, kernel_sender.clone());

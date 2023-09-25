@@ -2,6 +2,10 @@ mod daemon;
 
 use std::{path::PathBuf, time::Duration};
 
+use interprocess::local_socket::tokio::{
+  LocalSocketListener, LocalSocketStream,
+};
+
 use crate::error::ResultLogger;
 
 use self::daemon::spawn_server_daemon;
@@ -15,7 +19,7 @@ fn get_socket_path() -> PathBuf {
 pub fn create_server_socket() -> anyhow::Result<ServerSocket> {
   let path = get_socket_path();
 
-  let bind = || tokio::net::UnixListener::bind(&path);
+  let bind = || LocalSocketListener::bind(path.clone());
   let listener = match bind() {
     Ok(listener) => listener,
     Err(err) => match err.kind() {
@@ -32,7 +36,7 @@ pub fn create_server_socket() -> anyhow::Result<ServerSocket> {
 
 pub struct ServerSocket {
   path: PathBuf,
-  listener: tokio::net::UnixListener,
+  listener: LocalSocketListener,
 }
 
 impl Drop for ServerSocket {
@@ -42,17 +46,17 @@ impl Drop for ServerSocket {
 }
 
 impl ServerSocket {
-  pub fn listener(&mut self) -> &mut tokio::net::UnixListener {
+  pub fn listener(&mut self) -> &mut LocalSocketListener {
     &mut self.listener
   }
 }
 
 pub async fn connect_client_socket(
   mut spawn_server: bool,
-) -> anyhow::Result<tokio::net::UnixStream> {
+) -> anyhow::Result<LocalSocketStream> {
   let path = get_socket_path();
   loop {
-    match tokio::net::UnixStream::connect(&path).await {
+    match LocalSocketStream::connect(path.clone()).await {
       Ok(socket) => return Ok(socket),
       Err(err) => {
         match err.kind() {
