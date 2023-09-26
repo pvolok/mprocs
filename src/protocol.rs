@@ -1,19 +1,13 @@
-use std::{fmt::Debug, marker::PhantomData};
+use std::fmt::Debug;
 
-use bytes::{Buf, BufMut, BytesMut};
 use crossterm::event::Event;
-use futures::{SinkExt, StreamExt};
-use interprocess::local_socket::tokio::{OwnedReadHalf, OwnedWriteHalf};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use tokio_util::compat::{
-  FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt,
-};
+use serde::{Deserialize, Serialize};
 use tui::{
   backend::Backend,
   style::{Color, Modifier},
 };
 
-use crate::error::ResultLogger;
+use crate::{error::ResultLogger, host::sender::MsgSender};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum SrvToClt {
@@ -161,173 +155,5 @@ impl Backend for ProxyBackend {
   fn flush(&mut self) -> Result<(), std::io::Error> {
     self.send(SrvToClt::Flush);
     Ok(())
-  }
-}
-
-struct MsgEncoder<T: Serialize> {
-  t: PhantomData<T>,
-  buf: Vec<u8>,
-}
-
-impl<T: Serialize> MsgEncoder<T> {
-  pub fn new() -> Self {
-    MsgEncoder {
-      t: PhantomData::default(),
-      buf: Vec::new(),
-    }
-  }
-}
-
-impl<T: Serialize + Debug> tokio_util::codec::Encoder<T> for MsgEncoder<T> {
-  type Error = bincode::Error;
-
-  fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), Self::Error> {
-    bincode::serialize_into(&mut self.buf, &item)?;
-    dst.put_u32(self.buf.len() as u32);
-    dst.extend_from_slice(&self.buf);
-    self.buf.clear();
-    Ok(())
-  }
-}
-
-struct MsgDecoder<T: DeserializeOwned> {
-  state: DecoderState,
-  t: PhantomData<T>,
-}
-
-enum DecoderState {
-  Header,
-  Data(usize),
-}
-
-impl<T: DeserializeOwned> MsgDecoder<T> {
-  pub fn new() -> MsgDecoder<T> {
-    MsgDecoder {
-      state: DecoderState::Header,
-      t: PhantomData::default(),
-    }
-  }
-}
-
-impl<T: DeserializeOwned> tokio_util::codec::Decoder for MsgDecoder<T> {
-  type Item = T;
-
-  type Error = bincode::Error;
-
-  fn decode(
-    &mut self,
-    src: &mut BytesMut,
-  ) -> Result<Option<Self::Item>, Self::Error> {
-    if let DecoderState::Header = self.state {
-      let len = if src.len() >= 4 {
-        src.get_u32() as usize
-      } else {
-        return Ok(None);
-      };
-      self.state = DecoderState::Data(len);
-    }
-    let len = match self.state {
-      DecoderState::Header => {
-        let len = if src.len() >= 4 {
-          src.get_u32() as usize
-        } else {
-          return Ok(None);
-        };
-        self.state = DecoderState::Data(len);
-        len
-      }
-      DecoderState::Data(len) => len,
-    };
-
-    if src.len() >= len {
-      let msg: T = bincode::deserialize(&src[..len])?;
-      if src.len() == len {
-        src.clear();
-      } else {
-        src.advance(len);
-      }
-      self.state = DecoderState::Header;
-      Ok(Some(msg))
-    } else {
-      return Ok(None);
-    }
-  }
-}
-
-#[derive(Clone)]
-pub struct MsgSender<T: Serialize> {
-  sender: tokio::sync::mpsc::UnboundedSender<T>,
-}
-
-impl<T: Serialize + Send + Debug + 'static> MsgSender<T> {
-  pub fn new(write: OwnedWriteHalf) -> Self {
-    let mut framed = tokio_util::codec::FramedWrite::new(
-      write.compat_write(),
-      MsgEncoder::<T>::new(),
-    );
-
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-
-    tokio::spawn(async move {
-      loop {
-        let msg = rx.recv().await;
-        let msg = match msg {
-          Some(msg) => msg,
-          None => break,
-        };
-
-        // TODO: Use `framed.feed()`
-        match framed.send(msg).await {
-          Ok(()) => (),
-          Err(_) => break,
-        }
-      }
-    });
-
-    MsgSender { sender: tx }
-  }
-}
-
-impl<T: Serialize + DeserializeOwned + Debug> MsgSender<T> {
-  pub fn send(
-    &mut self,
-    msg: T,
-  ) -> Result<(), tokio::sync::mpsc::error::SendError<T>> {
-    self.sender.send(msg)
-  }
-}
-
-pub struct MsgReceiver<T: DeserializeOwned> {
-  receiver: tokio::sync::mpsc::UnboundedReceiver<T>,
-}
-
-impl<T: DeserializeOwned + Send + 'static> MsgReceiver<T> {
-  pub fn new(read: OwnedReadHalf) -> Self {
-    let mut framed =
-      tokio_util::codec::FramedRead::new(read.compat(), MsgDecoder::<T>::new());
-
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    tokio::spawn(async move {
-      loop {
-        let msg = framed.next().await;
-        let msg = match msg {
-          Some(Ok(msg)) => msg,
-          _ => break,
-        };
-        match tx.send(msg) {
-          Ok(()) => (),
-          Err(_) => break,
-        };
-      }
-    });
-
-    MsgReceiver { receiver: rx }
-  }
-}
-
-impl<T: DeserializeOwned> MsgReceiver<T> {
-  pub async fn recv(&mut self) -> Option<Result<T, bincode::Error>> {
-    let msg = self.receiver.recv().await;
-    msg.map(|x| Ok(x))
   }
 }

@@ -12,15 +12,15 @@ use tokio::select;
 use tui::backend::{Backend, CrosstermBackend};
 
 use crate::{
-  host::connect_client_socket,
-  protocol::{CltToSrv, CursorStyle, MsgReceiver, MsgSender, SrvToClt},
+  host::{
+    receiver::MsgReceiver, sender::MsgSender, socket::connect_client_socket,
+  },
+  protocol::{CltToSrv, CursorStyle, SrvToClt},
 };
 
 pub async fn client_main(spawn_server: bool) -> anyhow::Result<()> {
-  let client_socket = connect_client_socket(spawn_server).await?;
-  let (client_read, client_write) = client_socket.into_split();
-  let tx = MsgSender::<CltToSrv>::new(client_write);
-  let rx = MsgReceiver::<SrvToClt>::new(client_read);
+  let (tx, rx) =
+    connect_client_socket::<CltToSrv, SrvToClt>(spawn_server).await?;
 
   let res1 = match enable_raw_mode() {
     Ok(_) => {

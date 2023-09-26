@@ -1,7 +1,6 @@
 use anyhow::bail;
 use crossterm::event::{Event, MouseButton, MouseEventKind};
 use futures::{future::FutureExt, select};
-use interprocess::local_socket::tokio::LocalSocketStream;
 use serde::{Deserialize, Serialize};
 use termwiz::escape::csi::CursorStyle;
 use tokio::{
@@ -19,7 +18,9 @@ use crate::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
   error::ResultLogger,
   event::AppEvent,
-  host::create_server_socket,
+  host::{
+    receiver::MsgReceiver, sender::MsgSender, socket::bind_server_socket,
+  },
   kernel::kernel_message::{KernelMessage, KernelSender},
   key::Key,
   keymap::Keymap,
@@ -33,7 +34,7 @@ use crate::{
     msg::{ProcCmd, ProcEvent},
     StopSignal,
   },
-  protocol::{CltToSrv, MsgReceiver, MsgSender, ProxyBackend, SrvToClt},
+  protocol::{CltToSrv, ProxyBackend, SrvToClt},
   state::{Scope, State},
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
@@ -716,20 +717,16 @@ struct ClientConnector;
 impl ClientConnector {
   fn connect(
     id: ClientId,
-    socket: LocalSocketStream,
+    (sender, mut receiver): (MsgSender<SrvToClt>, MsgReceiver<CltToSrv>),
     kernel_sender: KernelSender,
   ) -> Self {
-    let (client_read, client_write) = socket.into_split();
-    let client_tx = MsgSender::new(client_write);
-    let mut client_rx = MsgReceiver::new(client_read);
-
     tokio::spawn(async move {
-      let init_msg = client_rx.recv().await;
+      let init_msg = receiver.recv().await;
       match init_msg {
         Some(Ok(CltToSrv::Init { width, height })) => {
           let client_handle = ClientHandle::create(
             id,
-            (client_rx, client_tx),
+            (receiver, sender),
             kernel_sender.clone(),
             Size { width, height },
           );
@@ -900,7 +897,7 @@ impl Widget for CopyBuffer<'_> {
 pub async fn server_main(config: Config, keymap: Keymap) -> anyhow::Result<()> {
   let (kernel_sender, kernel_receiver) = tokio::sync::mpsc::unbounded_channel();
 
-  let mut server_socket = create_server_socket()?;
+  let mut server_socket = bind_server_socket()?;
   let _accept_thread = {
     let kernel_sender = kernel_sender.clone();
     tokio::spawn(async move {
@@ -908,7 +905,7 @@ pub async fn server_main(config: Config, keymap: Keymap) -> anyhow::Result<()> {
 
       log::debug!("Waiting for clients...");
       loop {
-        match server_socket.listener().accept().await {
+        match server_socket.accept().await {
           Ok(socket) => {
             last_client_id += 1;
             let id = ClientId(last_client_id);
