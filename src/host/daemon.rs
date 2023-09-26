@@ -20,8 +20,8 @@ mod unix {
     match daemon.execute() {
       daemonize::Outcome::Parent(_) => (),
       daemonize::Outcome::Child(_) => exec(&[
-        exe.to_str().ok_or_else(|| {
-          anyhow::format_err!("Failed to convert exe path: {:?}", exe)
+        path.to_str().ok_or_else(|| {
+          anyhow::format_err!("Failed to convert exe path: {:?}", path)
         })?,
         "server",
       ])?,
