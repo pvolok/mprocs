@@ -1,5 +1,7 @@
 #[cfg(unix)]
 pub use self::unix::{bind_server_socket, connect_client_socket};
+#[cfg(windows)]
+pub use self::windows::{bind_server_socket, connect_client_socket};
 
 #[cfg(unix)]
 mod unix {
@@ -21,7 +23,7 @@ mod unix {
     path
   }
 
-  pub fn bind_server_socket() -> anyhow::Result<ServerSocket> {
+  pub async fn bind_server_socket() -> anyhow::Result<ServerSocket> {
     let path = get_socket_path();
 
     let bind = || UnixListener::bind(&path);
@@ -74,6 +76,93 @@ mod unix {
     let path = get_socket_path();
     loop {
       match UnixStream::connect(&path).await {
+        Ok(socket) => {
+          let (read, write) = socket.into_split();
+          let sender = MsgSender::new(write);
+          let receiver = MsgReceiver::new(read);
+          return Ok((sender, receiver));
+        }
+        Err(err) => {
+          match err.kind() {
+            std::io::ErrorKind::NotFound
+            | std::io::ErrorKind::ConnectionRefused => {
+              // ConnectionRefused: Socket exists, but no process is listening.
+
+              if spawn_server {
+                spawn_server = false;
+                spawn_server_daemon()?;
+              }
+            }
+            _ => (),
+          }
+          tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+      }
+    }
+  }
+}
+
+#[cfg(windows)]
+mod windows {
+  use std::{fmt::Debug, time::Duration};
+
+  use serde::{de::DeserializeOwned, Serialize};
+  use tokio::net::{TcpListener, TcpStream};
+
+  use crate::host::{
+    daemon::spawn_server_daemon, receiver::MsgReceiver, sender::MsgSender,
+  };
+
+  fn get_socket_path() -> (String, u16) {
+    (format!("127.0.0.1"), 15874)
+  }
+
+  pub async fn bind_server_socket() -> anyhow::Result<ServerSocket> {
+    let path = get_socket_path();
+
+    let bind = || TcpListener::bind(&path);
+    let listener = match bind().await {
+      Ok(listener) => listener,
+      Err(err) => return Err(err.into()),
+    };
+
+    Ok(ServerSocket { listener })
+  }
+
+  pub struct ServerSocket {
+    listener: TcpListener,
+  }
+
+  impl Drop for ServerSocket {
+    fn drop(&mut self) {
+      // std::fs::remove_file(&self.path).log_ignore();
+    }
+  }
+
+  impl ServerSocket {
+    pub async fn accept<
+      S: Serialize + Debug + Send + 'static,
+      R: DeserializeOwned + Send + 'static,
+    >(
+      &mut self,
+    ) -> anyhow::Result<(MsgSender<S>, MsgReceiver<R>)> {
+      let (stream, _addr) = self.listener.accept().await?;
+      let (read, write) = stream.into_split();
+      let sender = MsgSender::new(write);
+      let receiver = MsgReceiver::new(read);
+      Ok((sender, receiver))
+    }
+  }
+
+  pub async fn connect_client_socket<
+    S: Serialize + Debug + Send + 'static,
+    R: DeserializeOwned + Send + 'static,
+  >(
+    mut spawn_server: bool,
+  ) -> anyhow::Result<(MsgSender<S>, MsgReceiver<R>)> {
+    let path = get_socket_path();
+    loop {
+      match TcpStream::connect(&path).await {
         Ok(socket) => {
           let (read, write) = socket.into_split();
           let sender = MsgSender::new(write);

@@ -448,6 +448,15 @@ pub fn encode_key_win32(
     KeyCode::F(_) => 0,
     KeyCode::Null => 0,
     KeyCode::Esc => 0,
+    KeyCode::CapsLock => 0,
+    KeyCode::ScrollLock => 0,
+    KeyCode::NumLock => 0,
+    KeyCode::PrintScreen => 0,
+    KeyCode::Pause => 0,
+    KeyCode::Menu => 0,
+    KeyCode::KeypadBegin => 0,
+    KeyCode::Media(_) => 0,
+    KeyCode::Modifier(_) => 0,
   };
 
   let scan_code = 0;
@@ -495,6 +504,15 @@ fn virtual_key_code(code: &KeyCode) -> Option<i32> {
     },
     KeyCode::Null => 0,
     KeyCode::Esc => winapi::um::winuser::VK_ESCAPE,
+    KeyCode::CapsLock => 0,
+    KeyCode::ScrollLock => 0,
+    KeyCode::NumLock => 0,
+    KeyCode::PrintScreen => 0,
+    KeyCode::Pause => 0,
+    KeyCode::Menu => 0,
+    KeyCode::KeypadBegin => 0,
+    KeyCode::Media(_) => 0,
+    KeyCode::Modifier(_) => 0,
   };
 
   Some(code)

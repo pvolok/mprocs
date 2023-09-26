@@ -897,7 +897,7 @@ impl Widget for CopyBuffer<'_> {
 pub async fn server_main(config: Config, keymap: Keymap) -> anyhow::Result<()> {
   let (kernel_sender, kernel_receiver) = tokio::sync::mpsc::unbounded_channel();
 
-  let mut server_socket = bind_server_socket()?;
+  let mut server_socket = bind_server_socket().await?;
   let _accept_thread = {
     let kernel_sender = kernel_sender.clone();
     tokio::spawn(async move {
