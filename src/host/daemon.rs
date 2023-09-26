@@ -1,10 +1,15 @@
-use std::ffi::CString;
+use std::{ffi::CString, path::PathBuf};
 
 use anyhow::bail;
 
 pub fn spawn_server_daemon() -> anyhow::Result<()> {
   let exe = std::env::current_exe()?;
 
+  spawn_impl(exe)
+}
+
+#[cfg(unix)]
+pub fn spawn_impl(path: PathBuf) -> anyhow::Result<()> {
   let daemon =
     daemonize::Daemonize::new().working_directory(std::env::current_dir()?);
 
@@ -21,6 +26,7 @@ pub fn spawn_server_daemon() -> anyhow::Result<()> {
   Ok(())
 }
 
+#[cfg(unix)]
 fn exec(argv: &[&str]) -> anyhow::Result<()> {
   // Add null terminations to our strings and our argument array,
   // converting them into a C-compatible format.
@@ -49,4 +55,21 @@ fn exec(argv: &[&str]) -> anyhow::Result<()> {
     // Should never happen.
     panic!("execvp returned unexpectedly")
   }
+}
+
+#[cfg(windows)]
+pub fn spawn_impl(path: PathBuf) -> anyhow::Result<()> {
+  use std::{os::windows::process::CommandExt, process::Stdio};
+
+  use winapi::um::winbase::{CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS};
+
+  std::process::Command::new(path)
+    .arg("server")
+    .stdin(Stdio::null())
+    .stdout(Stdio::null())
+    .stdout(Stdio::null())
+    .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS)
+    .spawn()?;
+
+  Ok(())
 }
