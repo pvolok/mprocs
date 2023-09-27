@@ -1,5 +1,5 @@
 use anyhow::bail;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use serde::{Deserialize, Serialize};
 
 static KEYS: phf::Map<&'static str, KeyCode> = phf::phf_map! {
@@ -66,6 +66,10 @@ impl Key {
   pub fn set_mods(mut self, mods: KeyModifiers) -> Self {
     self.0.modifiers = mods;
     self
+  }
+
+  pub fn kind(&self) -> KeyEventKind {
+    self.0.kind
   }
 }
 

@@ -1,7 +1,9 @@
 use std::fmt::Write;
 
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind};
+use crossterm::event::{
+  KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+};
 
 use crate::{key::Key, mouse::MouseEvent};
 
@@ -33,8 +35,14 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
   use KeyCode::*;
 
   #[cfg(windows)]
-  if let Some(encoded) = encode_key_win32(key, modes) {
-    return Ok(encoded);
+  if std::env::var("ENCODE_KEY_WIN32").is_ok() {
+    if let Some(encoded) = encode_key_win32(key, modes) {
+      return Ok(encoded);
+    }
+  }
+
+  if key.kind() == KeyEventKind::Release {
+    return Ok("".to_string());
   }
 
   let code = key.code().clone();
