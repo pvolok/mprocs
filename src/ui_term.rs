@@ -123,30 +123,28 @@ impl Widget for UiTerm<'_> {
       for col in 0..area.width {
         let to_cell = buf.get_mut(area.x + col, area.y + row);
         if let Some(cell) = screen.cell(row, col) {
-          if cell.has_contents() {
-            *to_cell = cell.to_tui();
+          *to_cell = cell.to_tui();
+          if !cell.has_contents() {
+            to_cell.symbol = " ".to_string();
+          }
 
-            let copy_mode = match self.copy_mode {
-              CopyMode::None(_) => None,
-              CopyMode::Start(_, start) => Some((start, start)),
-              CopyMode::Range(_, start, end) => Some((start, end)),
-            };
-            if let Some((start, end)) = copy_mode {
-              if Pos::within(
-                start,
-                end,
-                &Pos {
-                  y: (row as i32) - screen.scrollback() as i32,
-                  x: col as i32,
-                },
-              ) {
-                to_cell.fg = Color::Black; // Black
-                to_cell.bg = Color::Cyan; // Cyan
-              }
+          let copy_mode = match self.copy_mode {
+            CopyMode::None(_) => None,
+            CopyMode::Start(_, start) => Some((start, start)),
+            CopyMode::Range(_, start, end) => Some((start, end)),
+          };
+          if let Some((start, end)) = copy_mode {
+            if Pos::within(
+              start,
+              end,
+              &Pos {
+                y: (row as i32) - screen.scrollback() as i32,
+                x: col as i32,
+              },
+            ) {
+              to_cell.fg = Color::Black; // Black
+              to_cell.bg = Color::Cyan; // Cyan
             }
-          } else {
-            // Cell doesn't have content.
-            to_cell.set_char(' ');
           }
         } else {
           // Out of bounds.
