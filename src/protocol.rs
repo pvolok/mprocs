@@ -65,7 +65,9 @@ pub struct Cell {
   str: String,
   fg: Color,
   bg: Color,
+  underline_color: Color,
   mods: Modifier,
+  skip: bool,
 }
 
 impl From<&Cell> for tui::buffer::Cell {
@@ -74,7 +76,7 @@ impl From<&Cell> for tui::buffer::Cell {
       symbol: value.str.clone(),
       fg: value.fg,
       bg: value.bg,
-      underline_color: value.fg,
+      underline_color: value.underline_color,
       modifier: value.mods,
       skip: false,
     }
@@ -87,7 +89,9 @@ impl From<&tui::buffer::Cell> for Cell {
       str: value.symbol.clone(),
       fg: value.fg,
       bg: value.bg,
+      underline_color: value.underline_color,
       mods: value.modifier,
+      skip: value.skip,
     }
   }
 }
@@ -96,6 +100,8 @@ pub struct ProxyBackend {
   pub tx: MsgSender<SrvToClt>,
   pub height: u16,
   pub width: u16,
+  pub x: u16,
+  pub y: u16,
 }
 
 impl ProxyBackend {
@@ -134,10 +140,12 @@ impl Backend for ProxyBackend {
   }
 
   fn get_cursor(&mut self) -> Result<(u16, u16), std::io::Error> {
-    Ok((1, 1))
+    Ok((self.x, self.y))
   }
 
   fn set_cursor(&mut self, x: u16, y: u16) -> Result<(), std::io::Error> {
+    self.x = x;
+    self.y = y;
     self.send(SrvToClt::SetCursor { x, y });
     Ok(())
   }

@@ -795,6 +795,8 @@ impl ClientHandle {
       tx: write.clone(),
       width: size.width,
       height: size.height,
+      x: 0,
+      y: 0,
     };
     let terminal = Terminal::new(backend)?;
 
