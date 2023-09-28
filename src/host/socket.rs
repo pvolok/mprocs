@@ -185,9 +185,12 @@ mod windows {
   >(
     mut spawn_server: bool,
   ) -> anyhow::Result<(MsgSender<S>, MsgReceiver<R>)> {
-    let path = get_socket_addr()?;
     loop {
-      match TcpStream::connect(&path).await {
+      let addr = match get_socket_addr() {
+        Ok(addr) => addr,
+        Err(_) => continue,
+      };
+      match TcpStream::connect(&addr).await {
         Ok(socket) => {
           let (read, write) = socket.into_split();
           let sender = MsgSender::new(write);
