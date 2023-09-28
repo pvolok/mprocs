@@ -104,39 +104,64 @@ mod unix {
 
 #[cfg(windows)]
 mod windows {
-  use std::{fmt::Debug, time::Duration};
+  use std::{
+    fmt::Debug, io::Write, os::windows::prelude::OpenOptionsExt, path::PathBuf,
+    time::Duration,
+  };
 
   use serde::{de::DeserializeOwned, Serialize};
   use tokio::net::{TcpListener, TcpStream};
+  use winapi::um::winbase::FILE_FLAG_DELETE_ON_CLOSE;
 
   use crate::host::{
     daemon::spawn_server_daemon, receiver::MsgReceiver, sender::MsgSender,
   };
 
-  fn get_socket_path() -> (String, u16) {
-    (format!("127.0.0.1"), 15874)
+  fn get_socket_path() -> PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push("dekit.addr");
+    path
+  }
+
+  fn get_socket_addr() -> anyhow::Result<String> {
+    let path = get_socket_path();
+    let addr = std::fs::read_to_string(path)?;
+    Ok(addr)
   }
 
   pub async fn bind_server_socket() -> anyhow::Result<ServerSocket> {
     let path = get_socket_path();
 
-    let bind = || TcpListener::bind(&path);
-    let listener = match bind().await {
-      Ok(listener) => listener,
+    let bind = || TcpListener::bind(("127.0.0.1", 0));
+    let (file, listener) = match bind().await {
+      Ok(listener) => {
+        let addr = listener.local_addr()?.to_string();
+        log::info!("Listening on {}", addr);
+
+        let mut file_opts = std::fs::OpenOptions::new();
+        file_opts
+          .write(true)
+          .truncate(true)
+          .create(true)
+          .custom_flags(FILE_FLAG_DELETE_ON_CLOSE);
+        let mut file = file_opts.open(&path)?;
+        file.write_all(addr.as_bytes())?;
+        log::info!("Wrote socket address into {}", path.to_string_lossy());
+
+        (file, listener)
+      }
       Err(err) => return Err(err.into()),
     };
 
-    Ok(ServerSocket { listener })
+    Ok(ServerSocket { file, listener })
   }
 
   pub struct ServerSocket {
+    #[allow(dead_code)]
+    /// Handle to file with socket address. File has FILE_FLAG_DELETE_ON_CLOSE
+    /// flag.
+    file: std::fs::File,
     listener: TcpListener,
-  }
-
-  impl Drop for ServerSocket {
-    fn drop(&mut self) {
-      // std::fs::remove_file(&self.path).log_ignore();
-    }
   }
 
   impl ServerSocket {
@@ -160,7 +185,7 @@ mod windows {
   >(
     mut spawn_server: bool,
   ) -> anyhow::Result<(MsgSender<S>, MsgReceiver<R>)> {
-    let path = get_socket_path();
+    let path = get_socket_addr()?;
     loop {
       match TcpStream::connect(&path).await {
         Ok(socket) => {
