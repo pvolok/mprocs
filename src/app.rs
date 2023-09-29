@@ -80,11 +80,10 @@ pub struct App {
   proc_tx: UnboundedSender<(usize, ProcEvent)>,
   ev_rx: UnboundedReceiver<AppEvent>,
   ev_tx: UnboundedSender<AppEvent>,
-  kernel_sender: KernelSender,
+  // kernel_sender: KernelSender,
   kernel_receiver: tokio::sync::mpsc::UnboundedReceiver<KernelMessage>,
 
   screen_size: Size,
-  pending_clients: Vec<ClientConnector>,
   clients: Vec<ClientHandle>,
 }
 
@@ -242,7 +241,9 @@ impl App {
         self.update_screen_size();
         loop_action.render();
       }
-      KernelMessage::ClientDisconnected { client_id } => todo!(),
+      KernelMessage::ClientDisconnected { client_id: _ } => {
+        // Nothing to do.
+      }
     }
     Ok(())
   }
@@ -272,12 +273,16 @@ impl App {
     client_id: ClientId,
     msg: CltToSrv,
   ) -> anyhow::Result<()> {
-    match msg {
+    self.state.current_client_id = Some(client_id);
+    let ret = match msg {
       CltToSrv::Init { .. } => bail!("Init message is unexpected."),
       CltToSrv::Key(event) => {
-        Ok(self.handle_input(loop_action, client_id, event))
+        self.handle_input(loop_action, client_id, event);
+        Ok(())
       }
-    }
+    };
+    self.state.current_client_id = None;
+    ret
   }
 
   fn handle_input(
@@ -407,12 +412,7 @@ impl App {
       }
 
       AppEvent::QuitOrAsk => {
-        let have_running = self.state.procs.iter().any(|p| p.is_up());
-        if have_running {
-          self.modal = Some(QuitModal::new(self.ev_tx.clone()).boxed());
-        } else {
-          self.state.quitting = true;
-        }
+        self.modal = Some(QuitModal::new(self.ev_tx.clone()).boxed());
         loop_action.render();
       }
       AppEvent::Quit => {
@@ -431,6 +431,11 @@ impl App {
           }
         }
         loop_action.force_quit();
+      }
+      AppEvent::Detach { client_id } => {
+        self.clients.retain_mut(|c| c.id != *client_id);
+        self.update_screen_size();
+        loop_action.render();
       }
 
       AppEvent::ToggleFocus => {
@@ -788,6 +793,9 @@ impl ClientHandle {
             Err(_err) => break,
           }
         }
+        kernel_sender
+          .send(KernelMessage::ClientDisconnected { client_id: id })
+          .log_ignore();
       });
     }
 
@@ -924,6 +932,8 @@ pub async fn server_main(config: Config, keymap: Keymap) -> anyhow::Result<()> {
   let (ev_tx, ev_rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
 
   let state = State {
+    current_client_id: None,
+
     scope: Scope::Procs,
     procs: Vec::new(),
     selected: 0,
@@ -942,14 +952,13 @@ pub async fn server_main(config: Config, keymap: Keymap) -> anyhow::Result<()> {
     ev_rx,
     ev_tx,
 
-    kernel_sender,
+    // kernel_sender,
     kernel_receiver,
 
     screen_size: Size {
       width: 160,
       height: 50,
     },
-    pending_clients: Vec::new(),
     clients: Vec::new(),
   };
   app.run().await?;

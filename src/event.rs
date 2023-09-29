@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use crate::key::Key;
+use crate::{app::ClientId, key::Key};
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(tag = "c", rename_all = "kebab-case")]
@@ -12,6 +12,7 @@ pub enum AppEvent {
   QuitOrAsk,
   Quit,
   ForceQuit,
+  Detach { client_id: ClientId },
 
   ToggleFocus,
   FocusProcs,
@@ -56,6 +57,9 @@ impl AppEvent {
       AppEvent::QuitOrAsk => "Quit".to_string(),
       AppEvent::Quit => "Quit (without dialog)".to_string(),
       AppEvent::ForceQuit => "Force quit".to_string(),
+      AppEvent::Detach { client_id } => {
+        format!("Detach client #{:?}", client_id)
+      }
       AppEvent::ToggleFocus => "Toggle focus".to_string(),
       AppEvent::FocusProcs => "Focus proccess list".to_string(),
       AppEvent::FocusTerm => "Focus terminal".to_string(),
