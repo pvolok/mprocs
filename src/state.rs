@@ -1,4 +1,5 @@
 use crate::{
+  app::ClientId,
   keymap::KeymapGroup,
   proc::{handle::ProcHandle, CopyMode},
 };
@@ -29,6 +30,8 @@ impl Scope {
 }
 
 pub struct State {
+  pub current_client_id: Option<ClientId>,
+
   pub scope: Scope,
   pub procs: Vec<ProcHandle>,
   pub selected: usize,

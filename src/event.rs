@@ -12,6 +12,7 @@ pub enum AppEvent {
   QuitOrAsk,
   Quit,
   ForceQuit,
+  Detach,
 
   ToggleFocus,
   FocusProcs,
@@ -56,6 +57,7 @@ impl AppEvent {
       AppEvent::QuitOrAsk => "Quit".to_string(),
       AppEvent::Quit => "Quit (without dialog)".to_string(),
       AppEvent::ForceQuit => "Force quit".to_string(),
+      AppEvent::Detach => "Detach client".to_string(),
       AppEvent::ToggleFocus => "Toggle focus".to_string(),
       AppEvent::FocusProcs => "Focus proccess list".to_string(),
       AppEvent::FocusTerm => "Focus terminal".to_string(),

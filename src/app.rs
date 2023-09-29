@@ -242,7 +242,10 @@ impl App {
         self.update_screen_size();
         loop_action.render();
       }
-      KernelMessage::ClientDisconnected { client_id } => todo!(),
+      KernelMessage::ClientDisconnected { client_id } => {
+        self.clients.retain(|c| c.id != client_id);
+        loop_action.render();
+      }
     }
     Ok(())
   }
@@ -275,7 +278,10 @@ impl App {
     match msg {
       CltToSrv::Init { .. } => bail!("Init message is unexpected."),
       CltToSrv::Key(event) => {
-        Ok(self.handle_input(loop_action, client_id, event))
+        self.state.current_client_id = Some(client_id);
+        self.handle_input(loop_action, client_id, event);
+        self.state.current_client_id = None;
+        Ok(())
       }
     }
   }
@@ -407,12 +413,7 @@ impl App {
       }
 
       AppEvent::QuitOrAsk => {
-        let have_running = self.state.procs.iter().any(|p| p.is_up());
-        if have_running {
-          self.modal = Some(QuitModal::new(self.ev_tx.clone()).boxed());
-        } else {
-          self.state.quitting = true;
-        }
+        self.modal = Some(QuitModal::new(self.ev_tx.clone()).boxed());
         loop_action.render();
       }
       AppEvent::Quit => {
@@ -431,6 +432,19 @@ impl App {
           }
         }
         loop_action.force_quit();
+      }
+      AppEvent::Detach => {
+        log::info!("Detach {:?}", self.state.current_client_id);
+        if let Some(client_id) = self.state.current_client_id {
+          self.clients.retain_mut(|c| {
+            if c.id == client_id {
+              c.sender.send(SrvToClt::Quit).log_ignore();
+              false
+            } else {
+              true
+            }
+          });
+        }
       }
 
       AppEvent::ToggleFocus => {
@@ -924,6 +938,8 @@ pub async fn server_main(config: Config, keymap: Keymap) -> anyhow::Result<()> {
   let (ev_tx, ev_rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
 
   let state = State {
+    current_client_id: None,
+
     scope: Scope::Procs,
     procs: Vec::new(),
     selected: 0,

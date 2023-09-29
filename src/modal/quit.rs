@@ -2,6 +2,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent};
 use tokio::sync::mpsc::UnboundedSender;
 use tui::{
   prelude::{Margin, Rect},
+  text::Line,
   widgets::{Clear, Paragraph},
   Frame,
 };
@@ -48,6 +49,18 @@ impl Modal for QuitModal {
         return true;
       }
       Event::Key(KeyEvent {
+        code: KeyCode::Char('d'),
+        modifiers,
+        ..
+      }) if modifiers.is_empty() => {
+        self
+          .app_sender
+          .send(AppEvent::CloseCurrentModal)
+          .log_ignore();
+        self.app_sender.send(AppEvent::Detach).unwrap();
+        return true;
+      }
+      Event::Key(KeyEvent {
         code: KeyCode::Esc,
         modifiers,
         ..
@@ -81,7 +94,7 @@ impl Modal for QuitModal {
   }
 
   fn get_size(&mut self) -> (u16, u16) {
-    (36, 3)
+    (36, 5)
   }
 
   fn render(&mut self, frame: &mut Frame<ProxyBackend>) {
@@ -93,8 +106,12 @@ impl Modal for QuitModal {
 
     let inner = area.inner(&Margin::new(1, 1));
 
-    let txt = Paragraph::new("Stop processes and quit? (y/n)");
-    let txt_area = Rect::new(inner.x, inner.y, inner.width, 1);
+    let txt = Paragraph::new(vec![
+      Line::from("<q> - quit"),
+      Line::from("<d> - detach"),
+      Line::from("<Escape> - cancel"),
+    ]);
+    let txt_area = Rect::new(inner.x, inner.y, inner.width, 3);
     frame.render_widget(Clear, txt_area);
     frame.render_widget(txt, txt_area);
   }
