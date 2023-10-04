@@ -552,6 +552,7 @@ impl App {
             cwd: None,
             env: None,
             autostart: true,
+            startup_delay: std::time::Duration::ZERO,
             stop: StopSignal::default(),
             mouse_scroll_speed: self.config.mouse_scroll_speed,
           },

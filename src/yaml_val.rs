@@ -94,6 +94,12 @@ impl<'a> Val<'a> {
     })
   }
 
+  pub fn as_f64(&self) -> anyhow::Result<f64> {
+    self.0.as_f64().ok_or_else(|| {
+      anyhow::format_err!("Expected number at {}", self.1.to_string())
+    })
+  }
+
   pub fn as_usize(&self) -> anyhow::Result<usize> {
     self
       .0

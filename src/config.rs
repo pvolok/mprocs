@@ -1,4 +1,4 @@
-use std::{ffi::OsString, path::PathBuf, str::FromStr};
+use std::{ffi::OsString, path::PathBuf, str::FromStr, time::Duration};
 
 use anyhow::{bail, Result};
 use indexmap::IndexMap;
@@ -88,6 +88,7 @@ pub struct ProcConfig {
   pub cwd: Option<OsString>,
   pub env: Option<IndexMap<String, Option<String>>>,
   pub autostart: bool,
+  pub startup_delay: Duration,
 
   pub stop: StopSignal,
 
@@ -114,6 +115,7 @@ impl ProcConfig {
         env: None,
         autostart: true,
         stop: StopSignal::default(),
+        startup_delay: Duration::ZERO,
 
         mouse_scroll_speed,
       })),
@@ -131,6 +133,7 @@ impl ProcConfig {
           env: None,
           autostart: true,
           stop: StopSignal::default(),
+          startup_delay: Duration::ZERO,
           mouse_scroll_speed,
         }))
       }
@@ -238,6 +241,11 @@ impl ProcConfig {
           .get(&Value::from("autostart"))
           .map_or(Ok(true), |v| v.as_bool())?;
 
+        let startup_delay = map
+          .get(&Value::from("startup_delay"))
+          .map_or(Ok(0.0), |v| v.as_f64())
+          .map(Duration::from_secs_f64)?;
+
         let stop_signal = if let Some(val) = map.get(&Value::from("stop")) {
           serde_yaml::from_value(val.raw().clone())?
         } else {
@@ -250,6 +258,7 @@ impl ProcConfig {
           cwd,
           env,
           autostart,
+          startup_delay,
           stop: stop_signal,
           mouse_scroll_speed,
         }))

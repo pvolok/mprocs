@@ -53,6 +53,7 @@ impl Inst {
     id: usize,
     cmd: CommandBuilder,
     tx: UnboundedSender<(usize, ProcEvent)>,
+    startup_delay: Duration,
     size: &Size,
   ) -> anyhow::Result<Self> {
     let vt = vt100::Parser::new(size.height, size.width, 1000);
@@ -79,7 +80,8 @@ impl Inst {
       let tx = tx.clone();
       let vt = vt.clone();
       let running = running.clone();
-      spawn_blocking(move || {
+      spawn_blocking(move || async move {
+        tokio::time::sleep(startup_delay).await;
         let mut buf = [0; 4 * 1024];
         loop {
           if !running.load(Ordering::Relaxed) {
@@ -226,17 +228,17 @@ impl Proc {
     };
 
     if cfg.autostart {
-      proc.spawn_new_inst();
+      proc.spawn_new_inst(cfg.startup_delay);
     }
 
     proc
   }
 
-  fn spawn_new_inst(&mut self) {
+  fn spawn_new_inst(&mut self, startup_delay: Duration) {
     assert_matches!(self.inst, ProcState::None);
 
     let spawned =
-      Inst::spawn(self.id, self.cmd.clone(), self.tx.clone(), &self.size);
+      Inst::spawn(self.id, self.cmd.clone(), self.tx.clone(), startup_delay, &self.size);
     let inst = match spawned {
       Ok(inst) => ProcState::Some(inst),
       Err(err) => ProcState::Error(err.to_string()),
@@ -247,7 +249,7 @@ impl Proc {
   pub fn start(&mut self) {
     if !self.is_up() {
       self.inst = ProcState::None;
-      self.spawn_new_inst();
+      self.spawn_new_inst(Duration::ZERO);
     }
   }
 

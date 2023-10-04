@@ -1,4 +1,4 @@
-use std::{fs::File, io::BufReader};
+use std::{fs::File, io::BufReader, time::Duration};
 
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -45,6 +45,7 @@ pub fn load_npm_procs(settings: &Settings) -> Result<Vec<ProcConfig>> {
     cwd: None,
     env: Some(env.clone()),
     autostart: false,
+    startup_delay: Duration::ZERO,
 
     stop: StopSignal::default(),
     mouse_scroll_speed: settings.mouse_scroll_speed,

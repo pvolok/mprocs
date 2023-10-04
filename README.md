@@ -147,6 +147,8 @@ settings the _global_.
   - **add_path**: _string|array<string>_ - Add entries to the _PATH_
     environment variable.
   - **autostart**: _bool_ - Start process when mprocs starts. Default: _true_.
+  - **startup_delay**: _float_ - Delay in seconds before starting the process.
+    Default: _0_.
   - **stop**: _"SIGINT"|"SIGTERM"|"SIGKILL"|{send-keys:
     array<key>}|"hard-kill"_ -
     A way to stop a process (using `x` key or when quitting mprocs).

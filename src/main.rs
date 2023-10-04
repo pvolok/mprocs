@@ -26,7 +26,7 @@ mod ui_zoom_tip;
 mod widgets;
 mod yaml_val;
 
-use std::{io::Read, path::Path};
+use std::{io::Read, path::Path, time::Duration};
 
 use anyhow::{bail, Result};
 use app::server_main;
@@ -144,6 +144,7 @@ async fn run_app() -> anyhow::Result<()> {
           env: None,
           cwd: None,
           autostart: true,
+          startup_delay: Duration::ZERO,
           stop: StopSignal::default(),
           mouse_scroll_speed: settings.mouse_scroll_speed,
         })
