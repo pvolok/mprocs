@@ -37,7 +37,7 @@ impl Modal for QuitModal {
   ) -> bool {
     match event {
       Event::Key(KeyEvent {
-        code: KeyCode::Char('y'),
+        code: KeyCode::Char('e'),
         modifiers,
         ..
       }) if modifiers.is_empty() => {
@@ -112,9 +112,9 @@ impl Modal for QuitModal {
     let inner = area.inner(&Margin::new(1, 1));
 
     let txt = Paragraph::new(vec![
-      Line::from("<q> - quit"),
-      Line::from("<d> - detach"),
-      Line::from("<Escape> - cancel"),
+      Line::from("<e>   - exit client and server"),
+      Line::from("<d>   - detach client"),
+      Line::from("<Esc> - cancel"),
     ]);
     let txt_area = Rect::new(inner.x, inner.y, inner.width, 3);
     frame.render_widget(Clear, txt_area);
