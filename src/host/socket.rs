@@ -188,7 +188,15 @@ mod windows {
     loop {
       let addr = match get_socket_addr() {
         Ok(addr) => addr,
-        Err(_) => continue,
+        Err(_) => {
+          // Socket doesn't exist.
+          if spawn_server {
+            spawn_server = false;
+            spawn_server_daemon()?;
+          }
+          tokio::time::sleep(Duration::from_millis(50)).await;
+          continue;
+        }
       };
       match TcpStream::connect(&addr).await {
         Ok(socket) => {
@@ -202,7 +210,6 @@ mod windows {
             std::io::ErrorKind::NotFound
             | std::io::ErrorKind::ConnectionRefused => {
               // ConnectionRefused: Socket exists, but no process is listening.
-
               if spawn_server {
                 spawn_server = false;
                 spawn_server_daemon()?;
@@ -210,7 +217,7 @@ mod windows {
             }
             _ => (),
           }
-          tokio::time::sleep(Duration::from_millis(20)).await;
+          tokio::time::sleep(Duration::from_millis(50)).await;
         }
       }
     }
