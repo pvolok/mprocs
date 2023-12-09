@@ -98,7 +98,7 @@ impl Modal for QuitModal {
     }
   }
 
-  fn get_size(&mut self) -> (u16, u16) {
+  fn get_size(&mut self, _: Rect) -> (u16, u16) {
     (36, 5)
   }
 

@@ -157,6 +157,7 @@ impl Settings {
 
     s.keymap_add_p(KeyCode::Char('q').into(), AppEvent::QuitOrAsk);
     s.keymap_add_p(KeyCode::Char('Q').into(), AppEvent::ForceQuit);
+    s.keymap_add_p(KeyCode::Char('p').into(), AppEvent::ShowCommandsMenu);
     s.keymap_add_p(
       Key::new(KeyCode::Down, KeyModifiers::NONE),
       AppEvent::NextProc,

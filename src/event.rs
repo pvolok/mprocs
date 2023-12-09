@@ -19,6 +19,7 @@ pub enum AppEvent {
   FocusTerm,
   Zoom,
 
+  ShowCommandsMenu,
   NextProc,
   PrevProc,
   SelectProc { index: usize },
@@ -64,6 +65,7 @@ impl AppEvent {
       AppEvent::FocusProcs => "Focus proccess list".to_string(),
       AppEvent::FocusTerm => "Focus terminal".to_string(),
       AppEvent::Zoom => "Zoom into terminal".to_string(),
+      AppEvent::ShowCommandsMenu => "Show commands menu".to_string(),
       AppEvent::NextProc => "Next".to_string(),
       AppEvent::PrevProc => "Prev".to_string(),
       AppEvent::SelectProc { index } => format!("Select process #{}", index),

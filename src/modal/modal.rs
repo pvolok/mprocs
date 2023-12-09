@@ -13,10 +13,10 @@ pub trait Modal: Send {
     event: &Event,
   ) -> bool;
 
-  fn get_size(&mut self) -> (u16, u16);
+  fn get_size(&mut self, frame_area: Rect) -> (u16, u16);
 
   fn area(&mut self, frame_area: Rect) -> Rect {
-    let (w, h) = self.get_size();
+    let (w, h) = self.get_size(frame_area);
 
     let y = frame_area.height.saturating_sub(h) / 2;
     let x = frame_area.width.saturating_sub(w) / 2;

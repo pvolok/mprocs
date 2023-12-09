@@ -25,8 +25,9 @@ use crate::{
   key::Key,
   keymap::Keymap,
   modal::{
-    add_proc::AddProcModal, modal::Modal, quit::QuitModal,
-    remove_proc::RemoveProcModal, rename_proc::RenameProcModal,
+    add_proc::AddProcModal, commands_menu::CommandsMenuModal, modal::Modal,
+    quit::QuitModal, remove_proc::RemoveProcModal,
+    rename_proc::RenameProcModal,
   },
   mouse::MouseEvent,
   proc::{
@@ -455,6 +456,10 @@ impl App {
         loop_action.render();
       }
 
+      AppEvent::ShowCommandsMenu => {
+        self.modal = Some(CommandsMenuModal::new(self.ev_tx.clone()).boxed());
+        loop_action.render();
+      }
       AppEvent::NextProc => {
         let mut next = self.state.selected + 1;
         if next >= self.state.procs.len() {

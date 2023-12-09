@@ -94,7 +94,7 @@ impl Modal for RenameProcModal {
     }
   }
 
-  fn get_size(&mut self) -> (u16, u16) {
+  fn get_size(&mut self, _: Rect) -> (u16, u16) {
     (42, 3)
   }
 
