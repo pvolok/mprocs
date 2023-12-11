@@ -1,8 +1,10 @@
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tokio::sync::mpsc::UnboundedSender;
 use tui::{
   prelude::{Margin, Rect},
-  text::Span,
+  style::{Modifier, Style},
+  text::{Line, Span},
+  widgets::{HighlightSpacing, ListItem, ListState, Paragraph},
   Frame,
 };
 use tui_input::Input;
@@ -17,6 +19,8 @@ use super::modal::Modal;
 
 pub struct CommandsMenuModal {
   input: Input,
+  list_state: ListState,
+  items: Vec<CommandInfo>,
   app_sender: UnboundedSender<AppEvent>,
 }
 
@@ -24,6 +28,8 @@ impl CommandsMenuModal {
   pub fn new(app_sender: UnboundedSender<AppEvent>) -> Self {
     CommandsMenuModal {
       input: Input::default(),
+      list_state: ListState::default().with_selected(Some(0)),
+      items: get_commands(""),
       app_sender,
     }
   }
@@ -40,6 +46,14 @@ impl Modal for CommandsMenuModal {
     loop_action: &mut LoopAction,
     event: &Event,
   ) -> bool {
+    match event {
+      Event::Key(KeyEvent {
+        kind: KeyEventKind::Release,
+        ..
+      }) => return false,
+      _ => (),
+    }
+
     match event {
       Event::Key(KeyEvent {
         code: KeyCode::Enter,
@@ -71,12 +85,48 @@ impl Modal for CommandsMenuModal {
         loop_action.render();
         return true;
       }
+      // List bindings
+      Event::Key(KeyEvent {
+        code: KeyCode::Char('n'),
+        modifiers,
+        ..
+      }) if modifiers == &KeyModifiers::CONTROL => {
+        let index = self.list_state.selected().unwrap_or(0);
+        let index = if index == 0 {
+          self.items.len() - 1
+        } else {
+          index - 1
+        };
+        self.list_state.select(Some(index));
+        loop_action.render();
+        return true;
+      }
+      Event::Key(KeyEvent {
+        code: KeyCode::Char('p'),
+        modifiers,
+        ..
+      }) if modifiers == &KeyModifiers::CONTROL => {
+        let index = self.list_state.selected().unwrap_or(0);
+        let index = if index >= self.items.len() - 1 {
+          0
+        } else {
+          index + 1
+        };
+        self.list_state.select(Some(index));
+        loop_action.render();
+        return true;
+      }
       _ => (),
     }
 
     let req = tui_input::backend::crossterm::to_input_request(&event);
     if let Some(req) = req {
-      self.input.handle(req);
+      let res = self.input.handle(req);
+      if let Some(res) = res {
+        if res.value {
+          self.items = get_commands(self.input.value());
+        }
+      }
       loop_action.render();
       return true;
     }
@@ -104,10 +154,65 @@ impl Modal for CommandsMenuModal {
 
     let block = theme
       .pane(true)
-      .title(Span::styled("Command", theme.pane_title(true)));
+      .border_type(tui::widgets::BorderType::Rounded);
     frame.render_widget(block, area);
 
     let inner = area.inner(&Margin::new(1, 1));
+    let list_area = Rect::new(
+      inner.x,
+      inner.y,
+      inner.width,
+      inner.height.saturating_sub(2),
+    );
+    let above_input = Rect::new(
+      inner.x,
+      (inner.y + inner.height).saturating_sub(2),
+      inner.width,
+      1,
+    );
+
+    let list_items = self
+      .items
+      .iter()
+      .map(|(cmd, desc)| {
+        let line = Line::from(vec![
+          Span::styled(*cmd, Style::reset().fg(tui::style::Color::White)),
+          "  ".into(),
+          Span::styled(
+            desc,
+            Style::reset()
+              .fg(tui::style::Color::DarkGray)
+              .add_modifier(Modifier::ITALIC),
+          ),
+        ]);
+        ListItem::new(line)
+      })
+      .collect::<Vec<_>>();
+    let list = tui::widgets::List::new(list_items)
+      .highlight_spacing(HighlightSpacing::Always)
+      .highlight_symbol(">")
+      .start_corner(tui::layout::Corner::BottomLeft);
+    frame.render_stateful_widget(list, list_area, &mut self.list_state);
+
+    let input_label = "Run command";
+    frame.render_widget(Paragraph::new(input_label), above_input);
+
+    frame.render_widget(
+      Paragraph::new(tui::symbols::line::VERTICAL_RIGHT),
+      Rect::new(area.x, above_input.y, 1, 1),
+    );
+    frame.render_widget(
+      Paragraph::new(tui::symbols::line::VERTICAL_LEFT),
+      Rect::new(above_input.right(), above_input.y, 1, 1),
+    );
+    for x in above_input.x + input_label.len() as u16
+      ..above_input.x + above_input.width
+    {
+      frame.render_widget(
+        Paragraph::new(tui::symbols::line::HORIZONTAL),
+        Rect::new(x, above_input.y, 1, 1),
+      );
+    }
 
     let mut cursor = (0u16, 0u16);
     let text_input = TextInput::new(&mut self.input);
@@ -119,4 +224,45 @@ impl Modal for CommandsMenuModal {
 
     frame.set_cursor(cursor.0, cursor.1);
   }
+}
+
+type CommandInfo = (&'static str, String);
+
+fn get_commands(search: &str) -> Vec<CommandInfo> {
+  let events = [
+    ("quit-or-ask", AppEvent::QuitOrAsk),
+    ("quit", AppEvent::Quit),
+    ("force-quit", AppEvent::ForceQuit),
+    ("toggle-focus", AppEvent::ToggleFocus),
+    ("focus-term", AppEvent::FocusTerm),
+    ("zoom", AppEvent::Zoom),
+    ("show-commands-menu", AppEvent::ShowCommandsMenu),
+    ("next-proc", AppEvent::NextProc),
+    ("prev-proc", AppEvent::PrevProc),
+    ("start-proc", AppEvent::StartProc),
+    ("term-proc", AppEvent::TermProc),
+    ("kill-proc", AppEvent::KillProc),
+    ("restart-proc", AppEvent::RestartProc),
+    ("force-restart-proc", AppEvent::ForceRestartProc),
+    ("show-add-proc", AppEvent::ShowAddProc),
+    ("show-rename-proc", AppEvent::ShowRenameProc),
+    ("show-remove-proc", AppEvent::ShowRemoveProc),
+    ("close-current-modal", AppEvent::CloseCurrentModal),
+    ("scroll-down", AppEvent::ScrollDown),
+    ("scroll-up", AppEvent::ScrollUp),
+    ("copy-mode-enter", AppEvent::CopyModeEnter),
+    ("copy-mode-leave", AppEvent::CopyModeLeave),
+    ("copy-mode-end", AppEvent::CopyModeEnd),
+    ("copy-mode-copy", AppEvent::CopyModeCopy),
+  ];
+
+  let mut result = Vec::new();
+  for (cmd, event) in events {
+    let desc = event.desc();
+    if cmd.contains(search) || desc.contains(search) {
+      result.push((cmd, desc));
+    }
+  }
+
+  result
 }
