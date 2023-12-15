@@ -1,4 +1,4 @@
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use tokio::sync::mpsc::UnboundedSender;
 use tui::{
   prelude::{Margin, Rect},
@@ -48,14 +48,6 @@ impl Modal for CommandsMenuModal {
   ) -> bool {
     match event {
       Event::Key(KeyEvent {
-        kind: KeyEventKind::Release,
-        ..
-      }) => return false,
-      _ => (),
-    }
-
-    match event {
-      Event::Key(KeyEvent {
         code: KeyCode::Enter,
         modifiers,
         ..
@@ -64,12 +56,14 @@ impl Modal for CommandsMenuModal {
           .app_sender
           .send(AppEvent::CloseCurrentModal)
           .log_ignore();
-        self
-          .app_sender
-          .send(AppEvent::AddProc {
-            cmd: self.input.value().to_string(),
-          })
-          .unwrap();
+        if let Some((_, _, event)) = self
+          .list_state
+          .selected()
+          .map(|i| self.items.get(i))
+          .flatten()
+        {
+          self.app_sender.send(event.clone()).unwrap();
+        }
         // Skip because AddProc event will immediately rerender.
         return true;
       }
@@ -174,7 +168,7 @@ impl Modal for CommandsMenuModal {
     let list_items = self
       .items
       .iter()
-      .map(|(cmd, desc)| {
+      .map(|(cmd, desc, _event)| {
         let line = Line::from(vec![
           Span::styled(*cmd, Style::reset().fg(tui::style::Color::White)),
           "  ".into(),
@@ -226,7 +220,7 @@ impl Modal for CommandsMenuModal {
   }
 }
 
-type CommandInfo = (&'static str, String);
+type CommandInfo = (&'static str, String, AppEvent);
 
 fn get_commands(search: &str) -> Vec<CommandInfo> {
   let events = [
@@ -260,7 +254,7 @@ fn get_commands(search: &str) -> Vec<CommandInfo> {
   for (cmd, event) in events {
     let desc = event.desc();
     if cmd.contains(search) || desc.contains(search) {
-      result.push((cmd, desc));
+      result.push((cmd, desc, event));
     }
   }
 

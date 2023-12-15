@@ -1,5 +1,7 @@
 use anyhow::bail;
-use crossterm::event::{Event, MouseButton, MouseEventKind};
+use crossterm::event::{
+  Event, KeyEvent, KeyEventKind, MouseButton, MouseEventKind,
+};
 use futures::{future::FutureExt, select};
 use serde::{Deserialize, Serialize};
 use termwiz::escape::csi::CursorStyle;
@@ -292,6 +294,14 @@ impl App {
     client_id: ClientId,
     event: Event,
   ) {
+    match event {
+      Event::Key(KeyEvent {
+        kind: KeyEventKind::Release,
+        ..
+      }) => return,
+      _ => (),
+    }
+
     if let Some(modal) = &mut self.modal {
       let handled = modal.handle_input(&mut self.state, loop_action, &event);
       if handled {
