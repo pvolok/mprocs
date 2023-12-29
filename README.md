@@ -178,6 +178,8 @@ Lower levers override bindings from previous levels. Key bindings from previous
 levels can be cleared by specifying `reset: true` field at the same level as
 keys.
 
+Key bindings are defined between `<` and `>`, e.g., `<Enter>` (enter key), `<Down>` (down arrow), `<Up>` (up arrow), `<C-q>` (CTRL + q).
+
 ```yaml
 keymap_procs: # keymap when process list is focused
   <C-q>: { c: toggle-focus }
@@ -298,7 +300,7 @@ Commands are encoded as yaml. Available commands:
 - `{c: zoom}` - Zoom into terminal window
 - `{c: next-proc}`
 - `{c: prev-proc}`
-- `{c: select-proc, index: <PROCESS INDEX>}` - Select process by index
+- `{c: select-proc, index: <PROCESS INDEX>}` - Select process by index, top process has index 0
 - `{c: start-proc}`
 - `{c: term-proc}`
 - `{c: kill-proc}`
