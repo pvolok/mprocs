@@ -212,7 +212,7 @@ Example `mprocs.yaml`:
 
 ```yaml
 procs:
-  my processs:
+  my process:
     shell:
       $select: os
       windows: "echo %TEXT%"

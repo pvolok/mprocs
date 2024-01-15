@@ -62,7 +62,7 @@ impl AppEvent {
         format!("Detach client #{:?}", client_id)
       }
       AppEvent::ToggleFocus => "Toggle focus".to_string(),
-      AppEvent::FocusProcs => "Focus proccess list".to_string(),
+      AppEvent::FocusProcs => "Focus process list".to_string(),
       AppEvent::FocusTerm => "Focus terminal".to_string(),
       AppEvent::Zoom => "Zoom into terminal".to_string(),
       AppEvent::ShowCommandsMenu => "Show commands menu".to_string(),
