@@ -1,6 +1,6 @@
 use super::{
   msg::{ProcCmd, ProcEvent},
-  CopyMode, Proc,
+  CopyMode, Proc, ProcState,
 };
 
 pub struct ProcHandle {
@@ -40,12 +40,12 @@ impl ProcHandle {
 
   pub fn lock_view(&self) -> ProcViewFrame {
     match &self.proc.inst {
-      super::ProcState::None => ProcViewFrame::Empty,
-      super::ProcState::Some(inst) => inst
+      ProcState::None => ProcViewFrame::Empty,
+      ProcState::Some(inst) => inst
         .vt
         .read()
         .map_or(ProcViewFrame::Empty, |vt| ProcViewFrame::Vt(vt)),
-      super::ProcState::Error(err) => ProcViewFrame::Err(&err),
+      ProcState::Error(err) => ProcViewFrame::Err(&err),
     }
   }
 
@@ -68,9 +68,7 @@ impl ProcHandle {
   pub fn focus(&mut self) {
     self.changed = false;
   }
-}
 
-impl ProcHandle {
   pub fn handle_event(&mut self, event: ProcEvent, selected: bool) {
     match event {
       ProcEvent::Render => {
@@ -80,6 +78,15 @@ impl ProcHandle {
       }
       ProcEvent::Stopped => {
         self.is_up = false;
+        if let ProcState::Some(inst) = &self.proc.inst {
+          let exit_status = inst.exit_status.lock().unwrap();
+          if let Some(_code) = *exit_status {
+            // Here you can handle the exit status, for example:
+            // - Update the UI with the exit code
+            // - Log the exit status
+            // - Perform any other necessary actions based on the exit status
+          }
+        }
         if self.to_restart {
           self.to_restart = false;
           self.send(ProcCmd::Start);
@@ -88,6 +95,16 @@ impl ProcHandle {
       ProcEvent::Started => {
         self.is_up = true;
       }
+    }
+  }
+
+  // New method to retrieve the exit status
+  pub fn exit_status(&self) -> Option<i32> {
+    if let ProcState::Some(inst) = &self.proc.inst {
+      let exit_status = inst.exit_status.lock().unwrap();
+      *exit_status
+    } else {
+      None
     }
   }
 }

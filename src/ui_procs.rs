@@ -71,7 +71,18 @@ fn create_proc_item<'a>(
         .add_modifier(Modifier::BOLD),
     )
   } else {
-    Span::styled(" DOWN ", Style::default().fg(Color::LightRed))
+    // Check if the process exited successfully (exit code 0)
+    let exit_status = proc_handle.exit_status();
+    let (status_text, status_color) = if exit_status == Some(0) {
+      // Display 'DOWN' in black for successful exits
+      (" DOWN ", Color::Black)
+    } else {
+      // Display 'DOWN' in red for errors or non-zero exit codes
+      (" DOWN ", Color::LightRed)
+    };
+    // Optionally, display the exit code next to the status
+    let status_text = format!("{}({})", status_text, exit_status.unwrap_or_default());
+    Span::styled(status_text, Style::default().fg(status_color))
   };
 
   let mark = if is_cur {

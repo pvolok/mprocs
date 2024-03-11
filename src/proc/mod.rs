@@ -3,7 +3,7 @@ pub mod msg;
 
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, Mutex};
 use std::thread::{self, spawn};
 use std::time::Duration;
 
@@ -35,6 +35,7 @@ pub struct Inst {
   pub killer: Box<dyn ChildKiller + Send + Sync>,
 
   pub running: Arc<AtomicBool>,
+  pub exit_status: Arc<Mutex<Option<i32>>>,
 }
 
 impl Debug for Inst {
@@ -42,6 +43,7 @@ impl Debug for Inst {
     f.debug_struct("Inst")
       .field("pid", &self.pid)
       .field("running", &self.running)
+      .field("exit_status", &self.exit_status)
       .finish()
   }
 }
@@ -106,13 +108,23 @@ impl Inst {
       });
     }
 
+    let exit_status = Arc::new(Mutex::new(None));
+
     {
       let tx = tx.clone();
       let running = running.clone();
+      let exit_status = exit_status.clone();
       spawn(move || {
         // Block until program exits
-        let _status = child.wait();
+        let exit_code = match child.wait() {
+          Ok(status) => status.exit_code(),
+          Err(e) => {
+            log::error!("Failed to wait for child process: {}", e);
+            1 // Default exit code for an error
+          }
+        };
         running.store(false, Ordering::Relaxed);
+        *exit_status.lock().unwrap() = Some(exit_code as i32);
         let _result = tx.send((id, ProcEvent::Stopped));
       });
     }
@@ -125,6 +137,7 @@ impl Inst {
       killer,
 
       running,
+      exit_status,
     };
     Ok(inst)
   }
