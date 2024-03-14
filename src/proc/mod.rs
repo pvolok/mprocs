@@ -111,9 +111,12 @@ impl Inst {
       let running = running.clone();
       spawn(move || {
         // Block until program exits
-        let _status = child.wait();
+        let exit_code = match child.wait() {
+          Ok(status) => status.exit_code(),
+          Err(_e) => 1,
+        };
         running.store(false, Ordering::Relaxed);
-        let _result = tx.send((id, ProcEvent::Stopped));
+        let _result = tx.send((id, ProcEvent::Stopped(exit_code)));
       });
     }
 
