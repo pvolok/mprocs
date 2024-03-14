@@ -71,7 +71,11 @@ fn create_proc_item<'a>(
         .add_modifier(Modifier::BOLD),
     )
   } else {
-    Span::styled(" DOWN ", Style::default().fg(Color::LightRed))
+    let status = match proc_handle.exit_code() {
+      Some(exit_code) => format!(" DOWN ({})", exit_code),
+      None => " DOWN ".to_string(),
+    };
+    Span::styled(status, Style::default().fg(Color::LightRed))
   };
 
   let mark = if is_cur {

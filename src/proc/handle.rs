@@ -7,6 +7,7 @@ pub struct ProcHandle {
   id: usize,
   name: String,
   is_up: bool,
+  exit_code: Option<u32>,
 
   pub to_restart: bool,
   changed: bool,
@@ -20,6 +21,7 @@ impl ProcHandle {
       id: proc.id,
       name,
       is_up: false,
+      exit_code: None,
       to_restart: false,
       changed: false,
       proc,
@@ -36,6 +38,10 @@ impl ProcHandle {
 
   pub fn id(&self) -> usize {
     self.id
+  }
+
+  pub fn exit_code(&self) -> Option<u32> {
+    self.exit_code
   }
 
   pub fn lock_view(&self) -> ProcViewFrame {
@@ -78,8 +84,9 @@ impl ProcHandle {
           self.changed = true;
         }
       }
-      ProcEvent::Stopped => {
+      ProcEvent::Stopped(exit_code) => {
         self.is_up = false;
+        self.exit_code = Some(exit_code);
         if self.to_restart {
           self.to_restart = false;
           self.send(ProcCmd::Start);
