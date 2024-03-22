@@ -147,6 +147,7 @@ settings the _global_.
   - **add_path**: _string|array<string>_ - Add entries to the _PATH_
     environment variable.
   - **autostart**: _bool_ - Start process when mprocs starts. Default: _true_.
+  - **autorestart**: _bool_ - Restart process when it exits. Default: false. Note: If process exits within 1 second of starting, it will not be restarted.
   - **stop**: _"SIGINT"|"SIGTERM"|"SIGKILL"|{send-keys:
     array<key>}|"hard-kill"_ -
     A way to stop a process (using `x` key or when quitting mprocs).

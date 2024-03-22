@@ -567,6 +567,7 @@ impl App {
             cwd: None,
             env: None,
             autostart: true,
+            autorestart: false,
             stop: StopSignal::default(),
             mouse_scroll_speed: self.config.mouse_scroll_speed,
           },
