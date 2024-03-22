@@ -3,6 +3,11 @@ use super::{
   CopyMode, Proc,
 };
 
+use std::time::Instant;
+
+/// Amount of time a process has to stay up for autorestart to trigger
+const RESTART_THRESHOLD_SECONDS: f64 = 1.0;
+
 pub struct ProcHandle {
   id: usize,
   name: String,
@@ -10,19 +15,23 @@ pub struct ProcHandle {
   exit_code: Option<u32>,
 
   pub to_restart: bool,
+  pub autorestart: bool,
+  last_start: Option<Instant>,
   changed: bool,
 
   proc: Proc,
 }
 
 impl ProcHandle {
-  pub fn from_proc(name: String, proc: Proc) -> Self {
+  pub fn from_proc(name: String, proc: Proc, autorestart: bool) -> Self {
     Self {
       id: proc.id,
       name,
       is_up: false,
       exit_code: None,
       to_restart: false,
+      autorestart,
+      last_start: None,
       changed: false,
       proc,
     }
@@ -87,12 +96,24 @@ impl ProcHandle {
       ProcEvent::Stopped(exit_code) => {
         self.is_up = false;
         self.exit_code = Some(exit_code);
+        if self.autorestart && !self.to_restart {
+          match self.last_start {
+            Some(last_start) => {
+              let elapsed_time = Instant::now().duration_since(last_start);
+              if elapsed_time.as_secs_f64() > RESTART_THRESHOLD_SECONDS {
+                self.to_restart = true;
+              }
+            }
+            None => self.to_restart = true,
+          }
+        }
         if self.to_restart {
           self.to_restart = false;
           self.send(ProcCmd::Start);
         }
       }
       ProcEvent::Started => {
+        self.last_start = Some(Instant::now());
         self.is_up = true;
       }
     }

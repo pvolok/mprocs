@@ -88,6 +88,7 @@ pub struct ProcConfig {
   pub cwd: Option<OsString>,
   pub env: Option<IndexMap<String, Option<String>>>,
   pub autostart: bool,
+  pub autorestart: bool,
 
   pub stop: StopSignal,
 
@@ -113,6 +114,7 @@ impl ProcConfig {
         cwd: None,
         env: None,
         autostart: true,
+        autorestart: false,
         stop: StopSignal::default(),
 
         mouse_scroll_speed,
@@ -130,6 +132,7 @@ impl ProcConfig {
           cwd: None,
           env: None,
           autostart: true,
+          autorestart: false,
           stop: StopSignal::default(),
           mouse_scroll_speed,
         }))
@@ -238,6 +241,10 @@ impl ProcConfig {
           .get(&Value::from("autostart"))
           .map_or(Ok(true), |v| v.as_bool())?;
 
+        let autorestart = map
+          .get(&Value::from("autorestart"))
+          .map_or(Ok(false), |v| v.as_bool())?;
+
         let stop_signal = if let Some(val) = map.get(&Value::from("stop")) {
           serde_yaml::from_value(val.raw().clone())?
         } else {
@@ -250,6 +257,7 @@ impl ProcConfig {
           cwd,
           env,
           autostart,
+          autorestart,
           stop: stop_signal,
           mouse_scroll_speed,
         }))

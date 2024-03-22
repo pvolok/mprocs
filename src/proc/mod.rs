@@ -202,7 +202,7 @@ pub fn create_proc(
   size: Rect,
 ) -> ProcHandle {
   let proc = Proc::new(cfg, tx, size);
-  ProcHandle::from_proc(name, proc)
+  ProcHandle::from_proc(name, proc, cfg.autorestart)
 }
 
 impl Proc {

@@ -144,6 +144,7 @@ async fn run_app() -> anyhow::Result<()> {
           env: None,
           cwd: None,
           autostart: true,
+          autorestart: false,
           stop: StopSignal::default(),
           mouse_scroll_speed: settings.mouse_scroll_speed,
         })

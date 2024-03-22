@@ -45,6 +45,7 @@ pub fn load_npm_procs(settings: &Settings) -> Result<Vec<ProcConfig>> {
     cwd: None,
     env: Some(env.clone()),
     autostart: false,
+    autorestart: false,
 
     stop: StopSignal::default(),
     mouse_scroll_speed: settings.mouse_scroll_speed,
