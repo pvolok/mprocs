@@ -8,9 +8,8 @@ use tui::{
 use tui_input::Input;
 
 use crate::{
-  app::LoopAction, error::ResultLogger, event::AppEvent,
-  protocol::ProxyBackend, state::State, theme::Theme,
-  widgets::text_input::TextInput,
+  app::LoopAction, error::ResultLogger, event::AppEvent, state::State,
+  theme::Theme, widgets::text_input::TextInput,
 };
 
 use super::modal::Modal;
@@ -98,7 +97,7 @@ impl Modal for RenameProcModal {
     (42, 3)
   }
 
-  fn render(&mut self, frame: &mut Frame<ProxyBackend>) {
+  fn render(&mut self, frame: &mut Frame) {
     let area = self.area(frame.size());
     let theme = Theme::default();
 

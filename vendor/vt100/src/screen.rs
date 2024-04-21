@@ -2126,6 +2126,9 @@ impl Screen {
             DecPrivateModeCode::BracketedPaste => {
               self.set_mode(MODE_BRACKETED_PASTE);
             }
+            DecPrivateModeCode::GraphemeClustering => {
+              skip!("GraphemeClustering");
+            }
             DecPrivateModeCode::UsePrivateColorRegistersForEachGraphic => {
               skip!("UsePrivateColorRegistersForEachGraphic")
             }
@@ -2218,6 +2221,9 @@ impl Screen {
             DecPrivateModeCode::BracketedPaste => {
               self.clear_mode(MODE_BRACKETED_PASTE)
             }
+            DecPrivateModeCode::GraphemeClustering => {
+              skip!("GraphemeClustering");
+            }
             DecPrivateModeCode::UsePrivateColorRegistersForEachGraphic => {
               skip!("UsePrivateColorRegistersForEachGraphic")
             }
@@ -2300,6 +2306,9 @@ impl Screen {
             }
             DecPrivateModeCode::BracketedPaste => {
               skip!("BracketedPaste")
+            }
+            DecPrivateModeCode::GraphemeClustering => {
+              skip!("GraphemeClustering");
             }
             DecPrivateModeCode::UsePrivateColorRegistersForEachGraphic => {
               skip!("UsePrivateColorRegistersForEachGraphic")

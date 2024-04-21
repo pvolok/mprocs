@@ -16,7 +16,7 @@ impl PartialEq<Self> for Cell {
     if self.attrs != other.attrs {
       return false;
     }
-    return true;
+    true
   }
 }
 
@@ -108,14 +108,17 @@ impl Cell {
 
 impl Cell {
   pub fn to_tui(&self) -> tui::buffer::Cell {
-    let fg = self.attrs.fgcolor.to_tui();
-    tui::buffer::Cell {
-      symbol: self.text.to_string(),
-      fg,
-      bg: self.attrs.bgcolor.to_tui(),
-      modifier: self.attrs.mods_to_tui(),
-      underline_color: tui::style::Color::default(),
-      skip: false,
-    }
+    let attrs = self.attrs();
+
+    let mut cell = tui::buffer::Cell::default();
+    cell.set_symbol(&self.text);
+    cell.set_style(
+      tui::style::Style::new()
+        .fg(attrs.fgcolor.to_tui())
+        .bg(attrs.bgcolor.to_tui())
+        .add_modifier(attrs.mods_to_tui()),
+    );
+
+    cell
   }
 }

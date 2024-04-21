@@ -3,17 +3,10 @@ use tui::{layout::Rect, text::Text, widgets::Paragraph, Frame};
 use crate::{
   event::AppEvent,
   keymap::{Keymap, KeymapGroup},
-  protocol::ProxyBackend,
   theme::Theme,
 };
 
-type Backend = ProxyBackend;
-
-pub fn render_zoom_tip(
-  area: Rect,
-  frame: &mut Frame<Backend>,
-  keymap: &Keymap,
-) {
+pub fn render_zoom_tip(area: Rect, frame: &mut Frame, keymap: &Keymap) {
   let theme = Theme::default();
 
   let events = vec![

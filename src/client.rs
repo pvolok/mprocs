@@ -7,7 +7,7 @@ use crossterm::{
     LeaveAlternateScreen,
   },
 };
-use futures::{FutureExt, StreamExt};
+use futures::StreamExt;
 use tokio::select;
 use tui::backend::{Backend, CrosstermBackend};
 
@@ -23,7 +23,7 @@ pub async fn client_main(spawn_server: bool) -> anyhow::Result<()> {
     connect_client_socket::<CltToSrv, SrvToClt>(spawn_server).await?;
 
   let res1 = match enable_raw_mode() {
-    Ok(_) => {
+    Ok(()) => {
       let res1 = match execute!(
         std::io::stdout(),
         EnterAlternateScreen,
@@ -63,13 +63,14 @@ async fn client_main_inner(
 
   let mut term_events = EventStream::new();
   loop {
+    #[derive(Debug)]
     enum LocalEvent {
       ServerMsg(Option<SrvToClt>),
       TermEvent(Option<std::io::Result<Event>>),
     }
     let event: LocalEvent = select! {
-      msg = rx.recv().fuse() => LocalEvent::ServerMsg(msg.transpose()?),
-      event = term_events.next().fuse() => LocalEvent::TermEvent(event),
+      msg = rx.recv() => LocalEvent::ServerMsg(msg.transpose()?),
+      event = term_events.next() => LocalEvent::TermEvent(event),
     };
     match event {
       LocalEvent::ServerMsg(msg) => match msg {

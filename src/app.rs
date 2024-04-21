@@ -244,8 +244,10 @@ impl App {
         self.update_screen_size();
         loop_action.render();
       }
-      KernelMessage::ClientDisconnected { client_id: _ } => {
-        // Nothing to do.
+      KernelMessage::ClientDisconnected { client_id } => {
+        self.clients.retain(|c| c.id != client_id);
+        self.update_screen_size();
+        loop_action.render();
       }
     }
     Ok(())

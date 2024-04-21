@@ -2,10 +2,7 @@ use std::fmt::Debug;
 
 use crossterm::event::Event;
 use serde::{Deserialize, Serialize};
-use tui::{
-  backend::Backend,
-  style::{Color, Modifier},
-};
+use tui::{backend::Backend, style::Modifier};
 
 use crate::{error::ResultLogger, host::sender::MsgSender};
 
@@ -72,26 +69,104 @@ pub struct Cell {
 
 impl From<&Cell> for tui::buffer::Cell {
   fn from(value: &Cell) -> Self {
-    tui::buffer::Cell {
-      symbol: value.str.clone(),
-      fg: value.fg,
-      bg: value.bg,
-      underline_color: value.underline_color,
-      modifier: value.mods,
-      skip: false,
-    }
+    let mut cell = tui::buffer::Cell::default();
+    cell.set_symbol(&value.str);
+    cell.set_style(
+      tui::style::Style::new()
+        .fg(value.fg.into())
+        .bg(value.bg.into())
+        .underline_color(value.underline_color.into())
+        .add_modifier(value.mods),
+    );
+    cell.set_skip(value.skip);
+    cell
   }
 }
 
 impl From<&tui::buffer::Cell> for Cell {
   fn from(value: &tui::buffer::Cell) -> Self {
     Cell {
-      str: value.symbol.clone(),
-      fg: value.fg,
-      bg: value.bg,
-      underline_color: value.underline_color,
+      str: value.symbol().to_string(),
+      fg: value.fg.into(),
+      bg: value.bg.into(),
+      underline_color: value.underline_color.into(),
       mods: value.modifier,
       skip: value.skip,
+    }
+  }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub enum Color {
+  Reset,
+  Black,
+  Red,
+  Green,
+  Yellow,
+  Blue,
+  Magenta,
+  Cyan,
+  Gray,
+  DarkGray,
+  LightRed,
+  LightGreen,
+  LightYellow,
+  LightBlue,
+  LightMagenta,
+  LightCyan,
+  White,
+  Rgb(u8, u8, u8),
+  Indexed(u8),
+}
+
+impl From<Color> for tui::style::Color {
+  fn from(value: Color) -> Self {
+    match value {
+      Color::Reset => tui::style::Color::Reset,
+      Color::Black => tui::style::Color::Black,
+      Color::Red => tui::style::Color::Red,
+      Color::Green => tui::style::Color::Green,
+      Color::Yellow => tui::style::Color::Yellow,
+      Color::Blue => tui::style::Color::Blue,
+      Color::Magenta => tui::style::Color::Magenta,
+      Color::Cyan => tui::style::Color::Cyan,
+      Color::Gray => tui::style::Color::Gray,
+      Color::DarkGray => tui::style::Color::DarkGray,
+      Color::LightRed => tui::style::Color::LightRed,
+      Color::LightGreen => tui::style::Color::LightGreen,
+      Color::LightYellow => tui::style::Color::LightYellow,
+      Color::LightBlue => tui::style::Color::LightBlue,
+      Color::LightMagenta => tui::style::Color::LightMagenta,
+      Color::LightCyan => tui::style::Color::LightCyan,
+      Color::White => tui::style::Color::White,
+      Color::Rgb(r, g, b) => tui::style::Color::Rgb(r, g, b),
+      Color::Indexed(idx) => tui::style::Color::Indexed(idx),
+    }
+  }
+}
+
+impl From<tui::style::Color> for Color {
+  fn from(value: tui::style::Color) -> Self {
+    match value {
+      tui::style::Color::Reset => Color::Reset,
+      tui::style::Color::Black => Color::Black,
+      tui::style::Color::Red => Color::Red,
+      tui::style::Color::Green => Color::Green,
+      tui::style::Color::Yellow => Color::Yellow,
+      tui::style::Color::Blue => Color::Blue,
+      tui::style::Color::Magenta => Color::Magenta,
+      tui::style::Color::Cyan => Color::Cyan,
+      tui::style::Color::Gray => Color::Gray,
+      tui::style::Color::DarkGray => Color::DarkGray,
+      tui::style::Color::LightRed => Color::LightRed,
+      tui::style::Color::LightGreen => Color::LightGreen,
+      tui::style::Color::LightYellow => Color::LightYellow,
+      tui::style::Color::LightBlue => Color::LightBlue,
+      tui::style::Color::LightMagenta => Color::LightMagenta,
+      tui::style::Color::LightCyan => Color::LightCyan,
+      tui::style::Color::White => Color::White,
+      tui::style::Color::Rgb(r, g, b) => Color::Rgb(r, g, b),
+      tui::style::Color::Indexed(idx) => Color::Indexed(idx),
     }
   }
 }
@@ -153,6 +228,20 @@ impl Backend for ProxyBackend {
   fn clear(&mut self) -> Result<(), std::io::Error> {
     self.send(SrvToClt::Clear);
     Ok(())
+  }
+
+  fn window_size(&mut self) -> std::io::Result<tui::backend::WindowSize> {
+    let win_size = tui::backend::WindowSize {
+      columns_rows: tui::layout::Size {
+        width: self.width,
+        height: self.height,
+      },
+      pixels: tui::layout::Size {
+        width: 0,
+        height: 0,
+      },
+    };
+    Ok(win_size)
   }
 
   fn size(&self) -> Result<tui::layout::Rect, std::io::Error> {

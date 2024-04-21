@@ -9,14 +9,9 @@ edition = "2021"
 categories = [
   "command-line-interface",
   "command-line-utilities",
-  "development-tools"
+  "development-tools",
 ]
-keywords = [
-  "cli",
-  "terminal",
-  "tui",
-  "utility"
-]
+keywords = ["cli", "terminal", "tui", "utility"]
 
 include = ["*"]
 
@@ -29,13 +24,13 @@ path = "main.rs"
 [dependencies]
 anyhow = "1.0.72"
 assert_matches = "1.5.0"
-base64 = "0.21.2"
+base64 = "0.22.0"
 clap = { version = "4.3.19", features = ["cargo"] }
-clipboard-win = "4.5.0"
+clipboard-win = "5.3.1"
 crossterm = { version = "0.27.0", features = ["event-stream", "serde"] }
 dunce = "1.0.4"
 # Excluded "textfilter" feature that depends on regex (~0.7 MiB).
-flexi_logger = { version = "0.26.0", default-features = false, features = [
+flexi_logger = { version = "0.28.0", default-features = false, features = [
   "colors",
 ] }
 futures = { version = "0.3.28" }
@@ -46,7 +41,7 @@ log = "0.4.19"
 mlua = { version = "0.9.0", features = ["luajit52", "vendored", "serialize"] }
 phf = { version = "0.11.2", features = ["macros"] }
 portable-pty = { package = "mprocs-pty", path = "../vendor/pty", version = "0.1.0" }
-tui = { package = "ratatui", version = "0.23.0", features = ["serde"] }
+tui = { package = "ratatui", version = "0.26.2", features = ["serde"] }
 serde = { version = "1.0.177", features = ["derive"] }
 serde_yaml = "0.9.25"
 tokio = { version = "1", features = ["full"] }
@@ -55,9 +50,9 @@ tui-input = "0.8.0"
 unicode-segmentation = "1.10.1"
 unicode-width = "0.1.10"
 vt100 = { package = "mprocs-vt100", path = "../vendor/vt100", version = "0.1.1" }
-which = "4.4.0"
+which = "6.0.1"
 xdg = "2.5.2"
-termwiz = "0.20.0"
+termwiz = "0.22.0"
 bitflags = { version = "2.3.3", features = ["serde"] }
 compact_str = { version = "0.7.1", features = ["serde"] }
 bincode = "1.3.3"

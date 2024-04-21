@@ -10,16 +10,13 @@ use crate::{
   encode_term::print_key,
   event::AppEvent,
   keymap::{Keymap, KeymapGroup},
-  protocol::ProxyBackend,
   state::State,
   theme::Theme,
 };
 
-type Backend = ProxyBackend;
-
 pub fn render_keymap(
   area: Rect,
-  frame: &mut Frame<Backend>,
+  frame: &mut Frame,
   state: &mut State,
   keymap: &Keymap,
 ) {

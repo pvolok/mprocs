@@ -1,7 +1,7 @@
 use crossterm::event::Event;
 use tui::{prelude::Rect, Frame};
 
-use crate::{app::LoopAction, protocol::ProxyBackend, state::State};
+use crate::{app::LoopAction, state::State};
 
 pub trait Modal: Send {
   fn boxed(self) -> Box<dyn Modal>;
@@ -32,5 +32,5 @@ pub trait Modal: Send {
     }
   }
 
-  fn render(&mut self, frame: &mut Frame<ProxyBackend>);
+  fn render(&mut self, frame: &mut Frame);
 }

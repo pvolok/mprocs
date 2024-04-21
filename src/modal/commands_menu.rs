@@ -10,9 +10,8 @@ use tui::{
 use tui_input::Input;
 
 use crate::{
-  app::LoopAction, error::ResultLogger, event::AppEvent,
-  protocol::ProxyBackend, state::State, theme::Theme,
-  widgets::text_input::TextInput,
+  app::LoopAction, error::ResultLogger, event::AppEvent, state::State,
+  theme::Theme, widgets::text_input::TextInput,
 };
 
 use super::modal::Modal;
@@ -142,7 +141,7 @@ impl Modal for CommandsMenuModal {
     (60, 30)
   }
 
-  fn render(&mut self, frame: &mut Frame<ProxyBackend>) {
+  fn render(&mut self, frame: &mut Frame) {
     let area = self.area(frame.size());
     let theme = Theme::default();
 
@@ -185,7 +184,7 @@ impl Modal for CommandsMenuModal {
     let list = tui::widgets::List::new(list_items)
       .highlight_spacing(HighlightSpacing::Always)
       .highlight_symbol(">")
-      .start_corner(tui::layout::Corner::BottomLeft);
+      .direction(tui::widgets::ListDirection::TopToBottom);
     frame.render_stateful_widget(list, list_area, &mut self.list_state);
 
     let input_label = "Run command";

@@ -18,11 +18,11 @@ name = "vt100"
 [dependencies]
 itoa = "1.0.1"
 log = "0.4.14"
-termwiz = { version = "0.20.0", features = ["use_serde"] }
+termwiz = { version = "0.22.0", features = ["use_serde"] }
 unicode-width = "0.1.9"
 vte = "0.11.0"
 compact_str = { version = "0.7.1", features = ["serde"] }
-tui = { package = "ratatui", version = "0.23.0" }
+tui = { package = "ratatui", version = "0.26.2", features = ["serde"] }
 
 [dev-dependencies]
 nix = "0.23.0"

@@ -9,16 +9,13 @@ use tui::{
 
 use crate::{
   proc::{handle::ProcViewFrame, CopyMode, Pos},
-  protocol::ProxyBackend,
   state::{Scope, State},
   theme::Theme,
 };
 
-type Backend = ProxyBackend;
-
 pub fn render_term(
   area: Rect,
-  frame: &mut Frame<Backend>,
+  frame: &mut Frame,
   state: &mut State,
   cursor_style: &mut CursorStyle,
 ) {
@@ -125,7 +122,7 @@ impl Widget for UiTerm<'_> {
         if let Some(cell) = screen.cell(row, col) {
           *to_cell = cell.to_tui();
           if !cell.has_contents() {
-            to_cell.symbol = " ".to_string();
+            to_cell.set_char(' ');
           }
 
           let copy_mode = match self.copy_mode {

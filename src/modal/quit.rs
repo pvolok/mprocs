@@ -8,8 +8,8 @@ use tui::{
 };
 
 use crate::{
-  app::LoopAction, error::ResultLogger, event::AppEvent,
-  protocol::ProxyBackend, state::State, theme::Theme,
+  app::LoopAction, error::ResultLogger, event::AppEvent, state::State,
+  theme::Theme,
 };
 
 use super::modal::Modal;
@@ -102,7 +102,7 @@ impl Modal for QuitModal {
     (36, 5)
   }
 
-  fn render(&mut self, frame: &mut Frame<ProxyBackend>) {
+  fn render(&mut self, frame: &mut Frame) {
     let area = self.area(frame.size());
     let theme = Theme::default();
 

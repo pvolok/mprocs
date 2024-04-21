@@ -8,14 +8,11 @@ use tui::{
 
 use crate::{
   proc::handle::ProcHandle,
-  protocol::ProxyBackend,
   state::{Scope, State},
   theme::Theme,
 };
 
-type Backend = ProxyBackend;
-
-pub fn render_procs(area: Rect, frame: &mut Frame<Backend>, state: &mut State) {
+pub fn render_procs(area: Rect, frame: &mut Frame, state: &mut State) {
   if area.width <= 2 {
     return;
   }
