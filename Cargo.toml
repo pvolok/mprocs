@@ -7,8 +7,5 @@ codegen-units = 1
 
 [workspace]
 resolver = "2"
-members = [
-  "src",
-  "vendor/pty",
-  "vendor/vt100",
-]
+default-members = ["src"]
+members = ["helpers/print-key", "src", "vendor/pty", "vendor/vt100"]
