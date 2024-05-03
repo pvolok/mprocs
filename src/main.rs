@@ -242,7 +242,7 @@ fn read_value(path: &str) -> Result<Value> {
   let ext = std::path::Path::new(path)
     .extension()
     .map_or_else(|| "".to_string(), |ext| ext.to_string_lossy().to_string());
-  let value: Value = match ext.as_str() {
+  let mut value: Value = match ext.as_str() {
     "yaml" | "yml" | "json" => serde_yaml::from_reader(reader)?,
     "lua" => {
       let mut buf = String::new();
@@ -251,5 +251,6 @@ fn read_value(path: &str) -> Result<Value> {
     }
     _ => bail!("Supported config extensions: lua, yaml, yml, json."),
   };
+  value.apply_merge().unwrap();
   Ok(value)
 }
