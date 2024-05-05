@@ -35,10 +35,8 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
   use KeyCode::*;
 
   #[cfg(windows)]
-  if std::env::var("ENCODE_KEY_WIN32").is_ok() {
-    if let Some(encoded) = encode_key_win32(key, modes) {
-      return Ok(encoded);
-    }
+  if let Some(encoded) = encode_key_win32(key, modes) {
+    return Ok(encoded);
   }
 
   if key.kind() == KeyEventKind::Release {
