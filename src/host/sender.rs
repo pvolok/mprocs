@@ -11,7 +11,11 @@ pub struct MsgSender<T: Serialize> {
 }
 
 impl<T: Serialize + Send + Debug + 'static> MsgSender<T> {
-  pub fn new<W: AsyncWrite + Unpin + Send + 'static>(write: W) -> Self {
+  pub fn new(sender: tokio::sync::mpsc::UnboundedSender<T>) -> Self {
+    MsgSender { sender }
+  }
+
+  pub fn new_write<W: AsyncWrite + Unpin + Send + 'static>(write: W) -> Self {
     let mut framed =
       tokio_util::codec::FramedWrite::new(write, MsgEncoder::<T>::new());
 
@@ -54,7 +58,7 @@ struct MsgEncoder<T: Serialize> {
 impl<T: Serialize> MsgEncoder<T> {
   pub fn new() -> Self {
     MsgEncoder {
-      t: PhantomData::default(),
+      t: PhantomData,
       buf: Vec::new(),
     }
   }

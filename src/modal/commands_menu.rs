@@ -223,7 +223,7 @@ type CommandInfo = (&'static str, String, AppEvent);
 
 fn get_commands(search: &str) -> Vec<CommandInfo> {
   let events = [
-    ("quit-or-ask", AppEvent::QuitOrAsk),
+    // ("quit-or-ask", AppEvent::QuitOrAsk),
     ("quit", AppEvent::Quit),
     ("force-quit", AppEvent::ForceQuit),
     ("toggle-focus", AppEvent::ToggleFocus),

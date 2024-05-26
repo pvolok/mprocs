@@ -8,55 +8,51 @@ use crossterm::{
   },
 };
 use futures::StreamExt;
+use scopeguard::defer;
 use tokio::select;
 use tui::backend::{Backend, CrosstermBackend};
 
 use crate::{
-  host::{
-    receiver::MsgReceiver, sender::MsgSender, socket::connect_client_socket,
-  },
+  error::ResultLogger,
+  host::{receiver::MsgReceiver, sender::MsgSender},
   protocol::{CltToSrv, CursorStyle, SrvToClt},
 };
 
-pub async fn client_main(spawn_server: bool) -> anyhow::Result<()> {
-  let (tx, rx) =
-    connect_client_socket::<CltToSrv, SrvToClt>(spawn_server).await?;
+pub async fn client_main(
+  sender: MsgSender<CltToSrv>,
+  receiver: MsgReceiver<SrvToClt>,
+) -> anyhow::Result<()> {
+  enable_raw_mode()?;
 
-  let res1 = match enable_raw_mode() {
-    Ok(()) => {
-      let res1 = match execute!(
-        std::io::stdout(),
-        EnterAlternateScreen,
-        Clear(ClearType::All),
-        EnableMouseCapture,
-        // https://wezfurlong.org/wezterm/config/key-encoding.html#xterm-modifyotherkeys
-        crossterm::style::Print("\x1b[>4;2m"),
-      ) {
-        Ok(_) => client_main_inner(tx, rx).await,
-        Err(err) => Err(err.into()),
-      };
+  defer!(disable_raw_mode().log_ignore());
 
-      let res2 =
-        execute!(std::io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
+  execute!(
+    std::io::stdout(),
+    EnterAlternateScreen,
+    Clear(ClearType::All),
+    EnableMouseCapture,
+    // https://wezfurlong.org/wezterm/config/key-encoding.html#xterm-modifyotherkeys
+    crossterm::style::Print("\x1b[>4;2m"),
+  )?;
 
-      res1.and(res2.map_err(anyhow::Error::from))
-    }
-    Err(err) => Err(err.into()),
-  };
+  defer!(execute!(
+    std::io::stdout(),
+    DisableMouseCapture,
+    LeaveAlternateScreen
+  )
+  .log_ignore());
 
-  let res2 = disable_raw_mode().map_err(anyhow::Error::from);
-
-  res1.and(res2)
+  client_main_loop(sender, receiver).await
 }
 
-async fn client_main_inner(
-  mut tx: MsgSender<CltToSrv>,
-  mut rx: MsgReceiver<SrvToClt>,
+async fn client_main_loop(
+  mut sender: MsgSender<CltToSrv>,
+  mut receiver: MsgReceiver<SrvToClt>,
 ) -> anyhow::Result<()> {
   let mut backend = CrosstermBackend::new(std::io::stdout());
 
   let init_size = backend.size()?;
-  tx.send(CltToSrv::Init {
+  sender.send(CltToSrv::Init {
     width: init_size.width,
     height: init_size.height,
   })?;
@@ -69,7 +65,7 @@ async fn client_main_inner(
       TermEvent(Option<std::io::Result<Event>>),
     }
     let event: LocalEvent = select! {
-      msg = rx.recv() => LocalEvent::ServerMsg(msg.transpose()?),
+      msg = receiver.recv() => LocalEvent::ServerMsg(msg.transpose()?),
       event = term_events.next() => LocalEvent::TermEvent(event),
     };
     match event {
@@ -106,7 +102,7 @@ async fn client_main_inner(
         _ => break,
       },
       LocalEvent::TermEvent(event) => match event {
-        Some(Ok(event)) => tx.send(CltToSrv::Key(event))?,
+        Some(Ok(event)) => sender.send(CltToSrv::Key(event))?,
         _ => break,
       },
     }

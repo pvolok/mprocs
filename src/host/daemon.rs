@@ -13,15 +13,15 @@ mod unix {
 
   use anyhow::bail;
 
-  pub fn spawn_impl(path: PathBuf) -> anyhow::Result<()> {
+  pub fn spawn_impl(exe: PathBuf) -> anyhow::Result<()> {
     let daemon =
       daemonize::Daemonize::new().working_directory(std::env::current_dir()?);
 
     match daemon.execute() {
       daemonize::Outcome::Parent(_) => (),
       daemonize::Outcome::Child(_) => exec(&[
-        path.to_str().ok_or_else(|| {
-          anyhow::format_err!("Failed to convert exe path: {:?}", path)
+        exe.to_str().ok_or_else(|| {
+          anyhow::format_err!("Failed to convert exe path: {:?}", exe)
         })?,
         "server",
       ])?,
@@ -41,7 +41,7 @@ mod unix {
         .as_bytes(),
     )?;
     let arg_cstrings = argv
-      .into_iter()
+      .iter()
       .map(|arg| CString::new(arg.as_bytes()))
       .collect::<Result<Vec<_>, _>>()?;
     let mut arg_charptrs: Vec<_> =

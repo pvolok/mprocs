@@ -155,7 +155,7 @@ impl Settings {
       AppEvent::ToggleFocus,
     );
 
-    s.keymap_add_p(KeyCode::Char('q').into(), AppEvent::QuitOrAsk);
+    s.keymap_add_p(KeyCode::Char('q').into(), AppEvent::Quit);
     s.keymap_add_p(KeyCode::Char('Q').into(), AppEvent::ForceQuit);
     s.keymap_add_p(KeyCode::Char('p').into(), AppEvent::ShowCommandsMenu);
     s.keymap_add_p(

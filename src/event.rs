@@ -56,7 +56,7 @@ impl AppEvent {
     match self {
       AppEvent::Batch { cmds: _ } => "Send multiple events".to_string(),
       AppEvent::QuitOrAsk => "Quit".to_string(),
-      AppEvent::Quit => "Quit (without dialog)".to_string(),
+      AppEvent::Quit => "Quit".to_string(),
       AppEvent::ForceQuit => "Force quit".to_string(),
       AppEvent::Detach { client_id } => {
         format!("Detach client #{:?}", client_id)
@@ -80,7 +80,7 @@ impl AppEvent {
       AppEvent::AddProc { cmd } => format!("New process `{}`", cmd),
       AppEvent::ShowRemoveProc => "Remove process dialog".to_string(),
       AppEvent::RemoveProc { id } => format!("Remove process by id {}", id),
-      AppEvent::CloseCurrentModal => format!("Close current modal"),
+      AppEvent::CloseCurrentModal => "Close current modal".to_string(),
       AppEvent::ScrollDownLines { n } => {
         format!("Scroll down {} {}", n, lines_str(*n))
       }

@@ -29,13 +29,14 @@ mod yaml_val;
 use std::{io::Read, path::Path};
 
 use anyhow::{bail, Result};
-use app::server_main;
+use app::{start_kernel_process, start_kernel_thread};
 use clap::{arg, command, ArgMatches, Command};
 use client::client_main;
 use config::{CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig};
 use config_lua::load_lua_config;
 use ctl::run_ctl;
 use flexi_logger::{FileSpec, LoggerHandle};
+use host::{receiver::MsgReceiver, sender::MsgSender};
 use keymap::Keymap;
 use package_json::load_npm_procs;
 use proc::StopSignal;
@@ -89,8 +90,8 @@ async fn run_app() -> anyhow::Result<()> {
     .arg(arg!(--names [NAMES] "Names for processes provided by cli arguments. Separated by comma."))
     .arg(arg!(--npm "Run scripts from package.json. Scripts are not started by default."))
     .arg(arg!([COMMANDS]... "Commands to run (if omitted, commands from config will be run)"))
-    .subcommand(Command::new("server"))
-    .subcommand(Command::new("attach"))
+    // .subcommand(Command::new("server"))
+    // .subcommand(Command::new("attach"))
     .get_matches();
 
   let config_value = load_config_value(&matches)
@@ -130,7 +131,7 @@ async fn run_app() -> anyhow::Result<()> {
     if let Some(cmds) = matches.get_many::<String>("COMMANDS") {
       let names = matches
         .get_one::<String>("names")
-        .map_or_else(|| Vec::new(), |arg| arg.split(",").collect::<Vec<_>>());
+        .map_or(Vec::new(), |arg| arg.split(',').collect::<Vec<_>>());
       let procs = cmds
         .into_iter()
         .enumerate()
@@ -160,24 +161,45 @@ async fn run_app() -> anyhow::Result<()> {
   };
 
   match matches.subcommand() {
-    Some(("attach", _args)) => {
-      let logger = setup_logger(LogTarget::File);
-      let ret = client_main(false).await;
-      drop(logger);
-      ret
-    }
-    Some(("server", _args)) => {
-      let logger = setup_logger(LogTarget::Stderr);
-      let ret = server_main(config, keymap).await;
-      drop(logger);
-      ret
-    }
+    // Some(("attach", _args)) => {
+    //   let logger = setup_logger(LogTarget::File);
+    //   let ret = client_main(false).await;
+    //   drop(logger);
+    //   ret
+    // }
+    // Some(("server", _args)) => {
+    //   let logger = setup_logger(LogTarget::Stderr);
+    //   let ret = start_kernel_process(config, keymap).await;
+    //   drop(logger);
+    //   ret
+    // }
     Some((cmd, _args)) => {
       bail!("Unexpected command: {}", cmd);
     }
     None => {
       let logger = setup_logger(LogTarget::File);
-      let ret = client_main(true).await;
+
+      let (srv_to_clt_sender, srv_to_clt_receiver) = {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let sender = MsgSender::new(sender);
+        let receiver = MsgReceiver::new(receiver);
+        (sender, receiver)
+      };
+      let (clt_to_srv_sender, clt_to_srv_receiver) = {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let sender = MsgSender::new(sender);
+        let receiver = MsgReceiver::new(receiver);
+        (sender, receiver)
+      };
+
+      start_kernel_thread(
+        config,
+        keymap,
+        (srv_to_clt_sender, clt_to_srv_receiver),
+      )
+      .await?;
+
+      let ret = client_main(clt_to_srv_sender, srv_to_clt_receiver).await;
       drop(logger);
       ret
     }
@@ -229,7 +251,7 @@ fn load_config_value(
 
 fn read_value(path: &str) -> Result<Value> {
   // Open the file in read-only mode with buffer.
-  let file = match std::fs::File::open(&path) {
+  let file = match std::fs::File::open(path) {
     Ok(file) => file,
     Err(err) => match err.kind() {
       std::io::ErrorKind::NotFound => {

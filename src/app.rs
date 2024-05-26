@@ -47,17 +47,12 @@ use crate::{
 
 type Term = Terminal<ProxyBackend>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub enum LoopAction {
   Render,
+  #[default]
   Skip,
   ForceQuit,
-}
-
-impl Default for LoopAction {
-  fn default() -> Self {
-    LoopAction::Skip
-  }
 }
 
 impl LoopAction {
@@ -446,8 +441,9 @@ impl App {
         loop_action.force_quit();
       }
       AppEvent::Detach { client_id } => {
-        self.clients.retain_mut(|c| c.id != *client_id);
-        self.update_screen_size();
+        // TODO: Client-server mode is disabled for mprocs 0.7
+        // self.clients.retain_mut(|c| c.id != *client_id);
+        // self.update_screen_size();
         loop_action.render();
       }
 
@@ -922,7 +918,10 @@ impl Widget for CopyBuffer<'_> {
   }
 }
 
-pub async fn server_main(config: Config, keymap: Keymap) -> anyhow::Result<()> {
+pub async fn start_kernel_process(
+  config: Config,
+  keymap: Keymap,
+) -> anyhow::Result<()> {
   let (kernel_sender, kernel_receiver) = tokio::sync::mpsc::unbounded_channel();
 
   let mut server_socket = bind_server_socket().await?;
@@ -939,12 +938,40 @@ pub async fn server_main(config: Config, keymap: Keymap) -> anyhow::Result<()> {
             let id = ClientId(last_client_id);
             ClientConnector::connect(id, socket, kernel_sender.clone());
           }
-          Err(_) => break,
+          Err(err) => {
+            log::info!("Server socket accept error: {}", err.to_string());
+            break;
+          }
         }
       }
     })
   };
 
+  kernel_main(config, keymap, kernel_receiver).await
+}
+
+pub async fn start_kernel_thread(
+  config: Config,
+  keymap: Keymap,
+  socket: (MsgSender<SrvToClt>, MsgReceiver<CltToSrv>),
+) -> anyhow::Result<()> {
+  let (kernel_sender, kernel_receiver) = tokio::sync::mpsc::unbounded_channel();
+
+  let id = ClientId(1);
+  ClientConnector::connect(id, socket, kernel_sender.clone());
+
+  tokio::spawn(async {
+    kernel_main(config, keymap, kernel_receiver).await;
+  });
+
+  Ok(())
+}
+
+pub async fn kernel_main(
+  config: Config,
+  keymap: Keymap,
+  kernel_receiver: UnboundedReceiver<KernelMessage>,
+) -> anyhow::Result<()> {
   let (upd_tx, upd_rx) =
     tokio::sync::mpsc::unbounded_channel::<(usize, ProcEvent)>();
   let (ev_tx, ev_rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
@@ -970,7 +997,6 @@ pub async fn server_main(config: Config, keymap: Keymap) -> anyhow::Result<()> {
     ev_rx,
     ev_tx,
 
-    // kernel_sender,
     kernel_receiver,
 
     screen_size: Size {

@@ -19,7 +19,7 @@ impl<T: DeserializeOwned> MsgDecoder<T> {
   pub fn new() -> MsgDecoder<T> {
     MsgDecoder {
       state: DecoderState::Header,
-      t: PhantomData::default(),
+      t: PhantomData,
     }
   }
 }
@@ -64,7 +64,7 @@ impl<T: DeserializeOwned> tokio_util::codec::Decoder for MsgDecoder<T> {
       self.state = DecoderState::Header;
       Ok(Some(msg))
     } else {
-      return Ok(None);
+      Ok(None)
     }
   }
 }
@@ -74,7 +74,11 @@ pub struct MsgReceiver<T: DeserializeOwned> {
 }
 
 impl<T: DeserializeOwned + Send + 'static> MsgReceiver<T> {
-  pub fn new<R: AsyncRead + Unpin + Send + 'static>(read: R) -> Self {
+  pub fn new(receiver: tokio::sync::mpsc::UnboundedReceiver<T>) -> Self {
+    MsgReceiver { receiver }
+  }
+
+  pub fn new_read<R: AsyncRead + Unpin + Send + 'static>(read: R) -> Self {
     let mut framed =
       tokio_util::codec::FramedRead::new(read, MsgDecoder::<T>::new());
 

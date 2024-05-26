@@ -32,7 +32,7 @@ pub fn render_keymap(
   let items = match group {
     KeymapGroup::Procs => vec![
       AppEvent::ToggleFocus,
-      AppEvent::QuitOrAsk,
+      AppEvent::Quit,
       AppEvent::NextProc,
       AppEvent::PrevProc,
       AppEvent::StartProc,
@@ -49,7 +49,7 @@ pub fn render_keymap(
   let line = items
     .into_iter()
     .filter_map(|event| Some((keymap.resolve_key(group, &event)?, event)))
-    .map(|(key, event)| {
+    .flat_map(|(key, event)| {
       vec![
         Span::raw(" <"),
         Span::styled(print_key(key), Style::default().fg(Color::Yellow)),
@@ -58,7 +58,6 @@ pub fn render_keymap(
         Span::raw("> "),
       ]
     })
-    .flatten()
     .collect::<Vec<_>>();
 
   let line = Line::from(line);

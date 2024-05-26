@@ -61,8 +61,8 @@ mod unix {
     ) -> anyhow::Result<(MsgSender<S>, MsgReceiver<R>)> {
       let (stream, _addr) = self.listener.accept().await?;
       let (read, write) = stream.into_split();
-      let sender = MsgSender::new(write);
-      let receiver = MsgReceiver::new(read);
+      let sender = MsgSender::new_write(write);
+      let receiver = MsgReceiver::new_read(read);
       Ok((sender, receiver))
     }
   }
@@ -78,8 +78,8 @@ mod unix {
       match UnixStream::connect(&path).await {
         Ok(socket) => {
           let (read, write) = socket.into_split();
-          let sender = MsgSender::new(write);
-          let receiver = MsgReceiver::new(read);
+          let sender = MsgSender::new_write(write);
+          let receiver = MsgReceiver::new_read(read);
           return Ok((sender, receiver));
         }
         Err(err) => {
