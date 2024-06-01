@@ -2,7 +2,7 @@ use crate::{attrs::Attrs, term::BufWrite as _};
 use termwiz::escape::{
   csi::{
     CsiParam, Cursor, CursorStyle, DecPrivateMode, DecPrivateModeCode, Edit,
-    EraseInDisplay, EraseInLine, Sgr, Window,
+    EraseInDisplay, EraseInLine, Sgr, TerminalMode, TerminalModeCode, Window,
   },
   Action, ControlCode, DeviceControlMode, Esc, EscCode, OperatingSystemCommand,
   CSI,
@@ -14,6 +14,13 @@ const MODE_APPLICATION_CURSOR: u8 = 0b0000_0010;
 const MODE_HIDE_CURSOR: u8 = 0b0000_0100;
 const MODE_ALTERNATE_SCREEN: u8 = 0b0000_1000;
 const MODE_BRACKETED_PASTE: u8 = 0b0001_0000;
+
+#[derive(Clone, Debug)]
+pub enum CharSet {
+  Ascii,
+  Uk,
+  DecLineDrawing,
+}
 
 /// The xterm mouse handling mode currently in use.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -86,6 +93,13 @@ pub struct Screen {
   mouse_protocol_mode: MouseProtocolMode,
   mouse_protocol_encoding: MouseProtocolEncoding,
 
+  g0: CharSet,
+  g1: CharSet,
+  shift_out: bool,
+
+  /// If true, writing a character inserts a new cell
+  insert: bool,
+
   audible_bell_count: usize,
   visual_bell_count: usize,
 
@@ -121,6 +135,12 @@ impl Screen {
       modes: 0,
       mouse_protocol_mode: MouseProtocolMode::default(),
       mouse_protocol_encoding: MouseProtocolEncoding::default(),
+
+      g0: CharSet::Ascii,
+      g1: CharSet::Ascii,
+      shift_out: false,
+
+      insert: false,
 
       audible_bell_count: 0,
       visual_bell_count: 0,
@@ -1539,8 +1559,33 @@ impl Screen {
   }
 }
 
+macro_rules! skip {
+  ($fmt:expr) => {
+    {
+      use std::fmt::Write;
+      let mut output = String::new();
+      write!(output, $fmt).unwrap();
+      log::debug!("Skip seq: {}", output);
+    }
+  };
+  ($fmt:expr, $($arg:tt)*) => {
+    {
+      use std::fmt::Write;
+      let mut output = String::new();
+      write!(output, $fmt, $($arg)*).unwrap();
+      log::debug!("Skip seq: {}", output);
+    }
+  };
+}
+
 impl vte::Perform for Screen {
   fn print(&mut self, c: char) {
+    // TODO: handle graphemes
+    // TODO: handle g0/g1 charset
+    if self.insert {
+      // TODO
+      skip!("self.insert = true");
+    }
     if c == '\u{fffd}' || ('\u{80}'..'\u{a0}').contains(&c) {
       self.errors = self.errors.saturating_add(1);
     }
@@ -1762,25 +1807,6 @@ fn osc_param_str(params: &[&[u8]]) -> String {
   strs.join(" ; ")
 }
 
-macro_rules! skip {
-  ($fmt:expr) => {
-    {
-      use std::fmt::Write;
-      let mut output = String::new();
-      write!(output, $fmt).unwrap();
-      log::debug!("Skip seq: {}", output);
-    }
-  };
-  ($fmt:expr, $($arg:tt)*) => {
-    {
-      use std::fmt::Write;
-      let mut output = String::new();
-      write!(output, $fmt, $($arg)*).unwrap();
-      log::debug!("Skip seq: {}", output);
-    }
-  };
-}
-
 impl Screen {
   pub fn handle_action(&mut self, action: Action) {
     match action {
@@ -1819,8 +1845,8 @@ impl Screen {
         self.grid_mut().row_inc_scroll(1);
       }
       ControlCode::CarriageReturn => self.grid_mut().col_set(0),
-      ControlCode::ShiftOut => skip!("ShiftOut"),
-      ControlCode::ShiftIn => skip!("ShiftIn"),
+      ControlCode::ShiftOut => self.shift_out = true,
+      ControlCode::ShiftIn => self.shift_out = false,
       ControlCode::DataLinkEscape => skip!("DataLinkEscape"),
       ControlCode::DeviceControlOne => skip!("DeviceControlOne"),
       ControlCode::DeviceControlTwo => skip!("DeviceControlTwo"),
@@ -2334,8 +2360,52 @@ impl Screen {
         termwiz::escape::csi::Mode::QueryDecPrivateMode(_) => {
           skip!("QueryDecPrivateMode")
         }
-        termwiz::escape::csi::Mode::SetMode(_) => skip!("SetMode"),
-        termwiz::escape::csi::Mode::ResetMode(_) => skip!("ResetMode"),
+        termwiz::escape::csi::Mode::SetMode(mode) => match mode {
+          TerminalMode::Code(code) => match code {
+            TerminalModeCode::KeyboardAction => {
+              skip!("TerminalModeCode::KeyboardAction")
+            }
+            TerminalModeCode::Insert => skip!("TerminalModeCode::Insert"),
+            TerminalModeCode::BiDirectionalSupportMode => {
+              skip!("TerminalModeCode::BiDirectionalSupportMode")
+            }
+            TerminalModeCode::SendReceive => {
+              skip!("TerminalModeCode::SendReceive")
+            }
+            TerminalModeCode::AutomaticNewline => {
+              skip!("TerminalModeCode::AutomaticNewline")
+            }
+            TerminalModeCode::ShowCursor => {
+              skip!("TerminalModeCode::ShowCursor")
+            }
+          },
+          TerminalMode::Unspecified(n) => {
+            skip!("SetMode -> TerminalMode::Unspecified({})", n)
+          }
+        },
+        termwiz::escape::csi::Mode::ResetMode(mode) => match mode {
+          TerminalMode::Code(code) => match code {
+            TerminalModeCode::KeyboardAction => {
+              skip!("TerminalModeCode::KeyboardAction")
+            }
+            TerminalModeCode::Insert => self.insert = false,
+            TerminalModeCode::BiDirectionalSupportMode => {
+              skip!("TerminalModeCode::BiDirectionalSupportMode")
+            }
+            TerminalModeCode::SendReceive => {
+              skip!("TerminalModeCode::SendReceive")
+            }
+            TerminalModeCode::AutomaticNewline => {
+              skip!("TerminalModeCode::AutomaticNewline")
+            }
+            TerminalModeCode::ShowCursor => {
+              skip!("TerminalModeCode::ShowCursor")
+            }
+          },
+          TerminalMode::Unspecified(n) => {
+            skip!("ResetMode -> TerminalMode::Unspecified({})", n)
+          }
+        },
         termwiz::escape::csi::Mode::QueryMode(_) => skip!("QueryMode"),
         termwiz::escape::csi::Mode::XtermKeyMode {
           resource: _,
@@ -2488,12 +2558,12 @@ impl Screen {
         EscCode::DecRestoreCursorPosition => self.restore_cursor(),
         EscCode::DecApplicationKeyPad => self.deckpam(),
         EscCode::DecNormalKeyPad => self.clear_mode(MODE_APPLICATION_KEYPAD),
-        EscCode::DecLineDrawingG0 => skip!("DecLineDrawingG0"),
-        EscCode::UkCharacterSetG0 => skip!("UkCharacterSetG0"),
-        EscCode::AsciiCharacterSetG0 => (),
-        EscCode::DecLineDrawingG1 => skip!("DecLineDrawingG1"),
-        EscCode::UkCharacterSetG1 => skip!("UkCharacterSetG1"),
-        EscCode::AsciiCharacterSetG1 => skip!("AsciiCharacterSetG1"),
+        EscCode::DecLineDrawingG0 => self.g0 = CharSet::DecLineDrawing,
+        EscCode::UkCharacterSetG0 => self.g0 = CharSet::Uk,
+        EscCode::AsciiCharacterSetG0 => self.g0 = CharSet::Ascii,
+        EscCode::DecLineDrawingG1 => self.g1 = CharSet::DecLineDrawing,
+        EscCode::UkCharacterSetG1 => self.g1 = CharSet::Uk,
+        EscCode::AsciiCharacterSetG1 => self.g1 = CharSet::Ascii,
         EscCode::DecScreenAlignmentDisplay => {
           skip!("DecScreenAlignmentDisplay")
         }
