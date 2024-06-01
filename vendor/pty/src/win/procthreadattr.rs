@@ -26,7 +26,10 @@ impl ProcThreadAttributeList {
     // We have the right capacity, so force the vec to consider itself
     // that length.  The contents of those bytes will be maintained
     // by the win32 apis used in this impl.
-    unsafe { data.set_len(bytes_required) };
+    #[allow(clippy::uninit_vec)]
+    unsafe {
+      data.set_len(bytes_required)
+    };
 
     let attr_ptr = data.as_mut_slice().as_mut_ptr() as *mut _;
     let res = unsafe {
