@@ -1,9 +1,7 @@
 use std::fmt::Write;
 
 use anyhow::Result;
-use crossterm::event::{
-  KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
-};
+use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind};
 
 use crate::{key::Key, mouse::MouseEvent};
 
@@ -39,12 +37,8 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
     return Ok(encoded);
   }
 
-  if key.kind() == KeyEventKind::Release {
-    return Ok("".to_string());
-  }
-
-  let code = key.code().clone();
-  let mods = key.mods().clone();
+  let code = key.code();
+  let mods = key.mods();
 
   let mut buf = String::new();
 
@@ -553,7 +547,7 @@ pub fn print_key(key: &Key) -> String {
     KeyCode::Delete => buf.push_str("Del"),
     KeyCode::Insert => buf.push_str("Ins"),
     KeyCode::F(n) => buf.push_str(&format!("F{}", n)),
-    KeyCode::Char(ch) => buf.push(*ch),
+    KeyCode::Char(ch) => buf.push(ch),
     KeyCode::Null => buf.push_str("Null"),
     KeyCode::Esc => buf.push_str("Esc"),
     KeyCode::CapsLock => todo!(),
@@ -567,7 +561,7 @@ pub fn print_key(key: &Key) -> String {
     KeyCode::Modifier(_) => todo!(),
   }
 
-  return buf;
+  buf
 }
 
 /*

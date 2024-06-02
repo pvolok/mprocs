@@ -18,8 +18,11 @@ pub enum SrvToClt {
   Quit,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(
+  Debug, Default, Deserialize, Clone, Copy, PartialEq, Eq, Serialize,
+)]
 pub enum CursorStyle {
+  #[default]
   Default = 0,
   BlinkingBlock = 1,
   SteadyBlock = 2,
@@ -42,12 +45,6 @@ impl From<termwiz::escape::csi::CursorStyle> for CursorStyle {
       CS::BlinkingBar => Self::BlinkingBar,
       CS::SteadyBar => Self::SteadyBar,
     }
-  }
-}
-
-impl Default for CursorStyle {
-  fn default() -> CursorStyle {
-    CursorStyle::Default
   }
 }
 

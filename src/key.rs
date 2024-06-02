@@ -1,5 +1,5 @@
 use anyhow::bail;
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{KeyCode, KeyModifiers};
 use serde::{Deserialize, Serialize};
 
 static KEYS: phf::Map<&'static str, KeyCode> = phf::phf_map! {
@@ -44,38 +44,31 @@ static SPECIAL_CHARS: phf::Map<char, &str> = phf::phf_map! {
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Key(KeyEvent);
+pub struct Key {
+  code: KeyCode,
+  mods: KeyModifiers,
+}
 
 impl Key {
   pub fn new(code: KeyCode, mods: KeyModifiers) -> Key {
-    Key::from(KeyEvent::new(code, mods))
+    Self { code, mods }
   }
 
   pub fn parse(text: &str) -> anyhow::Result<Key> {
     KeyParser::parse(text)
   }
 
-  pub fn code(&self) -> &KeyCode {
-    &self.0.code
+  pub fn code(&self) -> KeyCode {
+    self.code
   }
 
-  pub fn mods(&self) -> &KeyModifiers {
-    &self.0.modifiers
+  pub fn mods(&self) -> KeyModifiers {
+    self.mods
   }
 
   pub fn set_mods(mut self, mods: KeyModifiers) -> Self {
-    self.0.modifiers = mods;
+    self.mods = mods;
     self
-  }
-
-  pub fn kind(&self) -> KeyEventKind {
-    self.0.kind
-  }
-}
-
-impl From<KeyEvent> for Key {
-  fn from(key_event: KeyEvent) -> Self {
-    Key(key_event)
   }
 }
 
@@ -91,7 +84,7 @@ impl ToString for Key {
 
     buf.push('<');
 
-    let mods = self.0.modifiers;
+    let mods = self.mods;
     if mods.intersects(KeyModifiers::CONTROL) {
       buf.push_str("C-");
     }
@@ -102,7 +95,7 @@ impl ToString for Key {
       buf.push_str("M-");
     }
 
-    match self.0.code {
+    match self.code {
       KeyCode::Backspace => buf.push_str("BS"),
       KeyCode::Enter => buf.push_str("Enter"),
       KeyCode::Left => buf.push_str("Left"),
@@ -187,7 +180,7 @@ impl KeyParser<'_> {
     let code = {
       let word = parser.take_word()?;
       if let Some(code) = KEYS.get(word.to_ascii_lowercase().as_str()) {
-        code.clone()
+        *code
       } else if word.len() == 1 {
         KeyCode::Char(word.chars().next().unwrap())
       } else {
@@ -196,7 +189,7 @@ impl KeyParser<'_> {
     };
     parser.expect(">")?;
 
-    Ok(Key(KeyEvent::new(code, mods)))
+    Ok(Key::new(code, mods))
   }
 
   fn expect(&mut self, s: &str) -> anyhow::Result<()> {
@@ -215,8 +208,8 @@ impl KeyParser<'_> {
 
   fn take_word(&mut self) -> anyhow::Result<&str> {
     let mut next_pos = self.pos;
-    let mut chars = self.text[self.pos..].chars();
-    while let Some(ch) = chars.next() {
+    let chars = self.text[self.pos..].chars();
+    for ch in chars {
       if ch.is_alphanumeric() {
         next_pos += ch.len_utf8();
       } else {
@@ -255,41 +248,41 @@ mod tests {
   fn parse() {
     assert_eq!(
       Key::parse("<Tab>").unwrap(),
-      Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
+      Key::new(KeyCode::Tab, KeyModifiers::NONE)
     );
     assert_eq!(
       Key::parse("<C-Enter>").unwrap(),
-      Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL))
+      Key::new(KeyCode::Enter, KeyModifiers::CONTROL)
     );
     assert_eq!(
       Key::parse("<C-Esc>").unwrap(),
-      Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::CONTROL))
+      Key::new(KeyCode::Esc, KeyModifiers::CONTROL)
     );
 
     assert_eq!(
       Key::parse("<F1>").unwrap(),
-      Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE))
+      Key::new(KeyCode::F(1), KeyModifiers::NONE)
     );
     assert_eq!(
       Key::parse("<f12>").unwrap(),
-      Key(KeyEvent::new(KeyCode::F(12), KeyModifiers::NONE))
+      Key::new(KeyCode::F(12), KeyModifiers::NONE)
     );
     assert_matches!(Key::parse("<F13>"), Err(_));
 
     assert_eq!(
       Key::parse("<a>").unwrap(),
-      Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE))
+      Key::new(KeyCode::Char('a'), KeyModifiers::NONE)
     );
     assert_eq!(
       Key::parse("<C-a>").unwrap(),
-      Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL))
+      Key::new(KeyCode::Char('a'), KeyModifiers::CONTROL)
     );
     assert_eq!(
       Key::parse("<C-M-a>").unwrap(),
-      Key(KeyEvent::new(
+      Key::new(
         KeyCode::Char('a'),
         KeyModifiers::CONTROL | KeyModifiers::ALT
-      ))
+      )
     );
   }
 

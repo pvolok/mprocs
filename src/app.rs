@@ -307,8 +307,13 @@ impl App {
     }
 
     match event {
-      Event::Key(key) => {
-        let key = Key::from(key);
+      Event::Key(KeyEvent {
+        code,
+        modifiers,
+        kind: KeyEventKind::Press | KeyEventKind::Repeat,
+        state: _,
+      }) => {
+        let key = Key::new(code, modifiers);
         let group = self.state.get_keymap_group();
         if let Some(bound) = self.keymap.resolve(group, &key) {
           let bound = bound.clone();
@@ -322,6 +327,10 @@ impl App {
           }
         }
       }
+      Event::Key(KeyEvent {
+        kind: KeyEventKind::Release,
+        ..
+      }) => (),
       Event::Mouse(mev) => {
         if mev.kind == MouseEventKind::Moved {
           return;
