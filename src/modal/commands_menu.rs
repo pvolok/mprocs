@@ -4,7 +4,7 @@ use tui::{
   prelude::{Margin, Rect},
   style::{Modifier, Style},
   text::{Line, Span},
-  widgets::{HighlightSpacing, ListItem, ListState, Paragraph},
+  widgets::{Clear, HighlightSpacing, ListItem, ListState, Paragraph},
   Frame,
 };
 use tui_input::Input;
@@ -55,11 +55,8 @@ impl Modal for CommandsMenuModal {
           .app_sender
           .send(AppEvent::CloseCurrentModal)
           .log_ignore();
-        if let Some((_, _, event)) = self
-          .list_state
-          .selected()
-          .map(|i| self.items.get(i))
-          .flatten()
+        if let Some((_, _, event)) =
+          self.list_state.selected().and_then(|i| self.items.get(i))
         {
           self.app_sender.send(event.clone()).unwrap();
         }
@@ -85,10 +82,10 @@ impl Modal for CommandsMenuModal {
         ..
       }) if modifiers == &KeyModifiers::CONTROL => {
         let index = self.list_state.selected().unwrap_or(0);
-        let index = if index == 0 {
-          self.items.len() - 1
+        let index = if index >= self.items.len() - 1 {
+          0
         } else {
-          index - 1
+          index + 1
         };
         self.list_state.select(Some(index));
         loop_action.render();
@@ -100,10 +97,10 @@ impl Modal for CommandsMenuModal {
         ..
       }) if modifiers == &KeyModifiers::CONTROL => {
         let index = self.list_state.selected().unwrap_or(0);
-        let index = if index >= self.items.len() - 1 {
-          0
+        let index = if index == 0 {
+          self.items.len() - 1
         } else {
-          index + 1
+          index - 1
         };
         self.list_state.select(Some(index));
         loop_action.render();
@@ -112,7 +109,7 @@ impl Modal for CommandsMenuModal {
       _ => (),
     }
 
-    let req = tui_input::backend::crossterm::to_input_request(&event);
+    let req = tui_input::backend::crossterm::to_input_request(event);
     if let Some(req) = req {
       let res = self.input.handle(req);
       if let Some(res) = res {
@@ -163,6 +160,8 @@ impl Modal for CommandsMenuModal {
       inner.width,
       1,
     );
+
+    frame.render_widget(Clear, inner);
 
     let list_items = self
       .items
