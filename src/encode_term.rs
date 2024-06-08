@@ -50,7 +50,7 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
       if (c.is_ascii_punctuation() || c.is_ascii_uppercase())
         && mods.contains(KeyModifiers::SHIFT) =>
     {
-      mods.clone().difference(KeyModifiers::SHIFT)
+      mods.difference(KeyModifiers::SHIFT)
     }
     _ => mods,
   };
@@ -397,10 +397,9 @@ pub fn encode_key_win32(
     control_key_state |= winapi::um::wincon::LEFT_CTRL_PRESSED;
   }
 
-  let vkey = virtual_key_code(key.code())?;
+  let vkey = virtual_key_code(&key.code())?;
   let uni = match key.code() {
     KeyCode::Char(c) => {
-      let c = *c;
       let c = match c {
         // Delete key is transmitted as 0x0
         '\x7f' => '\x00',
