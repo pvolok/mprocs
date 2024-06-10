@@ -1,5 +1,5 @@
 #[cfg(unix)]
-pub use self::unix::{bind_server_socket, connect_client_socket};
+pub use self::unix::bind_server_socket;
 #[cfg(windows)]
 pub use self::windows::{bind_server_socket, connect_client_socket};
 
@@ -67,6 +67,7 @@ mod unix {
     }
   }
 
+  #[allow(dead_code)]
   pub async fn connect_client_socket<
     S: Serialize + Debug + Send + 'static,
     R: DeserializeOwned + Send + 'static,

@@ -29,8 +29,8 @@ mod yaml_val;
 use std::{io::Read, path::Path};
 
 use anyhow::{bail, Result};
-use app::{start_kernel_process, start_kernel_thread};
-use clap::{arg, command, ArgMatches, Command};
+use app::start_kernel_thread;
+use clap::{arg, command, ArgMatches};
 use client::client_main;
 use config::{CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig};
 use config_lua::load_lua_config;
@@ -44,6 +44,7 @@ use serde_yaml::Value;
 use settings::Settings;
 use yaml_val::Val;
 
+#[allow(dead_code)]
 enum LogTarget {
   File,
   Stderr,
@@ -90,8 +91,8 @@ async fn run_app() -> anyhow::Result<()> {
     .arg(arg!(--names [NAMES] "Names for processes provided by cli arguments. Separated by comma."))
     .arg(arg!(--npm "Run scripts from package.json. Scripts are not started by default."))
     .arg(arg!([COMMANDS]... "Commands to run (if omitted, commands from config will be run)"))
-    // .subcommand(Command::new("server"))
-    // .subcommand(Command::new("attach"))
+    // .subcommand(clap::Command::new("server"))
+    // .subcommand(clap::Command::new("attach"))
     .get_matches();
 
   let config_value = load_config_value(&matches)
@@ -169,7 +170,7 @@ async fn run_app() -> anyhow::Result<()> {
     // }
     // Some(("server", _args)) => {
     //   let logger = setup_logger(LogTarget::Stderr);
-    //   let ret = start_kernel_process(config, keymap).await;
+    //   let ret = app::start_kernel_process(config, keymap).await;
     //   drop(logger);
     //   ret
     // }

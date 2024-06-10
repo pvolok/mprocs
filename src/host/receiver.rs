@@ -5,11 +5,13 @@ use futures::StreamExt;
 use serde::de::DeserializeOwned;
 use tokio::io::AsyncRead;
 
+#[allow(dead_code)]
 struct MsgDecoder<T: DeserializeOwned> {
   state: DecoderState,
   t: PhantomData<T>,
 }
 
+#[allow(dead_code)]
 enum DecoderState {
   Header,
   Data(usize),

@@ -449,7 +449,7 @@ impl App {
         }
         loop_action.force_quit();
       }
-      AppEvent::Detach { client_id } => {
+      AppEvent::Detach { client_id: _ } => {
         // TODO: Client-server mode is disabled for mprocs 0.7
         // self.clients.retain_mut(|c| c.id != *client_id);
         // self.update_screen_size();
@@ -927,6 +927,7 @@ impl Widget for CopyBuffer<'_> {
   }
 }
 
+#[allow(dead_code)]
 pub async fn start_kernel_process(
   config: Config,
   keymap: Keymap,
@@ -970,7 +971,9 @@ pub async fn start_kernel_thread(
   ClientConnector::connect(id, socket, kernel_sender.clone());
 
   tokio::spawn(async {
-    kernel_main(config, keymap, kernel_receiver).await;
+    if let Err(err) = kernel_main(config, keymap, kernel_receiver).await {
+      eprintln!("{}", err);
+    };
   });
 
   Ok(())

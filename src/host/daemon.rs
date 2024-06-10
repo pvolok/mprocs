@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 pub fn spawn_server_daemon() -> anyhow::Result<()> {
   let exe = std::env::current_exe()?;
 
@@ -13,6 +14,7 @@ mod unix {
 
   use anyhow::bail;
 
+  #[allow(dead_code)]
   pub fn spawn_impl(exe: PathBuf) -> anyhow::Result<()> {
     let daemon =
       daemonize::Daemonize::new().working_directory(std::env::current_dir()?);
