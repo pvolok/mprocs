@@ -21,6 +21,7 @@ pub struct Config {
   pub server: Option<ServerConfig>,
   pub hide_keymap_window: bool,
   pub mouse_scroll_speed: usize,
+  pub scrollback_len: usize,
   pub proc_list_width: usize,
 }
 
@@ -41,6 +42,7 @@ impl Config {
           Ok(ProcConfig::from_val(
             value_to_string(&name)?,
             settings.mouse_scroll_speed,
+            settings.scrollback_len,
             proc,
             ctx,
           )?)
@@ -65,6 +67,7 @@ impl Config {
       server,
       hide_keymap_window: settings.hide_keymap_window,
       mouse_scroll_speed: settings.mouse_scroll_speed,
+      scrollback_len: settings.scrollback_len,
       proc_list_width: settings.proc_list_width,
     };
 
@@ -77,6 +80,7 @@ impl Config {
       server: None,
       hide_keymap_window: settings.hide_keymap_window,
       mouse_scroll_speed: settings.mouse_scroll_speed,
+      scrollback_len: settings.scrollback_len,
       proc_list_width: settings.proc_list_width,
     }
   }
@@ -93,12 +97,14 @@ pub struct ProcConfig {
   pub stop: StopSignal,
 
   pub mouse_scroll_speed: usize,
+  pub scrollback_len: usize,
 }
 
 impl ProcConfig {
   fn from_val(
     name: String,
     mouse_scroll_speed: usize,
+    scrollback_len: usize,
     val: Val,
     ctx: &ConfigContext,
   ) -> Result<Option<ProcConfig>> {
@@ -118,6 +124,7 @@ impl ProcConfig {
         stop: StopSignal::default(),
 
         mouse_scroll_speed,
+        scrollback_len,
       })),
       Value::Sequence(_) => {
         let cmd = val.as_array()?;
@@ -135,6 +142,7 @@ impl ProcConfig {
           autorestart: false,
           stop: StopSignal::default(),
           mouse_scroll_speed,
+          scrollback_len,
         }))
       }
       Value::Mapping(_) => {
@@ -260,6 +268,7 @@ impl ProcConfig {
           autorestart,
           stop: stop_signal,
           mouse_scroll_speed,
+          scrollback_len,
         }))
       }
       Value::Tagged(_) => anyhow::bail!("Yaml tags are not supported"),
