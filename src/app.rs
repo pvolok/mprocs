@@ -577,6 +577,7 @@ impl App {
             autorestart: false,
             stop: StopSignal::default(),
             mouse_scroll_speed: self.config.mouse_scroll_speed,
+            scrollback_len: self.config.scrollback_len,
           },
           self.proc_tx.clone(),
           self.get_layout().term_area(),

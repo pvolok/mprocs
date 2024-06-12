@@ -54,8 +54,9 @@ impl Inst {
     cmd: CommandBuilder,
     tx: UnboundedSender<(usize, ProcEvent)>,
     size: &Size,
+    scrollback_len: usize,
   ) -> anyhow::Result<Self> {
-    let vt = vt100::Parser::new(size.height, size.width, 1000);
+    let vt = vt100::Parser::new(size.height, size.width, scrollback_len);
     let vt = Arc::new(RwLock::new(vt));
 
     let pty_system = native_pty_system();
@@ -160,6 +161,7 @@ pub struct Proc {
 
   stop_signal: StopSignal,
   mouse_scroll_speed: usize,
+  scrollback_len: usize,
 
   pub tx: UnboundedSender<(usize, ProcEvent)>,
 
@@ -221,6 +223,7 @@ impl Proc {
 
       stop_signal: cfg.stop.clone(),
       mouse_scroll_speed: cfg.mouse_scroll_speed,
+      scrollback_len: cfg.scrollback_len,
 
       tx,
 
@@ -238,8 +241,13 @@ impl Proc {
   fn spawn_new_inst(&mut self) {
     assert_matches!(self.inst, ProcState::None);
 
-    let spawned =
-      Inst::spawn(self.id, self.cmd.clone(), self.tx.clone(), &self.size);
+    let spawned = Inst::spawn(
+      self.id,
+      self.cmd.clone(),
+      self.tx.clone(),
+      &self.size,
+      self.scrollback_len,
+    );
     let inst = match spawned {
       Ok(inst) => ProcState::Some(inst),
       Err(err) => ProcState::Error(err.to_string()),

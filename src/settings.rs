@@ -19,6 +19,7 @@ pub struct Settings {
   keymap_copy: IndexMap<Key, AppEvent>,
   pub hide_keymap_window: bool,
   pub mouse_scroll_speed: usize,
+  pub scrollback_len: usize,
   pub proc_list_width: usize,
 }
 
@@ -30,6 +31,7 @@ impl Default for Settings {
       keymap_copy: Default::default(),
       hide_keymap_window: false,
       mouse_scroll_speed: 5,
+      scrollback_len: 1000,
       proc_list_width: 30,
     };
     settings.add_defaults();
