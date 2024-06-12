@@ -7,6 +7,7 @@ use std::sync::{Arc, RwLock};
 use std::thread::{self, spawn};
 use std::time::Duration;
 
+use anyhow::bail;
 use assert_matches::assert_matches;
 use crossterm::event::{MouseButton, MouseEventKind};
 use portable_pty::MasterPty;
@@ -23,6 +24,7 @@ use crate::error::ResultLogger;
 use crate::event::CopyMove;
 use crate::key::Key;
 use crate::mouse::MouseEvent;
+use crate::yaml_val::Val;
 
 use self::handle::ProcHandle;
 use self::msg::{ProcCmd, ProcEvent};
@@ -178,22 +180,37 @@ pub enum ProcState {
   Error(String),
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Clone, Debug, Default)]
 pub enum StopSignal {
-  #[serde(rename = "SIGINT")]
   SIGINT,
-  #[serde(rename = "SIGTERM")]
+  #[default]
   SIGTERM,
-  #[serde(rename = "SIGKILL")]
   SIGKILL,
   SendKeys(Vec<Key>),
   HardKill,
 }
 
-impl Default for StopSignal {
-  fn default() -> Self {
-    StopSignal::SIGTERM
+impl StopSignal {
+  pub fn from_val(val: &Val) -> anyhow::Result<Self> {
+    match val.raw() {
+      serde_yaml::Value::String(str) => match str.as_str() {
+        "SIGINT" => return Ok(Self::SIGINT),
+        "SIGTERM" => return Ok(Self::SIGTERM),
+        "SIGKILL" => return Ok(Self::SIGKILL),
+        "hard-kill" => return Ok(Self::HardKill),
+        _ => (),
+      },
+      serde_yaml::Value::Mapping(map) => {
+        if map.len() == 1 {
+          if let Some(keys) = map.get("send-keys") {
+            let keys: Vec<Key> = serde_yaml::from_value(keys.clone())?;
+            return Ok(Self::SendKeys(keys));
+          }
+        }
+      }
+      _ => (),
+    }
+    bail!("Unexpected 'stop' value: {:?}.", val.raw());
   }
 }
 

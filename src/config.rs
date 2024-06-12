@@ -254,7 +254,7 @@ impl ProcConfig {
           .map_or(Ok(false), |v| v.as_bool())?;
 
         let stop_signal = if let Some(val) = map.get(&Value::from("stop")) {
-          serde_yaml::from_value(val.raw().clone())?
+          StopSignal::from_val(val)?
         } else {
           StopSignal::default()
         };
