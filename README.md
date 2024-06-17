@@ -126,6 +126,8 @@ procs:
 
 ### Config
 
+[JSON/YAML Configuration Schema](https://json.schemastore.org/mprocs-0.6.4.json)
+
 There are two kinds of configs: global and local. _Global_ config is loaded
 from `~/.config/mprocs/mprocs.yaml` (or
 `C:\Users\Alice\AppData\Roaming\mprocs\mprocs.yaml` on Windows). _Local_ config
