@@ -134,6 +134,10 @@ impl Settings {
       self.mouse_scroll_speed = mouse_scroll_speed.as_usize()?;
     }
 
+    if let Some(scrollback) = obj.get(&Value::from("scrollback")) {
+      self.scrollback_len = scrollback.as_usize()?;
+    }
+
     if let Some(proc_list_width) = obj.get(&Value::from("proc_list_width")) {
       self.proc_list_width = proc_list_width.as_usize()?;
     }
