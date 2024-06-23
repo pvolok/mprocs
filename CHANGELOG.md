@@ -1,5 +1,14 @@
 ## Unreleased
 
+- Terminal sequences parser rewritten using termwiz vt parser
+- Copying fixes for Wayland (#88)
+- Support cursor shapes
+- Various fixes for keyboard handling
+- Accept configs with `.json` extension
+- Introduce commands menu (press `p`)
+- Add autorestart proccess config option
+- Add scrollback config option
+
 ## 0.6.4 - 2023-02-17
 
 - Add command for renaming the currently selected process (default: `e`)
