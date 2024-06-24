@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.7.0 - 2024-06-24
+
 - Terminal sequences parser rewritten using termwiz vt parser
 - Copying fixes for Wayland (#88)
 - Support cursor shapes

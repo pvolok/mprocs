@@ -1,6 +1,6 @@
 [package]
 name = "mprocs"
-version = "0.7.0-rc1"
+version = "0.7.0"
 description = "TUI for running multiple processes"
 repository = "https://github.com/pvolok/mprocs"
 authors = ["Pavel Volokitin <pavelvolokitin@gmail.com>"]
@@ -22,6 +22,8 @@ name = "mprocs"
 path = "main.rs"
 
 [dependencies]
+portable-pty = { package = "mprocs-pty", path = "../vendor/pty", version = "0.7.0" }
+vt100 = { package = "mprocs-vt100", path = "../vendor/vt100", version = "0.7.0" }
 anyhow = "1.0.72"
 assert_matches = "1.5.0"
 base64 = "0.22.0"
@@ -40,7 +42,6 @@ libc = "0.2.147"
 log = "0.4.19"
 mlua = { version = "0.9.0", features = ["lua52", "vendored", "serialize"] }
 phf = { version = "0.11.2", features = ["macros"] }
-portable-pty = { package = "mprocs-pty", path = "../vendor/pty", version = "0.1.0" }
 tui = { package = "ratatui", version = "0.26.2", features = ["serde"] }
 serde = { version = "1.0.177", features = ["derive"] }
 serde_yaml = "0.9.25"
@@ -49,7 +50,6 @@ triggered = "0.1.2"
 tui-input = "0.8.0"
 unicode-segmentation = "1.10.1"
 unicode-width = "0.1.10"
-vt100 = { package = "mprocs-vt100", path = "../vendor/vt100", version = "0.1.1" }
 which = "6.0.1"
 xdg = "2.5.2"
 termwiz = "0.22.0"
