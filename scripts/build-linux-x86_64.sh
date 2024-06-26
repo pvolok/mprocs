@@ -2,9 +2,11 @@
 
 set -e
 
+mkdir -p release
+
 podman run -it --workdir /app \
-  --platform linux/arm64 \
-  --env ARCH=aarch64 \
+  --platform linux/amd64 \
+  --env ARCH=x86_64 \
   -v $(pwd)/scripts:/app/scripts:Z \
   -v $(pwd)/Cargo.lock:/app/Cargo.lock:Z \
   -v $(pwd)/Cargo.toml:/app/Cargo.toml:Z \
