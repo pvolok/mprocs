@@ -1,5 +1,10 @@
 ## Unreleased
 
+## 0.7.1 - 2024-06-29
+
+- Not using upx anymore
+- Disable xterm modifyOtherKeys in iTerm2
+
 ## 0.7.0 - 2024-06-24
 
 - Terminal sequences parser rewritten using termwiz vt parser
