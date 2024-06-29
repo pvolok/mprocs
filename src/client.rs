@@ -26,17 +26,29 @@ pub async fn client_main(
 
   defer!(disable_raw_mode().log_ignore());
 
+  // If xterm modifyOtherKeys is enabled in iTerm2 then Ctrl prefixed key
+  // presses are not captured. That is while using crossterm.
+  // But termwiz works well, even though it seems to be using modifyOtherKeys
+  // also.
+  let (otherkeys_on, otherkeys_off) =
+    if std::env::var("TERM_PROGRAM").unwrap_or_default() == "iTerm.app" {
+      ("", "")
+    } else {
+      ("\x1b[>4;2m", "\x1b[>4;0m")
+    };
+
   execute!(
     std::io::stdout(),
     EnterAlternateScreen,
     Clear(ClearType::All),
     EnableMouseCapture,
     // https://wezfurlong.org/wezterm/config/key-encoding.html#xterm-modifyotherkeys
-    crossterm::style::Print("\x1b[>4;2m"),
+    crossterm::style::Print(otherkeys_on),
   )?;
 
   defer!(execute!(
     std::io::stdout(),
+    crossterm::style::Print(otherkeys_off),
     DisableMouseCapture,
     LeaveAlternateScreen
   )
