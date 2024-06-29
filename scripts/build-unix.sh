@@ -51,8 +51,6 @@ cargo build -p mprocs --release --target=$TRIPLE
 
 cp target/$TRIPLE/release/mprocs release/mprocs-$VERSION-$OS_ARCH/mprocs
 
-upx --brute release/mprocs-$VERSION-$OS_ARCH/mprocs
-
 tar -czvf release/mprocs-$VERSION-$OS_ARCH.tar.gz \
   -C release/mprocs-$VERSION-$OS_ARCH \
   mprocs
