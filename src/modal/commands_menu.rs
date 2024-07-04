@@ -235,6 +235,7 @@ fn get_commands(search: &str) -> Vec<CommandInfo> {
     ("term-proc", AppEvent::TermProc),
     ("kill-proc", AppEvent::KillProc),
     ("restart-proc", AppEvent::RestartProc),
+    ("duplicate-proc", AppEvent::DuplicateProc),
     ("force-restart-proc", AppEvent::ForceRestartProc),
     ("show-add-proc", AppEvent::ShowAddProc),
     ("show-rename-proc", AppEvent::ShowRenameProc),

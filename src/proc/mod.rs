@@ -255,6 +255,26 @@ impl Proc {
     proc
   }
 
+  pub fn duplicate(&self) -> Self {
+    let id = NEXT_PROC_ID.fetch_add(1, Ordering::Relaxed);
+    let proc = Self {
+      id,
+      to_restart: false,
+      cmd: self.cmd.clone(),
+      size: self.size.clone(),
+
+      stop_signal: self.stop_signal.clone(),
+      mouse_scroll_speed: self.mouse_scroll_speed,
+      scrollback_len: self.scrollback_len,
+
+      tx: self.tx.clone(),
+
+      inst: ProcState::None,
+      copy_mode: CopyMode::None(None),
+    };
+    proc
+  }
+
   fn spawn_new_inst(&mut self) {
     assert_matches!(self.inst, ProcState::None);
 
@@ -671,6 +691,7 @@ fn translate_mouse_pos(event: &MouseEvent, scrollback: usize) -> Pos {
   }
 }
 
+#[derive(Clone)]
 struct Size {
   width: u16,
   height: u16,

@@ -585,6 +585,13 @@ impl App {
         self.state.procs.push(proc_handle);
         loop_action.render();
       }
+      AppEvent::DuplicateProc => {
+        if let Some(proc_handle) = self.state.get_current_proc_mut() {
+          let proc_handle = proc_handle.duplicate();
+          self.state.procs.push(proc_handle);
+        }
+        loop_action.render();
+      }
       AppEvent::ShowRemoveProc => {
         let id = self
           .state

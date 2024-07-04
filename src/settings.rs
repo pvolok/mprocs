@@ -211,6 +211,10 @@ impl Settings {
       AppEvent::ShowAddProc,
     );
     s.keymap_add_p(
+      Key::new(KeyCode::Char('C'), KeyModifiers::SHIFT),
+      AppEvent::DuplicateProc,
+    );
+    s.keymap_add_p(
       Key::new(KeyCode::Char('d'), KeyModifiers::NONE),
       AppEvent::ShowRemoveProc,
     );
