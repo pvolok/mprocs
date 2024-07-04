@@ -254,6 +254,7 @@ Process list focused:
 - `r` - Soft kill selected process and restart it when it stops
 - `R` - Hard kill selected process and restart it when it stops
 - `a` - Add new process
+- `C` - Duplicate selected process
 - `d` - Remove selected process (process must be stopped first)
 - `e` - Rename selected process
 - `k` or `↑` - Select previous process
@@ -312,6 +313,7 @@ Commands are encoded as yaml. Available commands:
 - `{c: force-restart-proc}`
 - `{c: show-add-proc}`
 - `{c: add-proc, cmd: "<SHELL COMMAND>"}`
+- `{c: duplicate-proc}`
 - `{c: show-remove-proc}`
 - `{c: remove-proc, id: "<PROCESS ID>"}`
 - `{c: show-rename-proc}`

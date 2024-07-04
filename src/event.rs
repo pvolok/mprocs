@@ -32,6 +32,7 @@ pub enum AppEvent {
   ShowAddProc,
   ShowRenameProc,
   AddProc { cmd: String },
+  DuplicateProc,
   ShowRemoveProc,
   RemoveProc { id: usize },
 
@@ -78,6 +79,7 @@ impl AppEvent {
       AppEvent::ShowAddProc => "New process dialog".to_string(),
       AppEvent::ShowRenameProc => "Rename process dialog".to_string(),
       AppEvent::AddProc { cmd } => format!("New process `{}`", cmd),
+      AppEvent::DuplicateProc => "Duplicate current process".to_string(),
       AppEvent::ShowRemoveProc => "Remove process dialog".to_string(),
       AppEvent::RemoveProc { id } => format!("Remove process by id {}", id),
       AppEvent::CloseCurrentModal => "Close current modal".to_string(),

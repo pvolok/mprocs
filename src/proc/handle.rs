@@ -83,6 +83,21 @@ impl ProcHandle {
   pub fn focus(&mut self) {
     self.changed = false;
   }
+
+  pub fn duplicate(&self) -> Self {
+    let proc = self.proc.duplicate();
+    Self {
+      id: proc.id,
+      name: self.name.clone(),
+      is_up: false,
+      exit_code: None,
+      to_restart: false,
+      autorestart: self.autorestart,
+      last_start: None,
+      changed: false,
+      proc,
+    }
+  }
 }
 
 impl ProcHandle {
