@@ -175,7 +175,7 @@ the [Remote control](#remote-control) section.
 There are three keymap levels:
 
 - Default keymaps
-- `~/.config/mprocs/mprocs.yaml` (`~\AppData\Roaming\mprocs\mprocs.yaml` on Windows)
+- `~/.config/mprocs/mprocs.yaml` (or `~\AppData\Roaming\mprocs\mprocs.yaml` on Windows)
 - `./mprocs.yaml` (can be overridden by the _-c/--config_ cli arg)
 
 Lower levers override bindings from previous levels. Key bindings from previous
