@@ -130,7 +130,7 @@ procs:
 
 There are two kinds of configs: global and local. _Global_ config is loaded
 from `~/.config/mprocs/mprocs.yaml` (or
-`C:\Users\Alice\AppData\Roaming\mprocs\mprocs.yaml` on Windows). _Local_ config
+`~\AppData\Roaming\mprocs\mprocs.yaml` on Windows). _Local_ config
 is loaded from `mprocs.yaml` from current directory (or set via cli argument:
 `mprocs --config ./cfg/mprocs.yaml`). Settings in the _local_ config override
 settings the _global_.
@@ -175,7 +175,7 @@ the [Remote control](#remote-control) section.
 There are three keymap levels:
 
 - Default keymaps
-- `~/.config/mprocs/mprocs.yaml`
+- `~/.config/mprocs/mprocs.yaml` (or `~\AppData\Roaming\mprocs\mprocs.yaml` on Windows)
 - `./mprocs.yaml` (can be overridden by the _-c/--config_ cli arg)
 
 Lower levers override bindings from previous levels. Key bindings from previous
