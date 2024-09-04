@@ -566,11 +566,15 @@ impl App {
         self.modal = Some(AddProcModal::new(self.ev_tx.clone()).boxed());
         loop_action.render();
       }
-      AppEvent::AddProc { cmd } => {
+      AppEvent::AddProc { cmd, name } => {
+        let name: String = match name {
+          Some(s) => s.to_string(),
+          None => cmd.to_string(),
+        };
         let proc_handle = create_proc(
-          cmd.to_string(),
+          name.clone(),
           &ProcConfig {
-            name: cmd.to_string(),
+            name: name.clone(),
             cmd: CmdConfig::Shell {
               shell: cmd.to_string(),
             },
