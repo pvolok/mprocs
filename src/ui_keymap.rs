@@ -38,6 +38,7 @@ pub fn render_keymap(
       AppEvent::StartProc,
       AppEvent::TermProc,
       AppEvent::RestartProc,
+      AppEvent::ToggleKeymapWindow,
     ],
     KeymapGroup::Term => vec![AppEvent::ToggleFocus],
     KeymapGroup::Copy => vec![

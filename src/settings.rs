@@ -249,6 +249,11 @@ impl Settings {
     );
 
     s.keymap_add_p(
+      Key::new(KeyCode::Char('h'), KeyModifiers::NONE),
+      AppEvent::ToggleKeymapWindow,
+    );
+
+    s.keymap_add_p(
       Key::new(KeyCode::Char('v'), KeyModifiers::NONE),
       AppEvent::CopyModeEnter,
     );

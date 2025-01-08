@@ -663,6 +663,11 @@ impl App {
         loop_action.render();
       }
 
+      AppEvent::ToggleKeymapWindow => {
+        self.state.toggle_keymap_window();
+        loop_action.render();
+      }
+
       AppEvent::SendKey { key } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.send(ProcCmd::SendKey(key.clone()));
@@ -691,6 +696,7 @@ impl App {
     AppLayout::new(
       Rect::new(0, 0, size.width, size.height),
       self.state.scope.is_zoomed(),
+      self.state.hide_keymap_window,
       &self.config,
     )
   }
@@ -704,8 +710,8 @@ struct AppLayout {
 }
 
 impl AppLayout {
-  pub fn new(area: Rect, zoom: bool, config: &Config) -> Self {
-    let keymap_h = if zoom || config.hide_keymap_window {
+  pub fn new(area: Rect, zoom: bool, hide_keymap_window: bool, config: &Config) -> Self {
+    let keymap_h = if zoom || hide_keymap_window {
       0
     } else {
       3
@@ -999,6 +1005,7 @@ pub async fn kernel_main(
     scope: Scope::Procs,
     procs: Vec::new(),
     selected: 0,
+    hide_keymap_window: config.hide_keymap_window,
 
     quitting: false,
   };
