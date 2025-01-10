@@ -253,17 +253,20 @@ impl App {
       let size = client.size();
       if self.screen_size != size {
         self.screen_size = size;
-
-        let area = self.get_layout().term_area();
-        for proc_handle in &mut self.state.procs {
-          proc_handle.send(ProcCmd::Resize {
-            x: area.x,
-            y: area.y,
-            w: area.width,
-            h: area.height,
-          });
-        }
+        self.sync_proc_handle_size();
       }
+    }
+  }
+
+  fn sync_proc_handle_size(&mut self) {
+    let area = self.get_layout().term_area();
+    for proc_handle in &mut self.state.procs {
+      proc_handle.send(ProcCmd::Resize {
+        x: area.x,
+        y: area.y,
+        w: area.width,
+        h: area.height,
+      });
     }
   }
 
@@ -663,6 +666,12 @@ impl App {
         loop_action.render();
       }
 
+      AppEvent::ToggleKeymapWindow => {
+        self.state.toggle_keymap_window();
+        self.sync_proc_handle_size();
+        loop_action.render();
+      }
+
       AppEvent::SendKey { key } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.send(ProcCmd::SendKey(key.clone()));
@@ -691,6 +700,7 @@ impl App {
     AppLayout::new(
       Rect::new(0, 0, size.width, size.height),
       self.state.scope.is_zoomed(),
+      self.state.hide_keymap_window,
       &self.config,
     )
   }
@@ -704,12 +714,13 @@ struct AppLayout {
 }
 
 impl AppLayout {
-  pub fn new(area: Rect, zoom: bool, config: &Config) -> Self {
-    let keymap_h = if zoom || config.hide_keymap_window {
-      0
-    } else {
-      3
-    };
+  pub fn new(
+    area: Rect,
+    zoom: bool,
+    hide_keymap_window: bool,
+    config: &Config,
+  ) -> Self {
+    let keymap_h = if zoom || hide_keymap_window { 0 } else { 3 };
     let procs_w = if zoom {
       0
     } else {
@@ -999,6 +1010,7 @@ pub async fn kernel_main(
     scope: Scope::Procs,
     procs: Vec::new(),
     selected: 0,
+    hide_keymap_window: config.hide_keymap_window,
 
     quitting: false,
   };

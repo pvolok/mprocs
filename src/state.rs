@@ -35,6 +35,7 @@ pub struct State {
   pub scope: Scope,
   pub procs: Vec<ProcHandle>,
   pub selected: usize,
+  pub hide_keymap_window: bool,
 
   pub quitting: bool,
 }
@@ -74,5 +75,9 @@ impl State {
 
   pub fn all_procs_down(&self) -> bool {
     self.procs.iter().all(|p| !p.is_up())
+  }
+
+  pub fn toggle_keymap_window(&mut self) {
+    self.hide_keymap_window = !self.hide_keymap_window;
   }
 }
