@@ -111,7 +111,7 @@ impl ProcHandle {
       ProcEvent::Stopped(exit_code) => {
         self.is_up = false;
         self.exit_code = Some(exit_code);
-        if self.autorestart && !self.to_restart {
+        if self.autorestart && !self.to_restart && exit_code != 0 {
           match self.last_start {
             Some(last_start) => {
               let elapsed_time = Instant::now().duration_since(last_start);
