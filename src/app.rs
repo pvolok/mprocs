@@ -588,6 +588,28 @@ impl App {
         self.state.procs.push(proc_handle);
         loop_action.render();
       }
+      AppEvent::AddProcName { cmd, name } => {
+        let proc_handle = create_proc(
+          name.to_string(),
+          &ProcConfig {
+            name: name.to_string(),
+            cmd: CmdConfig::Shell {
+              shell: cmd.to_string(),
+            },
+            cwd: None,
+            env: None,
+            autostart: true,
+            autorestart: false,
+            stop: StopSignal::default(),
+            mouse_scroll_speed: self.config.mouse_scroll_speed,
+            scrollback_len: self.config.scrollback_len,
+          },
+          self.proc_tx.clone(),
+          self.get_layout().term_area(),
+        );
+        self.state.procs.push(proc_handle);
+        loop_action.render();
+      }
       AppEvent::DuplicateProc => {
         if let Some(proc_handle) = self.state.get_current_proc_mut() {
           let proc_handle = proc_handle.duplicate();
