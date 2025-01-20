@@ -249,7 +249,7 @@ impl Settings {
     );
 
     s.keymap_add_p(
-      Key::new(KeyCode::Char('h'), KeyModifiers::NONE),
+      Key::new(KeyCode::Char('?'), KeyModifiers::NONE),
       AppEvent::ToggleKeymapWindow,
     );
 
