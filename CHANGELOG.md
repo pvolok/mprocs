@@ -1,5 +1,12 @@
 ## Unreleased
 
+## 0.7.2 - 2025-01-20
+
+- Add duplicate selected process command
+- Use blue color for "DOWN (0)"
+- Auto-restart only when exit code is not zero
+- Add key binding for toggling keymap
+
 ## 0.7.1 - 2024-06-29
 
 - Not using upx anymore
