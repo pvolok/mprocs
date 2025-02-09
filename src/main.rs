@@ -8,6 +8,7 @@ mod encode_term;
 mod error;
 mod event;
 mod host;
+mod just;
 mod kernel;
 mod key;
 mod keymap;
@@ -39,6 +40,7 @@ use flexi_logger::{FileSpec, LoggerHandle};
 use host::{receiver::MsgReceiver, sender::MsgSender};
 use keymap::Keymap;
 use package_json::load_npm_procs;
+use just::load_just_procs;
 use proc::StopSignal;
 use serde_yaml::Value;
 use settings::Settings;
@@ -89,6 +91,7 @@ async fn run_app() -> anyhow::Result<()> {
     .arg(arg!(--ctl [YAML] "Send yaml/json encoded command to running mprocs"))
     .arg(arg!(--names [NAMES] "Names for processes provided by cli arguments. Separated by comma."))
     .arg(arg!(--npm "Run scripts from package.json. Scripts are not started by default."))
+    .arg(arg!(--just "Run recipes from justfile. Recipes are not started by default. Requires just to be installed."))
     .arg(arg!([COMMANDS]... "Commands to run (if omitted, commands from config will be run)"))
     // .subcommand(Command::new("server"))
     // .subcommand(Command::new("attach"))
@@ -155,6 +158,9 @@ async fn run_app() -> anyhow::Result<()> {
       config.procs = procs;
     } else if matches.get_flag("npm") {
       let procs = load_npm_procs(&settings)?;
+      config.procs = procs;
+    } else if matches.get_flag("just") {
+      let procs = load_just_procs(&settings)?;
       config.procs = procs;
     }
 
