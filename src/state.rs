@@ -38,6 +38,12 @@ pub struct State {
   pub hide_keymap_window: bool,
 
   pub quitting: bool,
+  
+  // Search state
+  pub search_active: bool,
+  pub search_query: String,
+  pub search_matches: Vec<(usize, usize)>, // (line, column) positions
+  pub current_match: Option<usize>,
 }
 
 impl State {
@@ -79,5 +85,65 @@ impl State {
 
   pub fn toggle_keymap_window(&mut self) {
     self.hide_keymap_window = !self.hide_keymap_window;
+  }
+
+  pub fn start_search(&mut self) {
+    self.search_active = true;
+    self.search_query.clear();
+    self.search_matches.clear();
+    self.current_match = None;
+  }
+
+  pub fn cancel_search(&mut self) {
+    self.search_active = false;
+    self.search_query.clear();
+    self.search_matches.clear();
+    self.current_match = None;
+  }
+
+  pub fn update_search(&mut self, query: &str) {
+    self.search_query = query.to_string();
+    // Search matches will be updated in ui_term.rs
+  }
+
+  pub fn next_match(&mut self) {
+    if let Some(current) = self.current_match {
+      if current + 1 < self.search_matches.len() {
+        self.current_match = Some(current + 1);
+      } else {
+        self.current_match = Some(0); // Wrap around
+      }
+    } else if !self.search_matches.is_empty() {
+      self.current_match = Some(0);
+    }
+  }
+
+  pub fn prev_match(&mut self) {
+    if let Some(current) = self.current_match {
+      if current > 0 {
+        self.current_match = Some(current - 1);
+      } else {
+        self.current_match = Some(self.search_matches.len() - 1); // Wrap around
+      }
+    } else if !self.search_matches.is_empty() {
+      self.current_match = Some(self.search_matches.len() - 1);
+    }
+  }
+}
+
+impl Default for State {
+  fn default() -> Self {
+    Self {
+      current_client_id: None,
+      scope: Scope::Procs,
+      procs: Vec::new(),
+      selected: 0,
+      hide_keymap_window: false,
+      quitting: false,
+      search_active: false,
+      search_query: String::new(),
+      search_matches: Vec::new(),
+      current_match: None,
+    }
   }
 }

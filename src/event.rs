@@ -51,6 +51,11 @@ pub enum AppEvent {
   ToggleKeymapWindow,
 
   SendKey { key: Key },
+
+  StartSearch,
+  NextMatch,
+  PrevMatch,
+  CopyAll,
 }
 
 impl AppEvent {
@@ -101,6 +106,10 @@ impl AppEvent {
       AppEvent::CopyModeCopy => "Copy selected text".to_string(),
       AppEvent::ToggleKeymapWindow => "Toggle help".to_string(),
       AppEvent::SendKey { key } => format!("Send {} key", key.to_string()),
+      AppEvent::StartSearch => "Start search".to_string(),
+      AppEvent::NextMatch => "Next match".to_string(),
+      AppEvent::PrevMatch => "Previous match".to_string(),
+      AppEvent::CopyAll => "Copy all".to_string(),
     }
   }
 }

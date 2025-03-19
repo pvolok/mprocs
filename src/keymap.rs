@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-
+use crossterm::event::{KeyCode, KeyModifiers};
 use crate::{event::AppEvent, key::Key};
 
 pub struct Keymap {
@@ -72,5 +72,21 @@ impl Keymap {
       KeymapGroup::Copy => &self.rev_copy,
     };
     rev_map.get(event)
+  }
+}
+
+impl Default for Keymap {
+  fn default() -> Self {
+    let mut keymap = Keymap::new();
+
+    // ... existing bindings ...
+
+    // Search and copy bindings
+    keymap.bind_t(Key::new(KeyCode::Char('f'), KeyModifiers::CONTROL), AppEvent::StartSearch);
+    keymap.bind_t(Key::new(KeyCode::Char('n'), KeyModifiers::CONTROL), AppEvent::NextMatch);
+    keymap.bind_t(Key::new(KeyCode::Char('p'), KeyModifiers::CONTROL), AppEvent::PrevMatch);
+    keymap.bind_t(Key::new(KeyCode::Char('a'), KeyModifiers::CONTROL), AppEvent::CopyAll);
+
+    keymap
   }
 }

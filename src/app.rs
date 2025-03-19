@@ -41,7 +41,7 @@ use crate::{
   state::{Scope, State},
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
-  ui_term::{render_term, term_check_hit},
+  ui_term::{self, render_term, term_check_hit},
   ui_zoom_tip::render_zoom_tip,
 };
 
@@ -677,6 +677,25 @@ impl App {
           proc.send(ProcCmd::SendKey(key.clone()));
         }
       }
+
+      AppEvent::StartSearch => {
+        self.state.start_search();
+        loop_action.render();
+      }
+      AppEvent::NextMatch => {
+        self.state.next_match();
+        loop_action.render();
+      }
+      AppEvent::PrevMatch => {
+        self.state.prev_match();
+        loop_action.render();
+      }
+      AppEvent::CopyAll => {
+        if let Err(e) = ui_term::copy_all_terminal_content(&self.state) {
+          log::error!("Failed to copy terminal content: {}", e);
+        }
+        loop_action.render();
+      }
     }
   }
 
@@ -1006,13 +1025,15 @@ pub async fn kernel_main(
 
   let state = State {
     current_client_id: None,
-
     scope: Scope::Procs,
     procs: Vec::new(),
     selected: 0,
     hide_keymap_window: config.hide_keymap_window,
-
     quitting: false,
+    search_active: false,
+    search_query: String::new(),
+    search_matches: Vec::new(),
+    current_match: None,
   };
 
   let app = App {
@@ -1022,12 +1043,9 @@ pub async fn kernel_main(
     modal: None,
     proc_rx: upd_rx,
     proc_tx: upd_tx,
-
     ev_rx,
     ev_tx,
-
     kernel_receiver,
-
     screen_size: Size {
       width: 160,
       height: 50,
