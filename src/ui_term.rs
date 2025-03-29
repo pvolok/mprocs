@@ -1,7 +1,7 @@
 use termwiz::escape::csi::CursorStyle;
 use tui::{
   layout::{Margin, Rect},
-  style::{Color, Style},
+  style::{Color, Style, Modifier},
   text::{Line, Span, Text},
   widgets::{Clear, Paragraph, Widget, Wrap},
   Frame,
@@ -11,6 +11,7 @@ use crate::{
   proc::{handle::ProcViewFrame, CopyMode, Pos},
   state::{Scope, State},
   theme::Theme,
+  clipboard::set_clipboard_content,
 };
 
 pub fn render_term(
@@ -70,7 +71,7 @@ pub fn render_term(
           }
         };
 
-        let term = UiTerm::new(screen, proc.copy_mode());
+        let term = UiTerm::with_state(&screen, proc.copy_mode(), state);
         frame.render_widget(
           term,
           area.inner(&Margin {
@@ -104,11 +105,88 @@ pub fn render_term(
 pub struct UiTerm<'a> {
   screen: &'a vt100::Screen,
   copy_mode: &'a CopyMode,
+  state: Option<&'a State>,
 }
 
 impl<'a> UiTerm<'a> {
   pub fn new(screen: &'a vt100::Screen, copy_mode: &'a CopyMode) -> Self {
-    UiTerm { screen, copy_mode }
+    Self { 
+      screen, 
+      copy_mode,
+      state: None,
+    }
+  }
+
+  pub fn with_state(screen: &'a vt100::Screen, copy_mode: &'a CopyMode, state: &'a State) -> Self {
+    Self {
+      screen,
+      copy_mode,
+      state: Some(state),
+    }
+  }
+
+  fn copy_all_content(&self) -> String {
+    let mut content = String::new();
+    let size = self.screen.size();
+    
+    for row in 0..size.0 {
+      for col in 0..size.1 {
+        if let Some(cell) = self.screen.cell(row, col) {
+          content.push_str(&cell.contents());
+        }
+      }
+      content.push('\n');
+    }
+    content
+  }
+
+  fn find_matches(&self, query: &str) -> Vec<(usize, usize)> {
+    let mut matches = Vec::new();
+    let size = self.screen.size();
+    
+    for row in 0..size.0 {
+      let mut line = String::new();
+      for col in 0..size.1 {
+        if let Some(cell) = self.screen.cell(row, col) {
+          line.push_str(&cell.contents());
+        }
+      }
+      
+      // Find all matches in this line
+      let mut start = 0;
+      while let Some(pos) = line[start..].find(query) {
+        let abs_pos = start + pos;
+        matches.push((row as usize, abs_pos));
+        start = abs_pos + 1;
+      }
+    }
+    matches
+  }
+
+  fn highlight_matches(&self, buf: &mut tui::buffer::Buffer, matches: &[(usize, usize)], current_match: Option<usize>) {
+    let highlight_style = Style::default()
+      .bg(Color::Yellow)
+      .fg(Color::Black)
+      .add_modifier(Modifier::BOLD);
+    
+    let current_highlight_style = Style::default()
+      .bg(Color::Green)
+      .fg(Color::Black)
+      .add_modifier(Modifier::BOLD);
+
+    for (idx, &(row, col)) in matches.iter().enumerate() {
+      let style = if Some(idx) == current_match {
+        current_highlight_style
+      } else {
+        highlight_style
+      };
+
+      // Apply highlight style to the matched text
+      let cell = buf.get_mut(col as u16, row as u16);
+      let mut new_cell = cell.clone();
+      new_cell.set_style(style);
+      *cell = new_cell;
+    }
   }
 }
 
@@ -164,6 +242,14 @@ impl Widget for UiTerm<'_> {
       let y = area.y;
       buf.set_span(x, y, &span, width);
     }
+
+    // After rendering the terminal content, highlight any search matches
+    if let Some(state) = self.state {
+      if state.search_active && !state.search_query.is_empty() {
+        let matches = self.find_matches(&state.search_query);
+        self.highlight_matches(buf, &matches, state.current_match);
+      }
+    }
   }
 }
 
@@ -172,4 +258,16 @@ pub fn term_check_hit(area: Rect, x: u16, y: u16) -> bool {
     && area.x + area.width >= x + 1
     && area.y <= y
     && area.y + area.height >= y + 1
+}
+
+pub fn copy_all_terminal_content(state: &State) -> anyhow::Result<()> {
+  if let Some(proc) = state.get_current_proc() {
+    if let ProcViewFrame::Vt(vt) = &proc.lock_view() {
+      let screen = vt.screen();
+      let ui_term = UiTerm::new(&screen, proc.copy_mode());
+      let content = ui_term.copy_all_content();
+      set_clipboard_content(&content)?;
+    }
+  }
+  Ok(())
 }
