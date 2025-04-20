@@ -1,6 +1,0 @@
-#!/bin/sh
-set -eu
-
-for file in tests/data/fixtures/*.in; do
-    cargo run --example generate_fuzz "$(basename "$file" .in)"
-done

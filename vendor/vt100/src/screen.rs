@@ -107,6 +107,7 @@ pub struct Screen {
 }
 
 impl Screen {
+  #[must_use]
   pub fn get_selected_text(
     &self,
     low_x: i32,
@@ -174,6 +175,7 @@ impl Screen {
     self.grid().scrollback()
   }
 
+  #[must_use]
   pub fn scrollback_len(&self) -> usize {
     self.grid().scrollback_len()
   }
@@ -545,10 +547,10 @@ impl Screen {
 
   fn write_bells_diff(&self, contents: &mut Vec<u8>, prev: &Self) {
     if self.audible_bell_count != prev.audible_bell_count {
-      crate::term::AudibleBell::default().write_buf(contents);
+      crate::term::AudibleBell.write_buf(contents);
     }
     if self.visual_bell_count != prev.visual_bell_count {
-      crate::term::VisualBell::default().write_buf(contents);
+      crate::term::VisualBell.write_buf(contents);
     }
   }
 
@@ -576,7 +578,7 @@ impl Screen {
   }
 
   fn write_attributes_formatted(&self, contents: &mut Vec<u8>) {
-    crate::term::ClearAttrs::default().write_buf(contents);
+    crate::term::ClearAttrs.write_buf(contents);
     self
       .attrs
       .write_escape_code_diff(contents, &crate::attrs::Attrs::default());
@@ -640,7 +642,7 @@ impl Screen {
     self
       .grid()
       .visible_row(row)
-      .map_or(false, crate::row::Row::wrapped)
+      .is_some_and(crate::row::Row::wrapped)
   }
 
   /// Returns the terminal's window title.
@@ -846,6 +848,7 @@ impl Screen {
     }
   }
 
+  #[must_use]
   pub fn is_wide_continuation(&self, row: u16, col: u16) -> bool {
     self
       .grid()
@@ -1077,28 +1080,8 @@ impl Screen {
     self.audible_bell_count += 1;
   }
 
-  fn bs(&mut self) {
-    self.grid_mut().col_dec(1);
-  }
-
   fn tab(&mut self) {
     self.grid_mut().col_tab();
-  }
-
-  fn lf(&mut self) {
-    self.grid_mut().row_inc_scroll(1);
-  }
-
-  fn vt(&mut self) {
-    self.lf();
-  }
-
-  fn ff(&mut self) {
-    self.lf();
-  }
-
-  fn cr(&mut self) {
-    self.grid_mut().col_set(0);
   }
 
   // escape codes
@@ -1116,11 +1099,6 @@ impl Screen {
   // ESC =
   fn deckpam(&mut self) {
     self.set_mode(MODE_APPLICATION_KEYPAD);
-  }
-
-  // ESC >
-  fn deckpnm(&mut self) {
-    self.clear_mode(MODE_APPLICATION_KEYPAD);
   }
 
   // ESC M
@@ -1157,39 +1135,6 @@ impl Screen {
     self.grid_mut().insert_cells(count);
   }
 
-  // CSI A
-  fn cuu(&mut self, offset: u16) {
-    self.grid_mut().row_dec_clamp(offset);
-  }
-
-  // CSI B
-  fn cud(&mut self, offset: u16) {
-    self.grid_mut().row_inc_clamp(offset);
-  }
-
-  // CSI C
-  fn cuf(&mut self, offset: u16) {
-    self.grid_mut().col_inc_clamp(offset);
-  }
-
-  // CSI D
-  fn cub(&mut self, offset: u16) {
-    self.grid_mut().col_dec(offset);
-  }
-
-  // CSI G
-  fn cha(&mut self, col: u16) {
-    self.grid_mut().col_set(col - 1);
-  }
-
-  // CSI H
-  fn cup(&mut self, (row, col): (u16, u16)) {
-    self.grid_mut().set_pos(crate::grid::Pos {
-      row: row - 1,
-      col: col - 1,
-    });
-  }
-
   // CSI J
   fn ed(&mut self, mode: u16) {
     let attrs = self.attrs;
@@ -1198,7 +1143,7 @@ impl Screen {
       1 => self.grid_mut().erase_all_backward(attrs),
       2 => self.grid_mut().erase_all(attrs),
       n => {
-        log::debug!("unhandled ED mode: {}", n);
+        log::debug!("unhandled ED mode: {n}");
       }
     }
   }
@@ -1216,7 +1161,7 @@ impl Screen {
       1 => self.grid_mut().erase_row_backward(attrs),
       2 => self.grid_mut().erase_row(attrs),
       n => {
-        log::debug!("unhandled EL mode: {}", n);
+        log::debug!("unhandled EL mode: {n}");
       }
     }
   }
@@ -1224,338 +1169,6 @@ impl Screen {
   // CSI ? K
   fn decsel(&mut self, mode: u16) {
     self.el(mode);
-  }
-
-  // CSI L
-  fn il(&mut self, count: u16) {
-    self.grid_mut().insert_lines(count);
-  }
-
-  // CSI M
-  fn dl(&mut self, count: u16) {
-    self.grid_mut().delete_lines(count);
-  }
-
-  // CSI P
-  fn dch(&mut self, count: u16) {
-    self.grid_mut().delete_cells(count);
-  }
-
-  // CSI S
-  fn su(&mut self, count: u16) {
-    self.grid_mut().scroll_up(count);
-  }
-
-  // CSI T
-  fn sd(&mut self, count: u16) {
-    self.grid_mut().scroll_down(count);
-  }
-
-  // CSI X
-  fn ech(&mut self, count: u16) {
-    let attrs = self.attrs;
-    self.grid_mut().erase_cells(count, attrs);
-  }
-
-  // CSI d
-  fn vpa(&mut self, row: u16) {
-    self.grid_mut().row_set(row - 1);
-  }
-
-  // CSI h
-  #[allow(clippy::unused_self)]
-  fn sm(&mut self, params: &vte::Params) {
-    // nothing, i think?
-    if log::log_enabled!(log::Level::Debug) {
-      log::debug!("unhandled SM mode: {}", param_str(params));
-    }
-  }
-
-  // CSI ? h
-  fn decset(&mut self, params: &vte::Params) {
-    for param in params {
-      match param {
-        &[1] => self.set_mode(MODE_APPLICATION_CURSOR),
-        &[6] => self.grid_mut().set_origin_mode(true),
-        &[9] => self.set_mouse_mode(MouseProtocolMode::Press),
-        &[25] => self.clear_mode(MODE_HIDE_CURSOR),
-        &[47] => self.enter_alternate_grid(),
-        &[1000] => {
-          self.set_mouse_mode(MouseProtocolMode::PressRelease);
-        }
-        &[1002] => {
-          self.set_mouse_mode(MouseProtocolMode::ButtonMotion);
-        }
-        &[1003] => self.set_mouse_mode(MouseProtocolMode::AnyMotion),
-        &[1005] => {
-          self.set_mouse_encoding(MouseProtocolEncoding::Utf8);
-        }
-        &[1006] => {
-          self.set_mouse_encoding(MouseProtocolEncoding::Sgr);
-        }
-        &[1049] => {
-          self.decsc();
-          self.alternate_grid.clear();
-          self.enter_alternate_grid();
-        }
-        &[2004] => self.set_mode(MODE_BRACKETED_PASTE),
-        ns => {
-          if log::log_enabled!(log::Level::Debug) {
-            let n = if ns.len() == 1 {
-              format!(
-                "{}",
-                // we just checked that ns.len() == 1, so 0
-                // must be valid
-                ns[0]
-              )
-            } else {
-              format!("{:?}", ns)
-            };
-            log::debug!("unhandled DECSET mode: {}", n);
-          }
-        }
-      }
-    }
-  }
-
-  // CSI l
-  #[allow(clippy::unused_self)]
-  fn rm(&mut self, params: &vte::Params) {
-    // nothing, i think?
-    if log::log_enabled!(log::Level::Debug) {
-      log::debug!("unhandled RM mode: {}", param_str(params));
-    }
-  }
-
-  // CSI ? l
-  fn decrst(&mut self, params: &vte::Params) {
-    for param in params {
-      match param {
-        &[1] => self.clear_mode(MODE_APPLICATION_CURSOR),
-        &[6] => self.grid_mut().set_origin_mode(false),
-        &[9] => self.clear_mouse_mode(MouseProtocolMode::Press),
-        &[25] => self.set_mode(MODE_HIDE_CURSOR),
-        &[47] => {
-          self.exit_alternate_grid();
-        }
-        &[1000] => {
-          self.clear_mouse_mode(MouseProtocolMode::PressRelease);
-        }
-        &[1002] => {
-          self.clear_mouse_mode(MouseProtocolMode::ButtonMotion);
-        }
-        &[1003] => {
-          self.clear_mouse_mode(MouseProtocolMode::AnyMotion);
-        }
-        &[1005] => {
-          self.clear_mouse_encoding(MouseProtocolEncoding::Utf8);
-        }
-        &[1006] => {
-          self.clear_mouse_encoding(MouseProtocolEncoding::Sgr);
-        }
-        &[1049] => {
-          self.exit_alternate_grid();
-          self.decrc();
-        }
-        &[2004] => self.clear_mode(MODE_BRACKETED_PASTE),
-        ns => {
-          if log::log_enabled!(log::Level::Debug) {
-            let n = if ns.len() == 1 {
-              format!(
-                "{}",
-                // we just checked that ns.len() == 1, so 0
-                // must be valid
-                ns[0]
-              )
-            } else {
-              format!("{:?}", ns)
-            };
-            log::debug!("unhandled DECRST mode: {}", n);
-          }
-        }
-      }
-    }
-  }
-
-  // CSI m
-  fn sgr(&mut self, params: &vte::Params) {
-    // XXX really i want to just be able to pass in a default Params
-    // instance with a 0 in it, but vte doesn't allow creating new Params
-    // instances
-    if params.is_empty() {
-      self.attrs = crate::attrs::Attrs::default();
-      return;
-    }
-
-    let mut iter = params.iter();
-
-    macro_rules! next_param {
-      () => {
-        match iter.next() {
-          Some(n) => n,
-          _ => return,
-        }
-      };
-    }
-
-    macro_rules! to_u8 {
-      ($n:expr) => {
-        if let Some(n) = u16_to_u8($n) {
-          n
-        } else {
-          return;
-        }
-      };
-    }
-
-    macro_rules! next_param_u8 {
-      () => {
-        if let &[n] = next_param!() {
-          to_u8!(n)
-        } else {
-          return;
-        }
-      };
-    }
-
-    loop {
-      match next_param!() {
-        &[0] => self.attrs = crate::attrs::Attrs::default(),
-        &[1] => self.attrs.set_bold(true),
-        &[3] => self.attrs.set_italic(true),
-        &[4] => self.attrs.set_underline(true),
-        &[7] => self.attrs.set_inverse(true),
-        &[22] => self.attrs.set_bold(false),
-        &[23] => self.attrs.set_italic(false),
-        &[24] => self.attrs.set_underline(false),
-        &[27] => self.attrs.set_inverse(false),
-        &[n] if (30..=37).contains(&n) => {
-          self.attrs.fgcolor = crate::attrs::Color::Idx(to_u8!(n) - 30);
-        }
-        &[38, 2, r, g, b] => {
-          self.attrs.fgcolor =
-            crate::attrs::Color::Rgb(to_u8!(r), to_u8!(g), to_u8!(b));
-        }
-        &[38, 5, i] => {
-          self.attrs.fgcolor = crate::attrs::Color::Idx(to_u8!(i));
-        }
-        &[38] => match next_param!() {
-          &[2] => {
-            let r = next_param_u8!();
-            let g = next_param_u8!();
-            let b = next_param_u8!();
-            self.attrs.fgcolor = crate::attrs::Color::Rgb(r, g, b);
-          }
-          &[5] => {
-            self.attrs.fgcolor = crate::attrs::Color::Idx(next_param_u8!());
-          }
-          ns => {
-            if log::log_enabled!(log::Level::Debug) {
-              let n = if ns.len() == 1 {
-                format!(
-                  "{}",
-                  // we just checked that ns.len() == 1, so
-                  // 0 must be valid
-                  ns[0]
-                )
-              } else {
-                format!("{:?}", ns)
-              };
-              log::debug!("unhandled SGR mode: 38 {}", n);
-            }
-            return;
-          }
-        },
-        &[39] => {
-          self.attrs.fgcolor = crate::attrs::Color::Default;
-        }
-        &[n] if (40..=47).contains(&n) => {
-          self.attrs.bgcolor = crate::attrs::Color::Idx(to_u8!(n) - 40);
-        }
-        &[48, 2, r, g, b] => {
-          self.attrs.bgcolor =
-            crate::attrs::Color::Rgb(to_u8!(r), to_u8!(g), to_u8!(b));
-        }
-        &[48, 5, i] => {
-          self.attrs.bgcolor = crate::attrs::Color::Idx(to_u8!(i));
-        }
-        &[48] => match next_param!() {
-          &[2] => {
-            let r = next_param_u8!();
-            let g = next_param_u8!();
-            let b = next_param_u8!();
-            self.attrs.bgcolor = crate::attrs::Color::Rgb(r, g, b);
-          }
-          &[5] => {
-            self.attrs.bgcolor = crate::attrs::Color::Idx(next_param_u8!());
-          }
-          ns => {
-            if log::log_enabled!(log::Level::Debug) {
-              let n = if ns.len() == 1 {
-                format!(
-                  "{}",
-                  // we just checked that ns.len() == 1, so
-                  // 0 must be valid
-                  ns[0]
-                )
-              } else {
-                format!("{:?}", ns)
-              };
-              log::debug!("unhandled SGR mode: 48 {}", n);
-            }
-            return;
-          }
-        },
-        &[49] => {
-          self.attrs.bgcolor = crate::attrs::Color::Default;
-        }
-        &[n] if (90..=97).contains(&n) => {
-          self.attrs.fgcolor = crate::attrs::Color::Idx(to_u8!(n) - 82);
-        }
-        &[n] if (100..=107).contains(&n) => {
-          self.attrs.bgcolor = crate::attrs::Color::Idx(to_u8!(n) - 92);
-        }
-        ns => {
-          if log::log_enabled!(log::Level::Debug) {
-            let n = if ns.len() == 1 {
-              format!(
-                "{}",
-                // we just checked that ns.len() == 1, so 0
-                // must be valid
-                ns[0]
-              )
-            } else {
-              format!("{:?}", ns)
-            };
-            log::debug!("unhandled SGR mode: {}", n);
-          }
-        }
-      }
-    }
-  }
-
-  // CSI r
-  fn decstbm(&mut self, (top, bottom): (u16, u16)) {
-    self.grid_mut().set_scroll_region(top - 1, bottom - 1);
-  }
-
-  // osc codes
-
-  fn osc0(&mut self, s: &[u8]) {
-    self.osc1(s);
-    self.osc2(s);
-  }
-
-  fn osc1(&mut self, s: &[u8]) {
-    if let Ok(s) = std::str::from_utf8(s) {
-      self.icon_name = s.to_string();
-    }
-  }
-
-  fn osc2(&mut self, s: &[u8]) {
-    if let Ok(s) = std::str::from_utf8(s) {
-      self.title = s.to_string();
-    }
   }
 }
 
@@ -1578,235 +1191,7 @@ macro_rules! skip {
   };
 }
 
-impl vte::Perform for Screen {
-  fn print(&mut self, c: char) {
-    // TODO: handle graphemes
-    // TODO: handle g0/g1 charset
-    if self.insert {
-      // TODO
-      skip!("self.insert = true");
-    }
-    if c == '\u{fffd}' || ('\u{80}'..'\u{a0}').contains(&c) {
-      self.errors = self.errors.saturating_add(1);
-    }
-    self.text(c);
-  }
-
-  fn execute(&mut self, b: u8) {
-    match b {
-      7 => self.bel(),
-      8 => self.bs(),
-      9 => self.tab(),
-      10 => self.lf(),
-      11 => self.vt(),
-      12 => self.ff(),
-      13 => self.cr(),
-      // we don't implement shift in/out alternate character sets, but
-      // it shouldn't count as an "error"
-      14 | 15 => {}
-      _ => {
-        self.errors = self.errors.saturating_add(1);
-        log::debug!("unhandled control character: {}", b);
-      }
-    }
-  }
-
-  fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, b: u8) {
-    match intermediates.get(0) {
-      None => match b {
-        b'7' => self.decsc(),
-        b'8' => self.decrc(),
-        b'=' => self.deckpam(),
-        b'>' => self.deckpnm(),
-        b'M' => self.ri(),
-        b'c' => self.ris(),
-        b'g' => self.vb(),
-        _ => {
-          log::debug!("unhandled escape code: ESC {}", b);
-        }
-      },
-      Some(i) => {
-        log::debug!("unhandled escape code: ESC {} {}", i, b);
-      }
-    }
-  }
-
-  fn csi_dispatch(
-    &mut self,
-    params: &vte::Params,
-    intermediates: &[u8],
-    _ignore: bool,
-    c: char,
-  ) {
-    match intermediates.get(0) {
-      None => match c {
-        '@' => self.ich(canonicalize_params_1(params, 1)),
-        'A' => self.cuu(canonicalize_params_1(params, 1)),
-        'B' => self.cud(canonicalize_params_1(params, 1)),
-        'C' => self.cuf(canonicalize_params_1(params, 1)),
-        'D' => self.cub(canonicalize_params_1(params, 1)),
-        'G' => self.cha(canonicalize_params_1(params, 1)),
-        'H' => self.cup(canonicalize_params_2(params, 1, 1)),
-        'J' => self.ed(canonicalize_params_1(params, 0)),
-        'K' => self.el(canonicalize_params_1(params, 0)),
-        'L' => self.il(canonicalize_params_1(params, 1)),
-        'M' => self.dl(canonicalize_params_1(params, 1)),
-        'P' => self.dch(canonicalize_params_1(params, 1)),
-        'S' => self.su(canonicalize_params_1(params, 1)),
-        'T' => self.sd(canonicalize_params_1(params, 1)),
-        'X' => self.ech(canonicalize_params_1(params, 1)),
-        'd' => self.vpa(canonicalize_params_1(params, 1)),
-        'h' => self.sm(params),
-        'l' => self.rm(params),
-        'm' => self.sgr(params),
-        'r' => {
-          self.decstbm(canonicalize_params_decstbm(params, self.grid().size()))
-        }
-        _ => {
-          if log::log_enabled!(log::Level::Debug) {
-            log::debug!(
-              "unhandled csi sequence: CSI {} {}",
-              param_str(params),
-              c
-            );
-          }
-        }
-      },
-      Some(b'?') => match c {
-        'J' => self.decsed(canonicalize_params_1(params, 0)),
-        'K' => self.decsel(canonicalize_params_1(params, 0)),
-        'h' => self.decset(params),
-        'l' => self.decrst(params),
-        _ => {
-          if log::log_enabled!(log::Level::Debug) {
-            log::debug!(
-              "unhandled csi sequence: CSI ? {} {}",
-              param_str(params),
-              c
-            );
-          }
-        }
-      },
-      Some(i) => {
-        if log::log_enabled!(log::Level::Debug) {
-          log::debug!(
-            "unhandled csi sequence: CSI {} {} {}",
-            i,
-            param_str(params),
-            c
-          );
-        }
-      }
-    }
-  }
-
-  fn osc_dispatch(&mut self, params: &[&[u8]], _bel_terminated: bool) {
-    match (params.get(0), params.get(1)) {
-      (Some(&b"0"), Some(s)) => self.osc0(s),
-      (Some(&b"1"), Some(s)) => self.osc1(s),
-      (Some(&b"2"), Some(s)) => self.osc2(s),
-      _ => {
-        if log::log_enabled!(log::Level::Debug) {
-          log::debug!("unhandled osc sequence: OSC {}", osc_param_str(params),);
-        }
-      }
-    }
-  }
-
-  fn hook(
-    &mut self,
-    params: &vte::Params,
-    intermediates: &[u8],
-    _ignore: bool,
-    action: char,
-  ) {
-    if log::log_enabled!(log::Level::Debug) {
-      match intermediates.get(0) {
-        None => log::debug!(
-          "unhandled dcs sequence: DCS {} {}",
-          param_str(params),
-          action,
-        ),
-        Some(i) => log::debug!(
-          "unhandled dcs sequence: DCS {} {} {}",
-          i,
-          param_str(params),
-          action,
-        ),
-      }
-    }
-  }
-}
-
-fn canonicalize_params_1(params: &vte::Params, default: u16) -> u16 {
-  let first = params.iter().next().map_or(0, |x| *x.get(0).unwrap_or(&0));
-  if first == 0 {
-    default
-  } else {
-    first
-  }
-}
-
-fn canonicalize_params_2(
-  params: &vte::Params,
-  default1: u16,
-  default2: u16,
-) -> (u16, u16) {
-  let mut iter = params.iter();
-  let first = iter.next().map_or(0, |x| *x.get(0).unwrap_or(&0));
-  let first = if first == 0 { default1 } else { first };
-
-  let second = iter.next().map_or(0, |x| *x.get(0).unwrap_or(&0));
-  let second = if second == 0 { default2 } else { second };
-
-  (first, second)
-}
-
-fn canonicalize_params_decstbm(
-  params: &vte::Params,
-  size: crate::grid::Size,
-) -> (u16, u16) {
-  let mut iter = params.iter();
-  let top = iter.next().map_or(0, |x| *x.get(0).unwrap_or(&0));
-  let top = if top == 0 { 1 } else { top };
-
-  let bottom = iter.next().map_or(0, |x| *x.get(0).unwrap_or(&0));
-  let bottom = if bottom == 0 { size.rows } else { bottom };
-
-  (top, bottom)
-}
-
-fn u16_to_u8(i: u16) -> Option<u8> {
-  if i > u16::from(u8::max_value()) {
-    None
-  } else {
-    // safe because we just ensured that the value fits in a u8
-    Some(i.try_into().unwrap())
-  }
-}
-
-fn param_str(params: &vte::Params) -> String {
-  let strs: Vec<_> = params
-    .iter()
-    .map(|subparams| {
-      let subparam_strs: Vec<_> = subparams
-        .iter()
-        .map(std::string::ToString::to_string)
-        .collect();
-      subparam_strs.join(" : ")
-    })
-    .collect();
-  strs.join(" ; ")
-}
-
-fn osc_param_str(params: &[&[u8]]) -> String {
-  let strs: Vec<_> = params
-    .iter()
-    .map(|b| format!("\"{}\"", std::string::String::from_utf8_lossy(*b)))
-    .collect();
-  strs.join(" ; ")
-}
-
+#[allow(clippy::match_same_arms, clippy::semicolon_if_nothing_returned)]
 impl Screen {
   pub fn handle_action(&mut self, action: Action) {
     match action {
@@ -1904,6 +1289,7 @@ impl Screen {
   fn handle_os_command(&mut self, cmd: OperatingSystemCommand) {
     match cmd {
       OperatingSystemCommand::SetIconNameAndWindowTitle(icon_and_title) => {
+        self.icon_name.clone_from(&icon_and_title);
         self.icon_name = icon_and_title.clone();
         self.title = icon_and_title;
       }
@@ -1938,6 +1324,9 @@ impl Screen {
       }
       OperatingSystemCommand::ResetColors(_) => skip!("ResetColors"),
       OperatingSystemCommand::RxvtExtension(_) => skip!("RxvtExtension"),
+      OperatingSystemCommand::ConEmuProgress(_progress) => {
+        skip!("ConEmuProgress")
+      }
       OperatingSystemCommand::Unspecified(data) => {
         let strings: Vec<_> = data
           .into_iter()

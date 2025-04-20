@@ -53,7 +53,7 @@ unicode-segmentation = "1.10.1"
 unicode-width = "0.1.10"
 which = "6.0.1"
 xdg = "2.5.2"
-termwiz = "0.22.0"
+termwiz = "0.23.3"
 bitflags = { version = "2.3.3", features = ["serde"] }
 compact_str = { version = "0.7.1", features = ["serde"] }
 bincode = "1.3.3"
