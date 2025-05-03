@@ -12,6 +12,8 @@ use crate::{
   yaml_val::{value_to_string, Val},
 };
 
+const DEFAULT_PROCESSES_TITLE: &'static str = "Processes";
+
 pub struct ConfigContext {
   pub path: PathBuf,
 }
@@ -23,6 +25,7 @@ pub struct Config {
   pub mouse_scroll_speed: usize,
   pub scrollback_len: usize,
   pub proc_list_width: usize,
+  pub title: String,
 }
 
 impl Config {
@@ -62,6 +65,14 @@ impl Config {
       None
     };
 
+    let title = if let Some(title) = config.get(&Value::from("title")) {
+      title.as_str()?.to_string()
+    } else if let Some(title) = &settings.title {
+      title.clone()
+    } else {
+      DEFAULT_PROCESSES_TITLE.to_string()
+    };
+
     let config = Config {
       procs,
       server,
@@ -69,6 +80,7 @@ impl Config {
       mouse_scroll_speed: settings.mouse_scroll_speed,
       scrollback_len: settings.scrollback_len,
       proc_list_width: settings.proc_list_width,
+      title,
     };
 
     Ok(config)
@@ -82,6 +94,7 @@ impl Config {
       mouse_scroll_speed: settings.mouse_scroll_speed,
       scrollback_len: settings.scrollback_len,
       proc_list_width: settings.proc_list_width,
+      title: DEFAULT_PROCESSES_TITLE.to_string(),
     }
   }
 }
