@@ -21,6 +21,7 @@ pub struct Settings {
   pub mouse_scroll_speed: usize,
   pub scrollback_len: usize,
   pub proc_list_width: usize,
+  pub title: Option<String>,
 }
 
 impl Default for Settings {
@@ -33,6 +34,7 @@ impl Default for Settings {
       mouse_scroll_speed: 5,
       scrollback_len: 1000,
       proc_list_width: 30,
+      title: None,
     };
     settings.add_defaults();
     settings

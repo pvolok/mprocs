@@ -7,12 +7,18 @@ use tui::{
 };
 
 use crate::{
+  config::Config,
   proc::handle::ProcHandle,
   state::{Scope, State},
   theme::Theme,
 };
 
-pub fn render_procs(area: Rect, frame: &mut Frame, state: &mut State) {
+pub fn render_procs(
+  area: Rect,
+  frame: &mut Frame,
+  state: &mut State,
+  config: &Config,
+) {
   if area.width <= 2 {
     return;
   }
@@ -34,7 +40,10 @@ pub fn render_procs(area: Rect, frame: &mut Frame, state: &mut State) {
     .collect::<Vec<_>>();
 
   let title = {
-    let mut spans = vec![Span::styled("Processes", theme.pane_title(active))];
+    let mut spans = vec![Span::styled(
+      config.title.as_str(),
+      theme.pane_title(active),
+    )];
     if state.quitting {
       spans.push(Span::from(" "));
       spans.push(Span::styled(
