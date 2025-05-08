@@ -41,7 +41,7 @@ pub fn render_procs(
 
   let title = {
     let mut spans = vec![Span::styled(
-      config.title.as_str(),
+      config.proc_list_title.as_str(),
       theme.pane_title(active),
     )];
     if state.quitting {
