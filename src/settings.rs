@@ -21,7 +21,7 @@ pub struct Settings {
   pub mouse_scroll_speed: usize,
   pub scrollback_len: usize,
   pub proc_list_width: usize,
-  pub title: Option<String>,
+  pub proc_list_title: String,
 }
 
 impl Default for Settings {
@@ -34,7 +34,7 @@ impl Default for Settings {
       mouse_scroll_speed: 5,
       scrollback_len: 1000,
       proc_list_width: 30,
-      title: None,
+      proc_list_title: "Processes".to_string(),
     };
     settings.add_defaults();
     settings
@@ -138,6 +138,10 @@ impl Settings {
 
     if let Some(scrollback) = obj.get(&Value::from("scrollback")) {
       self.scrollback_len = scrollback.as_usize()?;
+    }
+
+    if let Some(proc_list_title) = obj.get(&Value::from("proc_list_title")) {
+      self.proc_list_title = proc_list_title.as_str()?.to_string().into();
     }
 
     if let Some(proc_list_width) = obj.get(&Value::from("proc_list_width")) {

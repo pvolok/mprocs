@@ -89,7 +89,7 @@ async fn run_app() -> anyhow::Result<()> {
     .arg(arg!(-c --config [PATH] "Config path [default: mprocs.yaml]"))
     .arg(arg!(-s --server [PATH] "Remote control server address. Example: 127.0.0.1:4050."))
     .arg(arg!(--ctl [YAML] "Send yaml/json encoded command to running mprocs"))
-    .arg(arg!(--title [TITLE] "Title for the processes pane"))
+    .arg(arg!(--"proc-list-title" [TITLE] "Title for the processes pane"))
     .arg(arg!(--names [NAMES] "Names for processes provided by cli arguments. Separated by comma."))
     .arg(arg!(--npm "Run scripts from package.json. Scripts are not started by default."))
     .arg(arg!(--just "Run recipes from justfile. Recipes are not started by default. Requires just to be installed."))
@@ -132,8 +132,8 @@ async fn run_app() -> anyhow::Result<()> {
       return run_ctl(ctl_arg, &config).await;
     }
 
-    if let Some(title) = matches.get_one::<String>("title") {
-      config.title = title.to_string();
+    if let Some(title) = matches.get_one::<String>("proc-list-title") {
+      config.proc_list_title = title.to_string();
     }
 
     if let Some(cmds) = matches.get_many::<String>("COMMANDS") {
