@@ -312,7 +312,7 @@ Commands are encoded as yaml. Available commands:
 - `{c: restart-proc}`
 - `{c: force-restart-proc}`
 - `{c: show-add-proc}`
-- `{c: add-proc, cmd: "<SHELL COMMAND>", name: "<PROC NAME>"}`
+- `{c: add-proc, cmd: "<SHELL COMMAND>", name: "<PROC NAME>"}` - Add proccess. `name` field is optional.
 - `{c: duplicate-proc}`
 - `{c: show-remove-proc}`
 - `{c: remove-proc, id: "<PROCESS ID>"}`

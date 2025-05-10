@@ -567,9 +567,9 @@ impl App {
         loop_action.render();
       }
       AppEvent::AddProc { cmd, name } => {
-        let name: String = match name {
-          Some(s) => s.to_string(),
-          None => cmd.to_string(),
+        let name = match name {
+          Some(s) => s,
+          None => cmd,
         };
         let proc_handle = create_proc(
           name.clone(),
