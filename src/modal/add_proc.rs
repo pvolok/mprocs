@@ -53,6 +53,7 @@ impl Modal for AddProcModal {
           .app_sender
           .send(AppEvent::AddProc {
             cmd: self.input.value().to_string(),
+            name: None,
           })
           .unwrap();
         // Skip because AddProc event will immediately rerender.
