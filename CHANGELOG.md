@@ -1,5 +1,13 @@
 ## Unreleased
 
+## 0.7.3 - 2025-05-21
+
+- Add --just argument to load recipes from justfile
+- Add title configuration for the proc list pane
+- Add name optional argument to "add-proc"
+- Fix nushell (Handle CPR sequence)
+
+
 ## 0.7.2 - 2025-01-20
 
 - Add duplicate selected process command

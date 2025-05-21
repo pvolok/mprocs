@@ -1,6 +1,6 @@
 [package]
 name = "mprocs-vt100"
-version = "0.7.0"
+version = "0.7.3"
 edition = "2021"
 
 description = "Fork of vt100 for mprocs"
