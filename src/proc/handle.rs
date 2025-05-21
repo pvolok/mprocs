@@ -1,6 +1,6 @@
 use super::{
   msg::{ProcCmd, ProcEvent},
-  CopyMode, Proc,
+  CopyMode, Proc, ReplySender,
 };
 
 use std::time::Instant;
@@ -42,7 +42,7 @@ impl ProcHandle {
   }
 
   pub fn rename(&mut self, name: &str) {
-    self.name.replace_range(.., &name);
+    self.name.replace_range(.., name);
   }
 
   pub fn id(&self) -> usize {
@@ -60,7 +60,7 @@ impl ProcHandle {
         .vt
         .read()
         .map_or(ProcViewFrame::Empty, |vt| ProcViewFrame::Vt(vt)),
-      super::ProcState::Error(err) => ProcViewFrame::Err(&err),
+      super::ProcState::Error(err) => ProcViewFrame::Err(err),
     }
   }
 
@@ -131,12 +131,15 @@ impl ProcHandle {
         self.last_start = Some(Instant::now());
         self.is_up = true;
       }
+      ProcEvent::TermReply(s) => {
+        self.send(ProcCmd::SendRaw(s));
+      }
     }
   }
 }
 
 pub enum ProcViewFrame<'a> {
   Empty,
-  Vt(std::sync::RwLockReadGuard<'a, vt100::Parser>),
+  Vt(std::sync::RwLockReadGuard<'a, vt100::Parser<ReplySender>>),
   Err(&'a str),
 }

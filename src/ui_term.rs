@@ -8,7 +8,7 @@ use tui::{
 };
 
 use crate::{
-  proc::{handle::ProcViewFrame, CopyMode, Pos},
+  proc::{handle::ProcViewFrame, CopyMode, Pos, ReplySender},
   state::{Scope, State},
   theme::Theme,
 };
@@ -102,12 +102,15 @@ pub fn render_term(
 }
 
 pub struct UiTerm<'a> {
-  screen: &'a vt100::Screen,
+  screen: &'a vt100::Screen<ReplySender>,
   copy_mode: &'a CopyMode,
 }
 
 impl<'a> UiTerm<'a> {
-  pub fn new(screen: &'a vt100::Screen, copy_mode: &'a CopyMode) -> Self {
+  pub fn new(
+    screen: &'a vt100::Screen<ReplySender>,
+    copy_mode: &'a CopyMode,
+  ) -> Self {
     UiTerm { screen, copy_mode }
   }
 }

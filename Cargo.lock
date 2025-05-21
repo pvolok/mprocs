@@ -1312,7 +1312,7 @@ dependencies = [
  "bytes",
  "clap",
  "clipboard-win",
- "compact_str 0.7.1",
+ "compact_str 0.9.0",
  "crossterm",
  "daemonize",
  "dunce",

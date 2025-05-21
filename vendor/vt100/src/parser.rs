@@ -1,23 +1,31 @@
 use std::sync::{Arc, Mutex};
 
+use crate::TermReplySender;
+
 /// A parser for terminal output which produces an in-memory representation of
 /// the terminal contents.
-pub struct Parser {
+pub struct Parser<Reply: TermReplySender + Clone> {
   parser: Arc<Mutex<termwiz::escape::parser::Parser>>,
-  screen: crate::screen::Screen,
+  screen: crate::screen::Screen<Reply>,
 }
 
-impl Parser {
+impl<Reply: TermReplySender + Clone> Parser<Reply> {
   /// Creates a new terminal parser of the given size and with the given
   /// amount of scrollback.
   #[must_use]
-  pub fn new(rows: u16, cols: u16, scrollback_len: usize) -> Self {
+  pub fn new(
+    rows: u16,
+    cols: u16,
+    scrollback_len: usize,
+    reply_sender: Reply,
+  ) -> Self {
     let parser = Arc::new(Mutex::new(termwiz::escape::parser::Parser::new()));
     Self {
       parser,
       screen: crate::screen::Screen::new(
         crate::grid::Size { rows, cols },
         scrollback_len,
+        reply_sender,
       ),
     }
   }
@@ -53,19 +61,12 @@ impl Parser {
   /// Returns a reference to a `Screen` object containing the terminal
   /// state.
   #[must_use]
-  pub fn screen(&self) -> &crate::screen::Screen {
+  pub fn screen(&self) -> &crate::screen::Screen<Reply> {
     &self.screen
   }
 }
 
-impl Default for Parser {
-  /// Returns a parser with dimensions 80x24 and no scrollback.
-  fn default() -> Self {
-    Self::new(24, 80, 0)
-  }
-}
-
-impl std::io::Write for Parser {
+impl<Reply: TermReplySender + Clone> std::io::Write for Parser<Reply> {
   fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
     self.process(buf);
     Ok(buf.len())

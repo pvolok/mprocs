@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use anyhow::bail;
 use assert_matches::assert_matches;
+use compact_str::CompactString;
 use crossterm::event::{MouseButton, MouseEventKind};
 use portable_pty::MasterPty;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
@@ -16,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::spawn_blocking;
 use tui::layout::Rect;
-use vt100::MouseProtocolMode;
+use vt100::{MouseProtocolMode, TermReplySender};
 
 use crate::config::ProcConfig;
 use crate::encode_term::{encode_key, encode_mouse_event, KeyCodeEncodeModes};
@@ -48,7 +49,7 @@ impl Debug for Inst {
   }
 }
 
-pub type VtWrap = Arc<RwLock<vt100::Parser>>;
+pub type VtWrap = Arc<RwLock<vt100::Parser<ReplySender>>>;
 
 impl Inst {
   fn spawn(
@@ -58,7 +59,15 @@ impl Inst {
     size: &Size,
     scrollback_len: usize,
   ) -> anyhow::Result<Self> {
-    let vt = vt100::Parser::new(size.height, size.width, scrollback_len);
+    let vt = vt100::Parser::new(
+      size.height,
+      size.width,
+      scrollback_len,
+      ReplySender {
+        proc_id: id,
+        sender: tx.clone(),
+      },
+    );
     let vt = Arc::new(RwLock::new(vt));
 
     let pty_system = native_pty_system();
@@ -309,7 +318,7 @@ impl Proc {
 
   pub fn lock_vt(
     &self,
-  ) -> Option<std::sync::RwLockReadGuard<'_, vt100::Parser>> {
+  ) -> Option<std::sync::RwLockReadGuard<'_, vt100::Parser<ReplySender>>> {
     match &self.inst {
       ProcState::None => None,
       ProcState::Some(inst) => inst.vt.read().ok(),
@@ -319,7 +328,7 @@ impl Proc {
 
   pub fn lock_vt_mut(
     &mut self,
-  ) -> Option<std::sync::RwLockWriteGuard<'_, vt100::Parser>> {
+  ) -> Option<std::sync::RwLockWriteGuard<'_, vt100::Parser<ReplySender>>> {
     match &self.inst {
       ProcState::None => None,
       ProcState::Some(inst) => inst.vt.write().ok(),
@@ -430,12 +439,12 @@ impl Proc {
     }
   }
 
-  fn scroll_vt_up(vt: &mut vt100::Parser, n: usize) {
+  fn scroll_vt_up(vt: &mut vt100::Parser<ReplySender>, n: usize) {
     let pos = usize::saturating_add(vt.screen().scrollback(), n);
     vt.set_scrollback(pos);
   }
 
-  fn scroll_screen_up(screen: &mut vt100::Screen, n: usize) {
+  fn scroll_screen_up(screen: &mut vt100::Screen<ReplySender>, n: usize) {
     let pos = usize::saturating_add(screen.scrollback(), n);
     screen.set_scrollback(pos);
   }
@@ -453,12 +462,12 @@ impl Proc {
     }
   }
 
-  fn scroll_vt_down(vt: &mut vt100::Parser, n: usize) {
+  fn scroll_vt_down(vt: &mut vt100::Parser<ReplySender>, n: usize) {
     let pos = usize::saturating_sub(vt.screen().scrollback(), n);
     vt.set_scrollback(pos);
   }
 
-  fn scroll_screen_down(screen: &mut vt100::Screen, n: usize) {
+  fn scroll_screen_down(screen: &mut vt100::Screen<ReplySender>, n: usize) {
     let pos = usize::saturating_sub(screen.scrollback(), n);
     screen.set_scrollback(pos);
   }
@@ -602,6 +611,13 @@ impl Proc {
 
       ProcCmd::SendKey(key) => self.send_key(&key),
       ProcCmd::SendMouse(event) => self.handle_mouse(event),
+      ProcCmd::SendRaw(s) => match &mut self.inst {
+        ProcState::None => (),
+        ProcState::Some(inst) => {
+          let _ = inst.master.write_all(s.as_bytes());
+        }
+        ProcState::Error(_) => (),
+      },
 
       ProcCmd::ScrollUp => self.scroll_half_screen_up(),
       ProcCmd::ScrollDown => self.scroll_half_screen_down(),
@@ -708,8 +724,8 @@ impl Size {
 
 pub enum CopyMode {
   None(Option<Pos>),
-  Start(vt100::Screen, Pos),
-  Range(vt100::Screen, Pos, Pos),
+  Start(vt100::Screen<ReplySender>, Pos),
+  Range(vt100::Screen<ReplySender>, Pos, Pos),
 }
 
 impl Default for CopyMode {
@@ -760,5 +776,17 @@ impl Pos {
     } else {
       false
     }
+  }
+}
+
+#[derive(Clone)]
+pub struct ReplySender {
+  proc_id: usize,
+  sender: UnboundedSender<(usize, ProcEvent)>,
+}
+
+impl TermReplySender for ReplySender {
+  fn reply(&self, s: CompactString) {
+    let _ = self.sender.send((self.proc_id, ProcEvent::TermReply(s)));
   }
 }

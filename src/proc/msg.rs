@@ -1,3 +1,5 @@
+use compact_str::CompactString;
+
 use crate::{event::CopyMove, key::Key, mouse::MouseEvent};
 
 #[derive(Debug)]
@@ -8,6 +10,7 @@ pub enum ProcCmd {
 
   SendKey(Key),
   SendMouse(MouseEvent),
+  SendRaw(CompactString),
 
   ScrollUp,
   ScrollDown,
@@ -28,4 +31,5 @@ pub enum ProcEvent {
   Render,
   Stopped(u32),
   Started,
+  TermReply(CompactString),
 }

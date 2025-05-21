@@ -1,11 +1,14 @@
-use crate::{attrs::Attrs, term::BufWrite as _};
+use std::fmt::Debug;
+
+use crate::{attrs::Attrs, term::BufWrite as _, TermReplySender};
+use compact_str::ToCompactString;
 use termwiz::escape::{
   csi::{
     CsiParam, Cursor, CursorStyle, DecPrivateMode, DecPrivateModeCode, Edit,
     EraseInDisplay, EraseInLine, Sgr, TerminalMode, TerminalModeCode, Window,
   },
-  Action, ControlCode, DeviceControlMode, Esc, EscCode, OperatingSystemCommand,
-  CSI,
+  Action, ControlCode, DeviceControlMode, Esc, EscCode, OneBased,
+  OperatingSystemCommand, CSI,
 };
 use unicode_width::UnicodeWidthChar as _;
 
@@ -77,7 +80,9 @@ impl Default for MouseProtocolEncoding {
 
 /// Represents the overall terminal state.
 #[derive(Clone, Debug)]
-pub struct Screen {
+pub struct Screen<Reply: TermReplySender> {
+  reply_sender: Reply,
+
   grid: crate::grid::Grid,
   alternate_grid: crate::grid::Grid,
 
@@ -106,7 +111,7 @@ pub struct Screen {
   errors: usize,
 }
 
-impl Screen {
+impl<Reply: TermReplySender> Screen<Reply> {
   #[must_use]
   pub fn get_selected_text(
     &self,
@@ -118,10 +123,15 @@ impl Screen {
     self.grid().get_selected_text(low_x, low_y, high_x, high_y)
   }
 
-  pub(crate) fn new(size: crate::grid::Size, scrollback_len: usize) -> Self {
+  pub(crate) fn new(
+    size: crate::grid::Size,
+    scrollback_len: usize,
+    reply_sender: Reply,
+  ) -> Self {
     let mut grid = crate::grid::Grid::new(size, scrollback_len);
     grid.allocate_rows();
     Self {
+      reply_sender,
       grid,
       alternate_grid: crate::grid::Grid::new(size, 0),
 
@@ -856,7 +866,7 @@ impl Screen {
   }
 }
 
-impl Screen {
+impl<Reply: TermReplySender + Clone> Screen<Reply> {
   fn text(&mut self, c: char) {
     let pos = self.grid().pos();
     let size = self.grid().size();
@@ -1114,7 +1124,11 @@ impl Screen {
     let visual_bell_count = self.visual_bell_count;
     let errors = self.errors;
 
-    *self = Self::new(self.grid.size(), self.grid.scrollback_len());
+    *self = Self::new(
+      self.grid.size(),
+      self.grid.scrollback_len(),
+      self.reply_sender.clone(),
+    );
 
     self.title = title;
     self.icon_name = icon_name;
@@ -1192,7 +1206,7 @@ macro_rules! skip {
 }
 
 #[allow(clippy::match_same_arms, clippy::semicolon_if_nothing_returned)]
-impl Screen {
+impl<Reply: TermReplySender + Clone> Screen<Reply> {
   pub fn handle_action(&mut self, action: Action) {
     match action {
       Action::Print(c) => self.text(c),
@@ -1307,8 +1321,8 @@ impl Screen {
         skip!("SystemNotification")
       }
       OperatingSystemCommand::ITermProprietary(_) => skip!("ITermProprietary"),
-      OperatingSystemCommand::FinalTermSemanticPrompt(_) => {
-        skip!("FinalTermSemanticPrompt")
+      OperatingSystemCommand::FinalTermSemanticPrompt(p) => {
+        skip!("FinalTermSemanticPrompt {:?}", p)
       }
       OperatingSystemCommand::ChangeColorNumber(_) => {
         skip!("ChangeColorNumber")
@@ -1399,7 +1413,12 @@ impl Screen {
           skip!("ActivePositionReport")
         }
         Cursor::RequestActivePositionReport => {
-          skip!("RequestActivePositionReport")
+          let pos = self.grid().pos();
+          let es = CSI::Cursor(Cursor::ActivePositionReport {
+            line: OneBased::from_zero_based(pos.row.into()),
+            col: OneBased::from_zero_based(pos.col.into()),
+          });
+          self.reply_sender.reply(es.to_compact_string());
         }
         Cursor::SaveCursor => skip!("SaveCursor"),
         Cursor::RestoreCursor => skip!("RestoreCursor"),
