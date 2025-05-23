@@ -1,3 +1,15 @@
+<div align="center" markdown="1">
+   <br>
+   <br>
+   <a href="https://www.warp.dev/mprocs">
+      <img alt="Warp sponsorship" width="600" src="https://github.com/user-attachments/assets/935a899b-47fd-4449-8d24-f03476bac76c">
+   </a>
+
+### [Warp, the intelligent terminal for developers](https://www.warp.dev/mprocs)
+#### [Try running mprocs in Warp](https://www.warp.dev/mprocs)<br>
+
+</div>
+
 # mprocs
 
 _mprocs_ runs multiple commands in parallel and shows output of each command
