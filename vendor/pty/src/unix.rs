@@ -6,10 +6,17 @@ use crate::{
 use anyhow::{bail, Error};
 use filedescriptor::FileDescriptor;
 use libc::{self, winsize};
+use std::cell::RefCell;
+use std::ffi::OsStr;
 use std::io::{Read, Write};
-use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
+use std::os::fd::AsFd;
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::os::unix::process::CommandExt;
+use std::path::PathBuf;
 use std::{io, mem, ptr};
+
+pub use std::os::unix::io::RawFd;
 
 #[derive(Default)]
 pub struct UnixPtySystem {}
@@ -27,7 +34,7 @@ fn openpty(size: PtySize) -> anyhow::Result<(UnixMasterPty, UnixSlavePty)> {
 
   let result = unsafe {
     // BSDish systems may require mut pointers to some args
-    #[cfg_attr(feature = "cargo-clippy", allow(clippy::unnecessary_mut_passed))]
+    #[allow(clippy::unnecessary_mut_passed)]
     libc::openpty(
       &mut master,
       &mut slave,
@@ -41,8 +48,12 @@ fn openpty(size: PtySize) -> anyhow::Result<(UnixMasterPty, UnixSlavePty)> {
     bail!("failed to openpty: {:?}", io::Error::last_os_error());
   }
 
+  let tty_name = tty_name(slave);
+
   let master = UnixMasterPty {
     fd: PtyFd(unsafe { FileDescriptor::from_raw_fd(master) }),
+    took_writer: RefCell::new(false),
+    tty_name,
   };
   let slave = UnixSlavePty {
     fd: PtyFd(unsafe { FileDescriptor::from_raw_fd(slave) }),
@@ -89,10 +100,38 @@ impl Read for PtyFd {
         // Treat this as EOF so that std::io::Read::read_to_string
         // and similar functions gracefully terminate when they
         // encounter this condition
+        log::debug!("libc::EIO");
         Ok(0)
       }
       x => x,
     }
+  }
+}
+
+fn tty_name(fd: RawFd) -> Option<PathBuf> {
+  let mut buf = vec![0 as std::ffi::c_char; 128];
+
+  loop {
+    let res = unsafe { libc::ttyname_r(fd, buf.as_mut_ptr(), buf.len()) };
+
+    if res == libc::ERANGE {
+      if buf.len() > 64 * 1024 {
+        // on macOS, if the buf is "too big", ttyname_r can
+        // return ERANGE, even though that is supposed to
+        // indicate buf is "too small".
+        return None;
+      }
+      buf.resize(buf.len() * 2, 0 as std::ffi::c_char);
+      continue;
+    }
+
+    return if res == 0 {
+      let cstr = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) };
+      let osstr = OsStr::from_bytes(cstr.to_bytes());
+      Some(PathBuf::from(osstr))
+    } else {
+      None
+    };
   }
 }
 
@@ -218,6 +257,13 @@ impl PtyFd {
             libc::signal(*signo, libc::SIG_DFL);
           }
 
+          let empty_set: libc::sigset_t = std::mem::zeroed();
+          libc::sigprocmask(
+            libc::SIG_SETMASK,
+            &empty_set,
+            std::ptr::null_mut(),
+          );
+
           // Establish ourselves as a session leader.
           if libc::setsid() == -1 {
             return Err(io::Error::last_os_error());
@@ -227,7 +273,7 @@ impl PtyFd {
           // type::from(), but the size and potentially signedness
           // are system dependent, which is why we're using `as _`.
           // Suppress this lint for this section of code.
-          #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_lossless))]
+          #[allow(clippy::cast_lossless)]
           if controlling_tty {
             // Set the pty as the controlling terminal.
             // Failure to do this means that delivery of
@@ -267,6 +313,8 @@ impl PtyFd {
 /// The file descriptor will be closed when the Pty is dropped.
 struct UnixMasterPty {
   fd: PtyFd,
+  took_writer: RefCell<bool>,
+  tty_name: Option<PathBuf>,
 }
 
 /// Represents the slave end of a pty.
@@ -318,9 +366,21 @@ impl MasterPty for UnixMasterPty {
     Ok(Box::new(fd))
   }
 
-  fn try_clone_writer(&self) -> Result<Box<dyn Write + Send>, Error> {
+  fn take_writer(&self) -> Result<Box<dyn Write + Send>, Error> {
+    if *self.took_writer.borrow() {
+      anyhow::bail!("cannot take writer more than once");
+    }
+    *self.took_writer.borrow_mut() = true;
     let fd = PtyFd(self.fd.try_clone()?);
-    Ok(Box::new(UnixMasterPty { fd }))
+    Ok(Box::new(UnixMasterWriter { fd }))
+  }
+
+  fn as_raw_fd(&self) -> Option<RawFd> {
+    Some(self.fd.0.as_raw_fd())
+  }
+
+  fn tty_name(&self) -> Option<PathBuf> {
+    self.tty_name.clone()
   }
 
   fn process_group_leader(&self) -> Option<libc::pid_t> {
@@ -329,9 +389,35 @@ impl MasterPty for UnixMasterPty {
       _ => None,
     }
   }
+
+  fn get_termios(&self) -> Option<nix::sys::termios::Termios> {
+    nix::sys::termios::tcgetattr(self.fd.0.as_fd()).ok()
+  }
 }
 
-impl Write for UnixMasterPty {
+/// Represents the master end of a pty.
+/// EOT will be sent, and then the file descriptor will be closed when
+/// the Pty is dropped.
+struct UnixMasterWriter {
+  fd: PtyFd,
+}
+
+impl Drop for UnixMasterWriter {
+  fn drop(&mut self) {
+    let mut t: libc::termios =
+      unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
+    if unsafe { libc::tcgetattr(self.fd.0.as_raw_fd(), &mut t) } == 0 {
+      // EOF is only interpreted after a newline, so if it is set,
+      // we send a newline followed by EOF.
+      let eot = t.c_cc[libc::VEOF];
+      if eot != 0 {
+        let _ = self.fd.0.write_all(&[b'\n', eot]);
+      }
+    }
+  }
+}
+
+impl Write for UnixMasterWriter {
   fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
     self.fd.write(buf)
   }

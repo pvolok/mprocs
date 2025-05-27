@@ -3,7 +3,7 @@
 //! Unlike other crates in this space, this crate provides a set
 //! of traits that allow selecting from different implementations
 //! at runtime.
-//! This crate is part of [wezterm](https://github.com/wez/wezterm).
+//! This crate is part of [wezterm](https://github.com/wezterm/wezterm).
 //!
 //! ```no_run
 //! use portable_pty::{CommandBuilder, PtySize, native_pty_system, PtySystem};
@@ -33,22 +33,16 @@
 //! let mut reader = pair.master.try_clone_reader()?;
 //!
 //! // Send data to the pty by writing to the master
-//! writeln!(pair.master, "ls -l\r\n")?;
+//! writeln!(pair.master.take_writer()?, "ls -l\r\n")?;
 //! # Ok::<(), Error>(())
 //! ```
 //!
-//! ## ssh2
-//!
-//! If the `ssh` feature is enabled, this crate exposes an
-//! `ssh::SshSession` type that can wrap an established ssh
-//! session with an implementation of `PtySystem`, allowing
-//! you to use the same pty interface with remote ptys.
 use anyhow::Error;
 use downcast_rs::{impl_downcast, Downcast};
 #[cfg(unix)]
 use libc;
 #[cfg(feature = "serde_support")]
-use serde_derive::*;
+use serde::{Deserialize, Serialize};
 use std::io::Result as IoResult;
 #[cfg(windows)]
 use std::os::windows::prelude::{AsRawHandle, RawHandle};
@@ -60,9 +54,6 @@ pub use cmdbuilder::CommandBuilder;
 pub mod unix;
 #[cfg(windows)]
 pub mod win;
-
-#[cfg(feature = "ssh")]
-pub mod ssh;
 
 pub mod serial;
 
@@ -94,7 +85,7 @@ impl Default for PtySize {
 }
 
 /// Represents the master/control end of the pty
-pub trait MasterPty: std::io::Write {
+pub trait MasterPty: Downcast + Send {
   /// Inform the kernel and thus the child process that the window resized.
   /// It will update the winsize information maintained by the kernel,
   /// and generate a signal for the child to notice and update its state.
@@ -105,19 +96,38 @@ pub trait MasterPty: std::io::Write {
   /// via this stream.
   fn try_clone_reader(&self) -> Result<Box<dyn std::io::Read + Send>, Error>;
   /// Obtain a writable handle; writing to it will send data to the
-  /// slave end.  This is equivalent to the Write impl on MasterPty
-  /// itself, but allows splitting it off into a separate object.
-  fn try_clone_writer(&self) -> Result<Box<dyn std::io::Write + Send>, Error>;
+  /// slave end.
+  /// Dropping the writer will send EOF to the slave end.
+  /// It is invalid to take the writer more than once.
+  fn take_writer(&self) -> Result<Box<dyn std::io::Write + Send>, Error>;
 
   /// If applicable to the type of the tty, return the local process id
   /// of the process group or session leader
   #[cfg(unix)]
   fn process_group_leader(&self) -> Option<libc::pid_t>;
+
+  /// If get_termios() and process_group_leader() are both implemented and
+  /// return Some, then as_raw_fd() should return the same underlying fd
+  /// associated with the stream. This is to enable applications that
+  /// "know things" to query similar information for themselves.
+  #[cfg(unix)]
+  fn as_raw_fd(&self) -> Option<unix::RawFd>;
+
+  #[cfg(unix)]
+  fn tty_name(&self) -> Option<std::path::PathBuf>;
+
+  /// If applicable to the type of the tty, return the termios
+  /// associated with the stream
+  #[cfg(unix)]
+  fn get_termios(&self) -> Option<nix::sys::termios::Termios> {
+    None
+  }
 }
+impl_downcast!(MasterPty);
 
 /// Represents a child process spawned into the pty.
 /// This handle can be used to wait for or terminate that child process.
-pub trait Child: std::fmt::Debug + ChildKiller {
+pub trait Child: std::fmt::Debug + ChildKiller + Downcast + Send {
   /// Poll the child to see if it has completed.
   /// Does not block.
   /// Returns None if the child has not yet terminated,
@@ -134,9 +144,10 @@ pub trait Child: std::fmt::Debug + ChildKiller {
   #[cfg(windows)]
   fn as_raw_handle(&self) -> Option<std::os::windows::io::RawHandle>;
 }
+impl_downcast!(Child);
 
 /// Represents the ability to signal a Child to terminate
-pub trait ChildKiller: std::fmt::Debug {
+pub trait ChildKiller: std::fmt::Debug + Downcast + Send {
   /// Terminate the child process
   fn kill(&mut self) -> IoResult<()>;
 
@@ -145,6 +156,7 @@ pub trait ChildKiller: std::fmt::Debug {
   /// blocked in `.wait`.
   fn clone_killer(&self) -> Box<dyn ChildKiller + Send + Sync>;
 }
+impl_downcast!(ChildKiller);
 
 /// Represents the slave side of a pty.
 /// Can be used to spawn processes into the pty.
@@ -188,6 +200,11 @@ impl ExitStatus {
   /// Returns the exit code that this ExitStatus was constructed with
   pub fn exit_code(&self) -> u32 {
     self.code
+  }
+
+  /// Returns the signal if present that this ExitStatus was constructed with
+  pub fn signal(&self) -> Option<&str> {
+    self.signal.as_deref()
   }
 }
 
@@ -387,7 +404,7 @@ impl ChildKiller for std::process::Child {
   }
 }
 
-pub fn native_pty_system() -> Box<dyn PtySystem> {
+pub fn native_pty_system() -> Box<dyn PtySystem + Send> {
   Box::new(NativePtySystem::default())
 }
 

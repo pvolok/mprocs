@@ -29,7 +29,8 @@ pub enum ProcCmd {
 #[derive(Debug)]
 pub enum ProcEvent {
   Render,
-  Stopped(u32),
+  Exited(u32),
+  StdoutEOF,
   Started,
   TermReply(CompactString),
 }

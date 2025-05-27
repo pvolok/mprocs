@@ -7,7 +7,6 @@
 - Add name optional argument to "add-proc"
 - Fix nushell (Handle CPR sequence)
 
-
 ## 0.7.2 - 2025-01-20
 
 - Add duplicate selected process command

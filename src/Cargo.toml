@@ -67,3 +67,7 @@ daemonize = "0.5.0"
 
 [target."cfg(windows)".dependencies]
 winapi = { version = "0.3", features = ["consoleapi", "winuser"] }
+
+[lints.clippy]
+while_let_loop = "allow"
+collapsible_else_if = "allow"

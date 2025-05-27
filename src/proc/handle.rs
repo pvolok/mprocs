@@ -101,6 +101,29 @@ impl ProcHandle {
 }
 
 impl ProcHandle {
+  fn maybe_stopped(&mut self) {
+    if self.is_up {
+      return;
+    }
+
+    let exit_code = self.exit_code().unwrap();
+    if self.autorestart && !self.to_restart && exit_code != 0 {
+      match self.last_start {
+        Some(last_start) => {
+          let elapsed_time = Instant::now().duration_since(last_start);
+          if elapsed_time.as_secs_f64() > RESTART_THRESHOLD_SECONDS {
+            self.to_restart = true;
+          }
+        }
+        None => self.to_restart = true,
+      }
+    }
+    if self.to_restart {
+      self.to_restart = false;
+      self.send(ProcCmd::Start);
+    }
+  }
+
   pub fn handle_event(&mut self, event: ProcEvent, selected: bool) {
     match event {
       ProcEvent::Render => {
@@ -108,24 +131,18 @@ impl ProcHandle {
           self.changed = true;
         }
       }
-      ProcEvent::Stopped(exit_code) => {
-        self.is_up = false;
+      ProcEvent::Exited(exit_code) => {
+        self.proc.handle_exited(exit_code);
         self.exit_code = Some(exit_code);
-        if self.autorestart && !self.to_restart && exit_code != 0 {
-          match self.last_start {
-            Some(last_start) => {
-              let elapsed_time = Instant::now().duration_since(last_start);
-              if elapsed_time.as_secs_f64() > RESTART_THRESHOLD_SECONDS {
-                self.to_restart = true;
-              }
-            }
-            None => self.to_restart = true,
-          }
-        }
-        if self.to_restart {
-          self.to_restart = false;
-          self.send(ProcCmd::Start);
-        }
+        self.is_up = self.proc.is_up();
+
+        self.maybe_stopped();
+      }
+      ProcEvent::StdoutEOF => {
+        self.proc.handle_stdout_eof();
+        self.is_up = self.proc.is_up();
+
+        self.maybe_stopped();
       }
       ProcEvent::Started => {
         self.last_start = Some(Instant::now());

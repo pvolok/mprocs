@@ -2,10 +2,10 @@ pub mod handle;
 pub mod msg;
 
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::io::Write;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
-use std::thread::{self, spawn};
-use std::time::Duration;
+use std::thread::spawn;
 
 use anyhow::bail;
 use assert_matches::assert_matches;
@@ -35,16 +35,19 @@ pub struct Inst {
 
   pub pid: u32,
   pub master: Box<dyn MasterPty + Send>,
+  pub writer: Box<dyn Write + Send>,
   pub killer: Box<dyn ChildKiller + Send + Sync>,
 
-  pub running: Arc<AtomicBool>,
+  pub exit_code: Option<u32>,
+  pub stdout_eof: bool,
 }
 
 impl Debug for Inst {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Inst")
       .field("pid", &self.pid)
-      .field("running", &self.running)
+      .field("exited", &self.exit_code)
+      .field("stdout_eof", &self.stdout_eof)
       .finish()
   }
 }
@@ -78,7 +81,6 @@ impl Inst {
       pixel_height: 0,
     })?;
 
-    let running = Arc::new(AtomicBool::new(true));
     let mut child = pair.slave.spawn_command(cmd)?;
     let pid = child.process_id().unwrap_or(0);
     let killer = child.clone_killer();
@@ -86,30 +88,26 @@ impl Inst {
     let _r = tx.send((id, ProcEvent::Started));
 
     let mut reader = pair.master.try_clone_reader().unwrap();
+    let writer = pair.master.take_writer().unwrap();
 
     {
       let tx = tx.clone();
       let vt = vt.clone();
-      let running = running.clone();
       spawn_blocking(move || {
-        let mut buf = [0; 4 * 1024];
+        let mut buf = vec![0; 32 * 1024];
         loop {
-          if !running.load(Ordering::Relaxed) {
-            break;
-          }
-
           match reader.read(&mut buf[..]) {
             Ok(count) => {
-              if count > 0 {
-                if let Ok(mut vt) = vt.write() {
-                  vt.process(&buf[..count]);
-                  match tx.send((id, ProcEvent::Render)) {
-                    Ok(_) => (),
-                    Err(_) => break,
-                  }
+              if count == 0 {
+                let _ = tx.send((id, ProcEvent::StdoutEOF));
+                break;
+              }
+              if let Ok(mut vt) = vt.write() {
+                vt.process(&buf[..count]);
+                match tx.send((id, ProcEvent::Render)) {
+                  Ok(_) => (),
+                  Err(_) => break,
                 }
-              } else {
-                thread::sleep(Duration::from_millis(10));
               }
             }
             _ => break,
@@ -120,15 +118,13 @@ impl Inst {
 
     {
       let tx = tx.clone();
-      let running = running.clone();
       spawn(move || {
         // Block until program exits
         let exit_code = match child.wait() {
           Ok(status) => status.exit_code(),
-          Err(_e) => 1,
+          Err(_e) => 211,
         };
-        running.store(false, Ordering::Relaxed);
-        let _result = tx.send((id, ProcEvent::Stopped(exit_code)));
+        let _result = tx.send((id, ProcEvent::Exited(exit_code)));
       });
     }
 
@@ -137,9 +133,11 @@ impl Inst {
 
       pid,
       master: pair.master,
+      writer,
       killer,
 
-      running,
+      exit_code: None,
+      stdout_eof: false,
     };
     Ok(inst)
   }
@@ -166,7 +164,6 @@ impl Inst {
 
 pub struct Proc {
   pub id: usize,
-  pub to_restart: bool,
   pub cmd: CommandBuilder,
   size: Size,
 
@@ -243,7 +240,6 @@ impl Proc {
     let size = Size::new(size);
     let mut proc = Proc {
       id,
-      to_restart: false,
       cmd: cfg.into(),
       size,
 
@@ -268,7 +264,6 @@ impl Proc {
     let id = NEXT_PROC_ID.fetch_add(1, Ordering::Relaxed);
     let proc = Self {
       id,
-      to_restart: false,
       cmd: self.cmd.clone(),
       size: self.size.clone(),
 
@@ -308,9 +303,26 @@ impl Proc {
     }
   }
 
+  pub fn handle_exited(&mut self, exit_code: u32) {
+    match &mut self.inst {
+      ProcState::None => (),
+      ProcState::Some(inst) => inst.exit_code = Some(exit_code),
+      ProcState::Error(_) => (),
+    }
+  }
+
+  pub fn handle_stdout_eof(&mut self) {
+    match &mut self.inst {
+      ProcState::None => (),
+      ProcState::Some(inst) => inst.stdout_eof = true,
+      ProcState::Error(_) => (),
+    }
+  }
+
   fn is_up(&self) -> bool {
     if let ProcState::Some(inst) = &self.inst {
-      inst.running.load(Ordering::Relaxed)
+      // inst.running.load(Ordering::Relaxed)
+      inst.exit_code.is_none() || !inst.stdout_eof
     } else {
       false
     }
@@ -421,7 +433,7 @@ impl Proc {
         }
       }
       if let ProcState::Some(inst) = &mut self.inst {
-        inst.master.write_all(bytes).log_ignore();
+        inst.writer.write_all(bytes).log_ignore();
       }
     }
   }
@@ -594,7 +606,7 @@ impl Proc {
           | MouseProtocolMode::ButtonMotion
           | MouseProtocolMode::AnyMotion => {
             let seq = encode_mouse_event(event);
-            let _r = inst.master.write_all(seq.as_bytes());
+            let _r = inst.writer.write_all(seq.as_bytes());
           }
         }
       }
@@ -614,7 +626,7 @@ impl Proc {
       ProcCmd::SendRaw(s) => match &mut self.inst {
         ProcState::None => (),
         ProcState::Some(inst) => {
-          let _ = inst.master.write_all(s.as_bytes());
+          let _ = inst.writer.write_all(s.as_bytes());
         }
         ProcState::Error(_) => (),
       },
