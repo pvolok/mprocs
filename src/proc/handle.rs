@@ -1,6 +1,7 @@
 use super::{
   msg::{ProcCmd, ProcEvent},
-  CopyMode, Proc, ReplySender,
+  proc::{Proc, ProcState},
+  CopyMode, ReplySender,
 };
 
 use std::time::Instant;
@@ -55,12 +56,12 @@ impl ProcHandle {
 
   pub fn lock_view(&self) -> ProcViewFrame {
     match &self.proc.inst {
-      super::ProcState::None => ProcViewFrame::Empty,
-      super::ProcState::Some(inst) => inst
+      ProcState::None => ProcViewFrame::Empty,
+      ProcState::Some(inst) => inst
         .vt
         .read()
         .map_or(ProcViewFrame::Empty, |vt| ProcViewFrame::Vt(vt)),
-      super::ProcState::Error(err) => ProcViewFrame::Err(err),
+      ProcState::Error(err) => ProcViewFrame::Err(err),
     }
   }
 
