@@ -8,7 +8,7 @@ codegen-units = 1
 [workspace]
 resolver = "2"
 default-members = ["src"]
-members = ["helpers/print-key", "src", "vendor/pty", "vendor/vt100"]
+members = ["helpers/print-key", "src", "vendor/vt100"]
 
 [workspace.lints.clippy]
 all = "allow"

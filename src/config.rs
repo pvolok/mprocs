@@ -306,13 +306,10 @@ pub enum CmdConfig {
 impl From<&ProcConfig> for CommandBuilder {
   fn from(cfg: &ProcConfig) -> Self {
     let mut cmd = match &cfg.cmd {
-      CmdConfig::Cmd { cmd } => {
-        let (head, tail) = cmd.split_at(1);
-        let mut cmd = CommandBuilder::new(&head[0]);
-        cmd.args(tail);
-        cmd
-      }
-      CmdConfig::Shell { shell } => CommandBuilder::from_shell(shell),
+      CmdConfig::Cmd { cmd } => CommandBuilder::from_argv(
+        cmd.iter().map(|s| OsString::from(s)).collect(),
+      ),
+      CmdConfig::Shell { shell } => cmd_from_shell(shell),
     };
 
     if let Some(env) = &cfg.env {
@@ -333,4 +330,18 @@ impl From<&ProcConfig> for CommandBuilder {
 
     cmd
   }
+}
+
+#[cfg(windows)]
+pub fn cmd_from_shell(shell: &str) -> CommandBuilder {
+  CommandBuilder::from_argv(vec![
+    "pwsh.exe".into(),
+    "-Command".into(),
+    shell.into(),
+  ])
+}
+
+#[cfg(not(windows))]
+pub fn cmd_from_shell(shell: &str) -> CommandBuilder {
+  CommandBuilder::from_argv(vec!["/bin/sh".into(), "-c".into(), shell.into()])
 }
