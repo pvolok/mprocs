@@ -34,7 +34,7 @@ pub struct Inst {
   pub vt: VtWrap,
 
   pub pid: u32,
-  pub master: Box<dyn MasterPty + Send>,
+  pub master: Option<Box<dyn MasterPty + Send>>,
   pub writer: Box<dyn Write + Send>,
   pub killer: Box<dyn ChildKiller + Send + Sync>,
 
@@ -99,7 +99,6 @@ impl Inst {
           match reader.read(&mut buf[..]) {
             Ok(count) => {
               if count == 0 {
-                let _ = tx.send((id, ProcEvent::StdoutEOF));
                 break;
               }
               if let Ok(mut vt) = vt.write() {
@@ -110,9 +109,13 @@ impl Inst {
                 }
               }
             }
-            _ => break,
+            err => {
+              log::debug!("Proc read error: ({:?})", err);
+              break;
+            }
           }
         }
+        let _ = tx.send((id, ProcEvent::StdoutEOF));
       });
     }
 
@@ -132,7 +135,7 @@ impl Inst {
       vt,
 
       pid,
-      master: pair.master,
+      master: Some(pair.master),
       writer,
       killer,
 
@@ -146,15 +149,16 @@ impl Inst {
     let rows = size.height;
     let cols = size.width;
 
-    self
-      .master
-      .resize(PtySize {
-        rows,
-        cols,
-        pixel_width: 0,
-        pixel_height: 0,
-      })
-      .log_ignore();
+    if let Some(master) = &self.master {
+      master
+        .resize(PtySize {
+          rows,
+          cols,
+          pixel_width: 0,
+          pixel_height: 0,
+        })
+        .log_ignore();
+    }
 
     if let Ok(mut vt) = self.vt.write() {
       vt.set_size(rows, cols);
@@ -306,7 +310,10 @@ impl Proc {
   pub fn handle_exited(&mut self, exit_code: u32) {
     match &mut self.inst {
       ProcState::None => (),
-      ProcState::Some(inst) => inst.exit_code = Some(exit_code),
+      ProcState::Some(inst) => {
+        inst.master = None;
+        inst.exit_code = Some(exit_code);
+      }
       ProcState::Error(_) => (),
     }
   }
@@ -321,7 +328,6 @@ impl Proc {
 
   fn is_up(&self) -> bool {
     if let ProcState::Some(inst) = &self.inst {
-      // inst.running.load(Ordering::Relaxed)
       inst.exit_code.is_none() || !inst.stdout_eof
     } else {
       false

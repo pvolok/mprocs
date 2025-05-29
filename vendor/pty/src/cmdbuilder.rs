@@ -257,9 +257,11 @@ impl CommandBuilder {
 
   #[cfg(windows)]
   pub fn from_shell(shell: &str) -> Self {
-    let mut cmd =
-      Self::from_argv(vec!["cmd.exe".into(), "/S".into(), "/C".into()]);
-    cmd.raw_arg = Some(shell.into());
+    let mut cmd = Self::from_argv(vec![
+      "powershell.exe".into(),
+      "-Command".into(),
+      shell.into(),
+    ]);
 
     cmd
   }
