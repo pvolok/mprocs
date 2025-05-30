@@ -1,12 +1,12 @@
 use std::sync::{Arc, Mutex};
 
-use crate::TermReplySender;
+use crate::vt100::TermReplySender;
 
 /// A parser for terminal output which produces an in-memory representation of
 /// the terminal contents.
 pub struct Parser<Reply: TermReplySender + Clone> {
   parser: Arc<Mutex<termwiz::escape::parser::Parser>>,
-  screen: crate::screen::Screen<Reply>,
+  screen: crate::vt100::screen::Screen<Reply>,
 }
 
 impl<Reply: TermReplySender + Clone> Parser<Reply> {
@@ -22,8 +22,8 @@ impl<Reply: TermReplySender + Clone> Parser<Reply> {
     let parser = Arc::new(Mutex::new(termwiz::escape::parser::Parser::new()));
     Self {
       parser,
-      screen: crate::screen::Screen::new(
-        crate::grid::Size { rows, cols },
+      screen: crate::vt100::screen::Screen::new(
+        crate::vt100::grid::Size { rows, cols },
         scrollback_len,
         reply_sender,
       ),
@@ -61,7 +61,7 @@ impl<Reply: TermReplySender + Clone> Parser<Reply> {
   /// Returns a reference to a `Screen` object containing the terminal
   /// state.
   #[must_use]
-  pub fn screen(&self) -> &crate::screen::Screen<Reply> {
+  pub fn screen(&self) -> &crate::vt100::screen::Screen<Reply> {
     &self.screen
   }
 }

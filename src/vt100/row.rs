@@ -1,15 +1,15 @@
-use crate::term::BufWrite as _;
+use crate::vt100::term::BufWrite as _;
 
 #[derive(Clone, Debug)]
 pub struct Row {
-  cells: Vec<crate::cell::Cell>,
+  cells: Vec<crate::vt100::cell::Cell>,
   wrapped: bool,
 }
 
 impl Row {
   pub fn new(cols: u16) -> Self {
     Self {
-      cells: vec![crate::cell::Cell::default(); usize::from(cols)],
+      cells: vec![crate::vt100::cell::Cell::default(); usize::from(cols)],
       wrapped: false,
     }
   }
@@ -23,26 +23,26 @@ impl Row {
       .unwrap()
   }
 
-  pub fn clear(&mut self, attrs: crate::attrs::Attrs) {
+  pub fn clear(&mut self, attrs: crate::vt100::attrs::Attrs) {
     for cell in &mut self.cells {
       cell.clear(attrs);
     }
     self.wrapped = false;
   }
 
-  fn cells(&self) -> impl Iterator<Item = &crate::cell::Cell> {
+  fn cells(&self) -> impl Iterator<Item = &crate::vt100::cell::Cell> {
     self.cells.iter()
   }
 
-  pub fn get(&self, col: u16) -> Option<&crate::cell::Cell> {
+  pub fn get(&self, col: u16) -> Option<&crate::vt100::cell::Cell> {
     self.cells.get(usize::from(col))
   }
 
-  pub fn get_mut(&mut self, col: u16) -> Option<&mut crate::cell::Cell> {
+  pub fn get_mut(&mut self, col: u16) -> Option<&mut crate::vt100::cell::Cell> {
     self.cells.get_mut(usize::from(col))
   }
 
-  pub fn insert(&mut self, i: u16, cell: crate::cell::Cell) {
+  pub fn insert(&mut self, i: u16, cell: crate::vt100::cell::Cell) {
     self.cells.insert(usize::from(i), cell);
     self.wrapped = false;
   }
@@ -53,7 +53,7 @@ impl Row {
     self.wrapped = false;
   }
 
-  pub fn erase(&mut self, i: u16, attrs: crate::attrs::Attrs) {
+  pub fn erase(&mut self, i: u16, attrs: crate::vt100::attrs::Attrs) {
     let wide = self.cells[usize::from(i)].is_wide();
     self.clear_wide(i);
     self.cells[usize::from(i)].clear(attrs);
@@ -71,7 +71,7 @@ impl Row {
     }
   }
 
-  pub fn resize(&mut self, len: u16, cell: crate::cell::Cell) {
+  pub fn resize(&mut self, len: u16, cell: crate::vt100::cell::Cell) {
     self.cells.resize(usize::from(len), cell);
     self.wrapped = false;
   }
@@ -144,21 +144,21 @@ impl Row {
     width: u16,
     row: u16,
     wrapping: bool,
-    prev_pos: Option<crate::grid::Pos>,
-    prev_attrs: Option<crate::attrs::Attrs>,
-  ) -> (crate::grid::Pos, crate::attrs::Attrs) {
+    prev_pos: Option<crate::vt100::grid::Pos>,
+    prev_attrs: Option<crate::vt100::attrs::Attrs>,
+  ) -> (crate::vt100::grid::Pos, crate::vt100::attrs::Attrs) {
     let mut prev_was_wide = false;
-    let default_cell = crate::cell::Cell::default();
+    let default_cell = crate::vt100::cell::Cell::default();
 
     let mut prev_pos = if let Some(prev_pos) = prev_pos {
       prev_pos
     } else if wrapping {
-      crate::grid::Pos {
+      crate::vt100::grid::Pos {
         row: row - 1,
         col: self.cols(),
       }
     } else {
-      crate::grid::Pos { row, col: start }
+      crate::vt100::grid::Pos { row, col: start }
     };
     let mut prev_attrs = prev_attrs.unwrap_or_default();
 
@@ -170,12 +170,12 @@ impl Row {
         prev_attrs = *default_attrs;
       }
       contents.push(b' ');
-      crate::term::Backspace::default().write_buf(contents);
-      crate::term::EraseChar::new(1).write_buf(contents);
-      prev_pos = crate::grid::Pos { row, col: 0 };
+      crate::vt100::term::Backspace::default().write_buf(contents);
+      crate::vt100::term::EraseChar::new(1).write_buf(contents);
+      prev_pos = crate::vt100::grid::Pos { row, col: 0 };
     }
 
-    let mut erase: Option<(u16, &crate::attrs::Attrs)> = None;
+    let mut erase: Option<(u16, &crate::vt100::attrs::Attrs)> = None;
     for (col, cell) in self
       .cells()
       .enumerate()
@@ -190,11 +190,11 @@ impl Row {
 
       // we limit the number of cols to a u16 (see Size)
       let col: u16 = col.try_into().unwrap();
-      let pos = crate::grid::Pos { row, col };
+      let pos = crate::vt100::grid::Pos { row, col };
 
       if let Some((prev_col, attrs)) = erase {
         if cell.has_contents() || cell.attrs() != attrs {
-          let new_pos = crate::grid::Pos { row, col: prev_col };
+          let new_pos = crate::vt100::grid::Pos { row, col: prev_col };
           if wrapping
             && prev_pos.row + 1 == new_pos.row
             && prev_pos.col >= self.cols()
@@ -203,17 +203,19 @@ impl Row {
               contents.extend(" ".repeat(usize::from(new_pos.col)).as_bytes());
             } else {
               contents.extend(b" ");
-              crate::term::Backspace::default().write_buf(contents);
+              crate::vt100::term::Backspace::default().write_buf(contents);
             }
           } else {
-            crate::term::MoveFromTo::new(prev_pos, new_pos).write_buf(contents);
+            crate::vt100::term::MoveFromTo::new(prev_pos, new_pos)
+              .write_buf(contents);
           }
           prev_pos = new_pos;
           if &prev_attrs != attrs {
             attrs.write_escape_code_diff(contents, &prev_attrs);
             prev_attrs = *attrs;
           }
-          crate::term::EraseChar::new(pos.col - prev_col).write_buf(contents);
+          crate::vt100::term::EraseChar::new(pos.col - prev_col)
+            .write_buf(contents);
           erase = None;
         }
       }
@@ -227,7 +229,8 @@ impl Row {
               || prev_pos.col < self.cols() - if cell.is_wide() { 1 } else { 0 }
               || pos.col != 0
             {
-              crate::term::MoveFromTo::new(prev_pos, pos).write_buf(contents);
+              crate::vt100::term::MoveFromTo::new(prev_pos, pos)
+                .write_buf(contents);
             }
             prev_pos = pos;
           }
@@ -246,7 +249,7 @@ impl Row {
       }
     }
     if let Some((prev_col, attrs)) = erase {
-      let new_pos = crate::grid::Pos { row, col: prev_col };
+      let new_pos = crate::vt100::grid::Pos { row, col: prev_col };
       if wrapping
         && prev_pos.row + 1 == new_pos.row
         && prev_pos.col >= self.cols()
@@ -255,17 +258,18 @@ impl Row {
           contents.extend(" ".repeat(usize::from(new_pos.col)).as_bytes());
         } else {
           contents.extend(b" ");
-          crate::term::Backspace::default().write_buf(contents);
+          crate::vt100::term::Backspace::default().write_buf(contents);
         }
       } else {
-        crate::term::MoveFromTo::new(prev_pos, new_pos).write_buf(contents);
+        crate::vt100::term::MoveFromTo::new(prev_pos, new_pos)
+          .write_buf(contents);
       }
       prev_pos = new_pos;
       if &prev_attrs != attrs {
         attrs.write_escape_code_diff(contents, &prev_attrs);
         prev_attrs = *attrs;
       }
-      crate::term::ClearRowForward::default().write_buf(contents);
+      crate::vt100::term::ClearRowForward::default().write_buf(contents);
     }
 
     (prev_pos, prev_attrs)
@@ -283,9 +287,9 @@ impl Row {
     row: u16,
     wrapping: bool,
     prev_wrapping: bool,
-    mut prev_pos: crate::grid::Pos,
-    mut prev_attrs: crate::attrs::Attrs,
-  ) -> (crate::grid::Pos, crate::attrs::Attrs) {
+    mut prev_pos: crate::vt100::grid::Pos,
+    mut prev_attrs: crate::vt100::attrs::Attrs,
+  ) -> (crate::vt100::grid::Pos, crate::vt100::attrs::Attrs) {
     let mut prev_was_wide = false;
 
     let first_cell = &self.cells[usize::from(start)];
@@ -310,17 +314,17 @@ impl Row {
         false
       };
       contents.extend(cell_contents.as_bytes());
-      crate::term::Backspace::default().write_buf(contents);
+      crate::vt100::term::Backspace::default().write_buf(contents);
       if prev_first_cell.is_wide() {
-        crate::term::Backspace::default().write_buf(contents);
+        crate::vt100::term::Backspace::default().write_buf(contents);
       }
       if need_erase {
-        crate::term::EraseChar::new(1).write_buf(contents);
+        crate::vt100::term::EraseChar::new(1).write_buf(contents);
       }
-      prev_pos = crate::grid::Pos { row, col: 0 };
+      prev_pos = crate::vt100::grid::Pos { row, col: 0 };
     }
 
-    let mut erase: Option<(u16, &crate::attrs::Attrs)> = None;
+    let mut erase: Option<(u16, &crate::vt100::attrs::Attrs)> = None;
     for (col, (cell, prev_cell)) in self
       .cells()
       .zip(prev.cells())
@@ -336,11 +340,11 @@ impl Row {
 
       // we limit the number of cols to a u16 (see Size)
       let col: u16 = col.try_into().unwrap();
-      let pos = crate::grid::Pos { row, col };
+      let pos = crate::vt100::grid::Pos { row, col };
 
       if let Some((prev_col, attrs)) = erase {
         if cell.has_contents() || cell.attrs() != attrs {
-          let new_pos = crate::grid::Pos { row, col: prev_col };
+          let new_pos = crate::vt100::grid::Pos { row, col: prev_col };
           if wrapping
             && prev_pos.row + 1 == new_pos.row
             && prev_pos.col >= self.cols()
@@ -349,17 +353,19 @@ impl Row {
               contents.extend(" ".repeat(usize::from(new_pos.col)).as_bytes());
             } else {
               contents.extend(b" ");
-              crate::term::Backspace::default().write_buf(contents);
+              crate::vt100::term::Backspace::default().write_buf(contents);
             }
           } else {
-            crate::term::MoveFromTo::new(prev_pos, new_pos).write_buf(contents);
+            crate::vt100::term::MoveFromTo::new(prev_pos, new_pos)
+              .write_buf(contents);
           }
           prev_pos = new_pos;
           if &prev_attrs != attrs {
             attrs.write_escape_code_diff(contents, &prev_attrs);
             prev_attrs = *attrs;
           }
-          crate::term::EraseChar::new(pos.col - prev_col).write_buf(contents);
+          crate::vt100::term::EraseChar::new(pos.col - prev_col)
+            .write_buf(contents);
           erase = None;
         }
       }
@@ -373,7 +379,8 @@ impl Row {
               || prev_pos.col < self.cols() - if cell.is_wide() { 1 } else { 0 }
               || pos.col != 0
             {
-              crate::term::MoveFromTo::new(prev_pos, pos).write_buf(contents);
+              crate::vt100::term::MoveFromTo::new(prev_pos, pos)
+                .write_buf(contents);
             }
             prev_pos = pos;
           }
@@ -391,7 +398,7 @@ impl Row {
       }
     }
     if let Some((prev_col, attrs)) = erase {
-      let new_pos = crate::grid::Pos { row, col: prev_col };
+      let new_pos = crate::vt100::grid::Pos { row, col: prev_col };
       if wrapping
         && prev_pos.row + 1 == new_pos.row
         && prev_pos.col >= self.cols()
@@ -400,17 +407,18 @@ impl Row {
           contents.extend(" ".repeat(usize::from(new_pos.col)).as_bytes());
         } else {
           contents.extend(b" ");
-          crate::term::Backspace::default().write_buf(contents);
+          crate::vt100::term::Backspace::default().write_buf(contents);
         }
       } else {
-        crate::term::MoveFromTo::new(prev_pos, new_pos).write_buf(contents);
+        crate::vt100::term::MoveFromTo::new(prev_pos, new_pos)
+          .write_buf(contents);
       }
       prev_pos = new_pos;
       if &prev_attrs != attrs {
         attrs.write_escape_code_diff(contents, &prev_attrs);
         prev_attrs = *attrs;
       }
-      crate::term::ClearRowForward::default().write_buf(contents);
+      crate::vt100::term::ClearRowForward::default().write_buf(contents);
     }
 
     // if this row is going from wrapped to not wrapped, we need to erase
@@ -419,22 +427,22 @@ impl Row {
     // position the cursor after the end of the line correctly so that
     // drawing the next line can just start writing and be wrapped.
     if (!self.wrapped && prev.wrapped) || (!prev.wrapped && self.wrapped) {
-      let end_pos =
-        if self.is_wide_continuation(self.cols() - 1) {
-          crate::grid::Pos {
-            row,
-            col: self.cols() - 2,
-          }
-        } else {
-          crate::grid::Pos {
-            row,
-            col: self.cols() - 1,
-          }
-        };
-      crate::term::MoveFromTo::new(prev_pos, end_pos).write_buf(contents);
+      let end_pos = if self.is_wide_continuation(self.cols() - 1) {
+        crate::vt100::grid::Pos {
+          row,
+          col: self.cols() - 2,
+        }
+      } else {
+        crate::vt100::grid::Pos {
+          row,
+          col: self.cols() - 1,
+        }
+      };
+      crate::vt100::term::MoveFromTo::new(prev_pos, end_pos)
+        .write_buf(contents);
       prev_pos = end_pos;
       if !self.wrapped {
-        crate::term::EraseChar::new(1).write_buf(contents);
+        crate::vt100::term::EraseChar::new(1).write_buf(contents);
       }
       let end_cell = &self.cells[usize::from(end_pos.col)];
       if end_cell.has_contents() {

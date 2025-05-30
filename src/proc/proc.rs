@@ -7,7 +7,6 @@ use crossterm::event::{MouseButton, MouseEventKind};
 use portable_pty::CommandBuilder;
 use tokio::sync::mpsc::UnboundedSender;
 use tui::layout::Rect;
-use vt100::MouseProtocolMode;
 
 use crate::config::ProcConfig;
 use crate::encode_term::{encode_key, encode_mouse_event, KeyCodeEncodeModes};
@@ -15,6 +14,7 @@ use crate::error::ResultLogger;
 use crate::event::CopyMove;
 use crate::key::Key;
 use crate::mouse::MouseEvent;
+use crate::vt100;
 
 use super::handle::ProcHandle;
 use super::inst::Inst;
@@ -386,7 +386,7 @@ impl Proc {
     } else {
       if let ProcState::Some(inst) = &mut self.inst {
         match mouse_mode {
-          MouseProtocolMode::None => match event.kind {
+          vt100::MouseProtocolMode::None => match event.kind {
             MouseEventKind::Down(btn) => match btn {
               MouseButton::Left => {
                 if let Some(vt) = inst.vt.read().log_get() {
@@ -429,10 +429,10 @@ impl Proc {
             MouseEventKind::ScrollLeft => (),
             MouseEventKind::ScrollRight => (),
           },
-          MouseProtocolMode::Press
-          | MouseProtocolMode::PressRelease
-          | MouseProtocolMode::ButtonMotion
-          | MouseProtocolMode::AnyMotion => {
+          vt100::MouseProtocolMode::Press
+          | vt100::MouseProtocolMode::PressRelease
+          | vt100::MouseProtocolMode::ButtonMotion
+          | vt100::MouseProtocolMode::AnyMotion => {
             let seq = encode_mouse_event(event);
             let _r = inst.writer.write_all(seq.as_bytes());
           }

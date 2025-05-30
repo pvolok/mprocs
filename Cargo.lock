@@ -332,7 +332,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3538270d33cc669650c4b093848450d380def10c331d38c768e34cac80576e6e"
 dependencies = [
  "termcolor",
- "unicode-width 0.1.10",
+ "unicode-width",
 ]
 
 [[package]]
@@ -1109,12 +1109,12 @@ dependencies = [
  "flexi_logger",
  "futures",
  "indexmap",
+ "itoa",
  "lazy_static",
  "libc",
  "log",
  "log-panics",
  "mlua",
- "mprocs-vt100",
  "phf",
  "portable-pty",
  "ratatui",
@@ -1128,22 +1128,10 @@ dependencies = [
  "triggered",
  "tui-input",
  "unicode-segmentation",
- "unicode-width 0.1.10",
+ "unicode-width",
  "which 6.0.1",
  "winapi",
  "xdg",
-]
-
-[[package]]
-name = "mprocs-vt100"
-version = "0.7.3"
-dependencies = [
- "compact_str 0.9.0",
- "itoa",
- "log",
- "ratatui",
- "termwiz",
- "unicode-width 0.2.0",
 ]
 
 [[package]]
@@ -1492,7 +1480,7 @@ dependencies = [
  "stability",
  "strum",
  "unicode-segmentation",
- "unicode-width 0.1.10",
+ "unicode-width",
 ]
 
 [[package]]
@@ -1868,7 +1856,6 @@ dependencies = [
  "pest",
  "pest_derive",
  "phf",
- "serde",
  "sha2",
  "signal-hook",
  "siphasher 1.0.1",
@@ -2008,7 +1995,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b3e785f863a3af4c800a2a669d0b64c879b538738e352607e2624d03f868dc01"
 dependencies = [
  "crossterm",
- "unicode-width 0.1.10",
+ "unicode-width",
 ]
 
 [[package]]
@@ -2042,12 +2029,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0edd1e5b14653f783770bce4a4dabb4a5108a5370a5f5d8cfe8710c361f6c8b"
 
 [[package]]
-name = "unicode-width"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fc81956842c57dac11422a97c3b8195a1ff727f06e85c84ed2e8aa277c9a0fd"
-
-[[package]]
 name = "unsafe-libyaml"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2067,7 +2048,6 @@ checksum = "458f7a779bf54acc9f347480ac654f68407d3aab21269a6e3c9f922acd9e2da9"
 dependencies = [
  "atomic",
  "getrandom 0.3.2",
- "serde",
 ]
 
 [[package]]
@@ -2178,7 +2158,6 @@ checksum = "692daff6d93d94e29e4114544ef6d5c942a7ed998b37abdc19b17136ea428eb7"
 dependencies = [
  "getrandom 0.3.2",
  "mac_address",
- "serde",
  "sha2",
  "thiserror 1.0.38",
  "uuid",
@@ -2193,7 +2172,6 @@ dependencies = [
  "csscolorparser",
  "deltae",
  "lazy_static",
- "serde",
  "wezterm-dynamic",
 ]
 

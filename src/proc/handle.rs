@@ -158,6 +158,6 @@ impl ProcHandle {
 
 pub enum ProcViewFrame<'a> {
   Empty,
-  Vt(std::sync::RwLockReadGuard<'a, vt100::Parser<ReplySender>>),
+  Vt(std::sync::RwLockReadGuard<'a, crate::vt100::Parser<ReplySender>>),
   Err(&'a str),
 }

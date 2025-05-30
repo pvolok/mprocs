@@ -72,7 +72,7 @@ pub struct MoveTo {
 }
 
 impl MoveTo {
-  pub fn new(pos: crate::grid::Pos) -> Self {
+  pub fn new(pos: crate::vt100::grid::Pos) -> Self {
     Self {
       row: pos.row,
       col: pos.col,
@@ -107,8 +107,8 @@ impl BufWrite for ClearAttrs {
 #[derive(Default, Debug)]
 #[must_use = "this struct does nothing unless you call write_buf"]
 pub struct Attrs {
-  fgcolor: Option<crate::attrs::Color>,
-  bgcolor: Option<crate::attrs::Color>,
+  fgcolor: Option<crate::vt100::attrs::Color>,
+  bgcolor: Option<crate::vt100::attrs::Color>,
   bold: Option<bool>,
   italic: Option<bool>,
   underline: Option<bool>,
@@ -116,12 +116,12 @@ pub struct Attrs {
 }
 
 impl Attrs {
-  pub fn fgcolor(mut self, fgcolor: crate::attrs::Color) -> Self {
+  pub fn fgcolor(mut self, fgcolor: crate::vt100::attrs::Color) -> Self {
     self.fgcolor = Some(fgcolor);
     self
   }
 
-  pub fn bgcolor(mut self, bgcolor: crate::attrs::Color) -> Self {
+  pub fn bgcolor(mut self, bgcolor: crate::vt100::attrs::Color) -> Self {
     self.bgcolor = Some(bgcolor);
     self
   }
@@ -177,10 +177,10 @@ impl BufWrite for Attrs {
 
     if let Some(fgcolor) = self.fgcolor {
       match fgcolor {
-        crate::attrs::Color::Default => {
+        crate::vt100::attrs::Color::Default => {
           write_param!(39);
         }
-        crate::attrs::Color::Idx(i) => {
+        crate::vt100::attrs::Color::Idx(i) => {
           if i < 8 {
             write_param!(i + 30);
           } else if i < 16 {
@@ -191,7 +191,7 @@ impl BufWrite for Attrs {
             write_param!(i);
           }
         }
-        crate::attrs::Color::Rgb(r, g, b) => {
+        crate::vt100::attrs::Color::Rgb(r, g, b) => {
           write_param!(38);
           write_param!(2);
           write_param!(r);
@@ -203,10 +203,10 @@ impl BufWrite for Attrs {
 
     if let Some(bgcolor) = self.bgcolor {
       match bgcolor {
-        crate::attrs::Color::Default => {
+        crate::vt100::attrs::Color::Default => {
           write_param!(49);
         }
-        crate::attrs::Color::Idx(i) => {
+        crate::vt100::attrs::Color::Idx(i) => {
           if i < 8 {
             write_param!(i + 40);
           } else if i < 16 {
@@ -217,7 +217,7 @@ impl BufWrite for Attrs {
             write_param!(i);
           }
         }
-        crate::attrs::Color::Rgb(r, g, b) => {
+        crate::vt100::attrs::Color::Rgb(r, g, b) => {
           write_param!(48);
           write_param!(2);
           write_param!(r);
@@ -352,12 +352,15 @@ impl BufWrite for HideCursor {
 #[derive(Debug)]
 #[must_use = "this struct does nothing unless you call write_buf"]
 pub struct MoveFromTo {
-  from: crate::grid::Pos,
-  to: crate::grid::Pos,
+  from: crate::vt100::grid::Pos,
+  to: crate::vt100::grid::Pos,
 }
 
 impl MoveFromTo {
-  pub fn new(from: crate::grid::Pos, to: crate::grid::Pos) -> Self {
+  pub fn new(
+    from: crate::vt100::grid::Pos,
+    to: crate::vt100::grid::Pos,
+  ) -> Self {
     Self { from, to }
   }
 }
@@ -365,11 +368,12 @@ impl MoveFromTo {
 impl BufWrite for MoveFromTo {
   fn write_buf(&self, buf: &mut Vec<u8>) {
     if self.to.row == self.from.row + 1 && self.to.col == 0 {
-      crate::term::Crlf::default().write_buf(buf);
+      crate::vt100::term::Crlf::default().write_buf(buf);
     } else if self.from.row == self.to.row && self.from.col < self.to.col {
-      crate::term::MoveRight::new(self.to.col - self.from.col).write_buf(buf);
+      crate::vt100::term::MoveRight::new(self.to.col - self.from.col)
+        .write_buf(buf);
     } else if self.to != self.from {
-      crate::term::MoveTo::new(self.to).write_buf(buf);
+      crate::vt100::term::MoveTo::new(self.to).write_buf(buf);
     }
   }
 }
@@ -511,14 +515,14 @@ impl BufWrite for BracketedPaste {
 #[derive(Default, Debug)]
 #[must_use = "this struct does nothing unless you call write_buf"]
 pub struct MouseProtocolMode {
-  mode: crate::screen::MouseProtocolMode,
-  prev: crate::screen::MouseProtocolMode,
+  mode: crate::vt100::screen::MouseProtocolMode,
+  prev: crate::vt100::screen::MouseProtocolMode,
 }
 
 impl MouseProtocolMode {
   pub fn new(
-    mode: crate::screen::MouseProtocolMode,
-    prev: crate::screen::MouseProtocolMode,
+    mode: crate::vt100::screen::MouseProtocolMode,
+    prev: crate::vt100::screen::MouseProtocolMode,
   ) -> Self {
     Self { mode, prev }
   }
@@ -531,31 +535,31 @@ impl BufWrite for MouseProtocolMode {
     }
 
     match self.mode {
-      crate::screen::MouseProtocolMode::None => match self.prev {
-        crate::screen::MouseProtocolMode::None => {}
-        crate::screen::MouseProtocolMode::Press => {
+      crate::vt100::screen::MouseProtocolMode::None => match self.prev {
+        crate::vt100::screen::MouseProtocolMode::None => {}
+        crate::vt100::screen::MouseProtocolMode::Press => {
           buf.extend_from_slice(b"\x1b[?9l");
         }
-        crate::screen::MouseProtocolMode::PressRelease => {
+        crate::vt100::screen::MouseProtocolMode::PressRelease => {
           buf.extend_from_slice(b"\x1b[?1000l");
         }
-        crate::screen::MouseProtocolMode::ButtonMotion => {
+        crate::vt100::screen::MouseProtocolMode::ButtonMotion => {
           buf.extend_from_slice(b"\x1b[?1002l");
         }
-        crate::screen::MouseProtocolMode::AnyMotion => {
+        crate::vt100::screen::MouseProtocolMode::AnyMotion => {
           buf.extend_from_slice(b"\x1b[?1003l");
         }
       },
-      crate::screen::MouseProtocolMode::Press => {
+      crate::vt100::screen::MouseProtocolMode::Press => {
         buf.extend_from_slice(b"\x1b[?9h");
       }
-      crate::screen::MouseProtocolMode::PressRelease => {
+      crate::vt100::screen::MouseProtocolMode::PressRelease => {
         buf.extend_from_slice(b"\x1b[?1000h");
       }
-      crate::screen::MouseProtocolMode::ButtonMotion => {
+      crate::vt100::screen::MouseProtocolMode::ButtonMotion => {
         buf.extend_from_slice(b"\x1b[?1002h");
       }
-      crate::screen::MouseProtocolMode::AnyMotion => {
+      crate::vt100::screen::MouseProtocolMode::AnyMotion => {
         buf.extend_from_slice(b"\x1b[?1003h");
       }
     }
@@ -565,14 +569,14 @@ impl BufWrite for MouseProtocolMode {
 #[derive(Default, Debug)]
 #[must_use = "this struct does nothing unless you call write_buf"]
 pub struct MouseProtocolEncoding {
-  encoding: crate::screen::MouseProtocolEncoding,
-  prev: crate::screen::MouseProtocolEncoding,
+  encoding: crate::vt100::screen::MouseProtocolEncoding,
+  prev: crate::vt100::screen::MouseProtocolEncoding,
 }
 
 impl MouseProtocolEncoding {
   pub fn new(
-    encoding: crate::screen::MouseProtocolEncoding,
-    prev: crate::screen::MouseProtocolEncoding,
+    encoding: crate::vt100::screen::MouseProtocolEncoding,
+    prev: crate::vt100::screen::MouseProtocolEncoding,
   ) -> Self {
     Self { encoding, prev }
   }
@@ -585,19 +589,19 @@ impl BufWrite for MouseProtocolEncoding {
     }
 
     match self.encoding {
-      crate::screen::MouseProtocolEncoding::Default => match self.prev {
-        crate::screen::MouseProtocolEncoding::Default => {}
-        crate::screen::MouseProtocolEncoding::Utf8 => {
+      crate::vt100::screen::MouseProtocolEncoding::Default => match self.prev {
+        crate::vt100::screen::MouseProtocolEncoding::Default => {}
+        crate::vt100::screen::MouseProtocolEncoding::Utf8 => {
           buf.extend_from_slice(b"\x1b[?1005l");
         }
-        crate::screen::MouseProtocolEncoding::Sgr => {
+        crate::vt100::screen::MouseProtocolEncoding::Sgr => {
           buf.extend_from_slice(b"\x1b[?1006l");
         }
       },
-      crate::screen::MouseProtocolEncoding::Utf8 => {
+      crate::vt100::screen::MouseProtocolEncoding::Utf8 => {
         buf.extend_from_slice(b"\x1b[?1005h");
       }
-      crate::screen::MouseProtocolEncoding::Sgr => {
+      crate::vt100::screen::MouseProtocolEncoding::Sgr => {
         buf.extend_from_slice(b"\x1b[?1006h");
       }
     }

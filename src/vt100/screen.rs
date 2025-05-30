@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::{attrs::Attrs, term::BufWrite as _, TermReplySender};
+use crate::vt100::{attrs::Attrs, term::BufWrite as _, TermReplySender};
 use compact_str::ToCompactString;
 use termwiz::escape::{
   csi::{
@@ -83,11 +83,11 @@ impl Default for MouseProtocolEncoding {
 pub struct Screen<Reply: TermReplySender> {
   reply_sender: Reply,
 
-  grid: crate::grid::Grid,
-  alternate_grid: crate::grid::Grid,
+  grid: crate::vt100::grid::Grid,
+  alternate_grid: crate::vt100::grid::Grid,
 
-  attrs: crate::attrs::Attrs,
-  saved_attrs: crate::attrs::Attrs,
+  attrs: crate::vt100::attrs::Attrs,
+  saved_attrs: crate::vt100::attrs::Attrs,
 
   title: String,
   icon_name: String,
@@ -124,19 +124,19 @@ impl<Reply: TermReplySender> Screen<Reply> {
   }
 
   pub(crate) fn new(
-    size: crate::grid::Size,
+    size: crate::vt100::grid::Size,
     scrollback_len: usize,
     reply_sender: Reply,
   ) -> Self {
-    let mut grid = crate::grid::Grid::new(size, scrollback_len);
+    let mut grid = crate::vt100::grid::Grid::new(size, scrollback_len);
     grid.allocate_rows();
     Self {
       reply_sender,
       grid,
-      alternate_grid: crate::grid::Grid::new(size, 0),
+      alternate_grid: crate::vt100::grid::Grid::new(size, 0),
 
-      attrs: crate::attrs::Attrs::default(),
-      saved_attrs: crate::attrs::Attrs::default(),
+      attrs: crate::vt100::attrs::Attrs::default(),
+      saved_attrs: crate::vt100::attrs::Attrs::default(),
 
       title: String::default(),
       icon_name: String::default(),
@@ -161,10 +161,10 @@ impl<Reply: TermReplySender> Screen<Reply> {
   }
 
   pub(crate) fn set_size(&mut self, rows: u16, cols: u16) {
-    self.grid.set_size(crate::grid::Size { rows, cols });
+    self.grid.set_size(crate::vt100::grid::Size { rows, cols });
     self
       .alternate_grid
-      .set_size(crate::grid::Size { rows, cols });
+      .set_size(crate::vt100::grid::Size { rows, cols });
   }
 
   /// Returns the current size of the terminal.
@@ -327,7 +327,7 @@ impl<Reply: TermReplySender> Screen<Reply> {
   }
 
   fn write_contents_formatted(&self, contents: &mut Vec<u8>) {
-    crate::term::HideCursor::new(self.hide_cursor()).write_buf(contents);
+    crate::vt100::term::HideCursor::new(self.hide_cursor()).write_buf(contents);
     let prev_attrs = self.grid().write_contents_formatted(contents);
     self.attrs.write_escape_code_diff(contents, &prev_attrs);
   }
@@ -390,7 +390,8 @@ impl<Reply: TermReplySender> Screen<Reply> {
 
   fn write_contents_diff(&self, contents: &mut Vec<u8>, prev: &Self) {
     if self.hide_cursor() != prev.hide_cursor() {
-      crate::term::HideCursor::new(self.hide_cursor()).write_buf(contents);
+      crate::vt100::term::HideCursor::new(self.hide_cursor())
+        .write_buf(contents);
     }
     let prev_attrs =
       self
@@ -433,8 +434,8 @@ impl<Reply: TermReplySender> Screen<Reply> {
           i,
           false,
           false,
-          crate::grid::Pos { row: i, col: start },
-          crate::attrs::Attrs::default(),
+          crate::vt100::grid::Pos { row: i, col: start },
+          crate::vt100::attrs::Attrs::default(),
         );
         contents
       })
@@ -456,18 +457,22 @@ impl<Reply: TermReplySender> Screen<Reply> {
   }
 
   fn write_input_mode_formatted(&self, contents: &mut Vec<u8>) {
-    crate::term::ApplicationKeypad::new(self.mode(MODE_APPLICATION_KEYPAD))
+    crate::vt100::term::ApplicationKeypad::new(
+      self.mode(MODE_APPLICATION_KEYPAD),
+    )
+    .write_buf(contents);
+    crate::vt100::term::ApplicationCursor::new(
+      self.mode(MODE_APPLICATION_CURSOR),
+    )
+    .write_buf(contents);
+    crate::vt100::term::BracketedPaste::new(self.mode(MODE_BRACKETED_PASTE))
       .write_buf(contents);
-    crate::term::ApplicationCursor::new(self.mode(MODE_APPLICATION_CURSOR))
-      .write_buf(contents);
-    crate::term::BracketedPaste::new(self.mode(MODE_BRACKETED_PASTE))
-      .write_buf(contents);
-    crate::term::MouseProtocolMode::new(
+    crate::vt100::term::MouseProtocolMode::new(
       self.mouse_protocol_mode,
       MouseProtocolMode::None,
     )
     .write_buf(contents);
-    crate::term::MouseProtocolEncoding::new(
+    crate::vt100::term::MouseProtocolEncoding::new(
       self.mouse_protocol_encoding,
       MouseProtocolEncoding::Default,
     )
@@ -487,24 +492,28 @@ impl<Reply: TermReplySender> Screen<Reply> {
   fn write_input_mode_diff(&self, contents: &mut Vec<u8>, prev: &Self) {
     if self.mode(MODE_APPLICATION_KEYPAD) != prev.mode(MODE_APPLICATION_KEYPAD)
     {
-      crate::term::ApplicationKeypad::new(self.mode(MODE_APPLICATION_KEYPAD))
-        .write_buf(contents);
+      crate::vt100::term::ApplicationKeypad::new(
+        self.mode(MODE_APPLICATION_KEYPAD),
+      )
+      .write_buf(contents);
     }
     if self.mode(MODE_APPLICATION_CURSOR) != prev.mode(MODE_APPLICATION_CURSOR)
     {
-      crate::term::ApplicationCursor::new(self.mode(MODE_APPLICATION_CURSOR))
-        .write_buf(contents);
+      crate::vt100::term::ApplicationCursor::new(
+        self.mode(MODE_APPLICATION_CURSOR),
+      )
+      .write_buf(contents);
     }
     if self.mode(MODE_BRACKETED_PASTE) != prev.mode(MODE_BRACKETED_PASTE) {
-      crate::term::BracketedPaste::new(self.mode(MODE_BRACKETED_PASTE))
+      crate::vt100::term::BracketedPaste::new(self.mode(MODE_BRACKETED_PASTE))
         .write_buf(contents);
     }
-    crate::term::MouseProtocolMode::new(
+    crate::vt100::term::MouseProtocolMode::new(
       self.mouse_protocol_mode,
       prev.mouse_protocol_mode,
     )
     .write_buf(contents);
-    crate::term::MouseProtocolEncoding::new(
+    crate::vt100::term::MouseProtocolEncoding::new(
       self.mouse_protocol_encoding,
       prev.mouse_protocol_encoding,
     )
@@ -521,7 +530,7 @@ impl<Reply: TermReplySender> Screen<Reply> {
   }
 
   fn write_title_formatted(&self, contents: &mut Vec<u8>) {
-    crate::term::ChangeTitle::new(&self.icon_name, &self.title, "", "")
+    crate::vt100::term::ChangeTitle::new(&self.icon_name, &self.title, "", "")
       .write_buf(contents);
   }
 
@@ -536,7 +545,7 @@ impl<Reply: TermReplySender> Screen<Reply> {
   }
 
   fn write_title_diff(&self, contents: &mut Vec<u8>, prev: &Self) {
-    crate::term::ChangeTitle::new(
+    crate::vt100::term::ChangeTitle::new(
       &self.icon_name,
       &self.title,
       &prev.icon_name,
@@ -557,10 +566,10 @@ impl<Reply: TermReplySender> Screen<Reply> {
 
   fn write_bells_diff(&self, contents: &mut Vec<u8>, prev: &Self) {
     if self.audible_bell_count != prev.audible_bell_count {
-      crate::term::AudibleBell.write_buf(contents);
+      crate::vt100::term::AudibleBell.write_buf(contents);
     }
     if self.visual_bell_count != prev.visual_bell_count {
-      crate::term::VisualBell.write_buf(contents);
+      crate::vt100::term::VisualBell.write_buf(contents);
     }
   }
 
@@ -588,10 +597,10 @@ impl<Reply: TermReplySender> Screen<Reply> {
   }
 
   fn write_attributes_formatted(&self, contents: &mut Vec<u8>) {
-    crate::term::ClearAttrs.write_buf(contents);
+    crate::vt100::term::ClearAttrs.write_buf(contents);
     self
       .attrs
-      .write_escape_code_diff(contents, &crate::attrs::Attrs::default());
+      .write_escape_code_diff(contents, &crate::vt100::attrs::Attrs::default());
   }
 
   /// Returns the current cursor position of the terminal.
@@ -626,7 +635,7 @@ impl<Reply: TermReplySender> Screen<Reply> {
   }
 
   fn write_cursor_state_formatted(&self, contents: &mut Vec<u8>) {
-    crate::term::HideCursor::new(self.hide_cursor()).write_buf(contents);
+    crate::vt100::term::HideCursor::new(self.hide_cursor()).write_buf(contents);
     self
       .grid()
       .write_cursor_position_formatted(contents, None, None);
@@ -642,8 +651,10 @@ impl<Reply: TermReplySender> Screen<Reply> {
   /// Returns the `Cell` object at the given location in the terminal, if it
   /// exists.
   #[must_use]
-  pub fn cell(&self, row: u16, col: u16) -> Option<&crate::cell::Cell> {
-    self.grid().visible_cell(crate::grid::Pos { row, col })
+  pub fn cell(&self, row: u16, col: u16) -> Option<&crate::vt100::cell::Cell> {
+    self
+      .grid()
+      .visible_cell(crate::vt100::grid::Pos { row, col })
   }
 
   /// Returns whether the text in row `row` should wrap to the next line.
@@ -652,7 +663,7 @@ impl<Reply: TermReplySender> Screen<Reply> {
     self
       .grid()
       .visible_row(row)
-      .is_some_and(crate::row::Row::wrapped)
+      .is_some_and(crate::vt100::row::Row::wrapped)
   }
 
   /// Returns the terminal's window title.
@@ -752,13 +763,13 @@ impl<Reply: TermReplySender> Screen<Reply> {
 
   /// Returns the currently active foreground color.
   #[must_use]
-  pub fn fgcolor(&self) -> crate::attrs::Color {
+  pub fn fgcolor(&self) -> crate::vt100::attrs::Color {
     self.attrs.fgcolor
   }
 
   /// Returns the currently active background color.
   #[must_use]
-  pub fn bgcolor(&self) -> crate::attrs::Color {
+  pub fn bgcolor(&self) -> crate::vt100::attrs::Color {
     self.attrs.bgcolor
   }
 
@@ -790,7 +801,7 @@ impl<Reply: TermReplySender> Screen<Reply> {
     self.attrs.inverse()
   }
 
-  fn grid(&self) -> &crate::grid::Grid {
+  fn grid(&self) -> &crate::vt100::grid::Grid {
     if self.mode(MODE_ALTERNATE_SCREEN) {
       &self.alternate_grid
     } else {
@@ -798,7 +809,7 @@ impl<Reply: TermReplySender> Screen<Reply> {
     }
   }
 
-  fn grid_mut(&mut self) -> &mut crate::grid::Grid {
+  fn grid_mut(&mut self) -> &mut crate::vt100::grid::Grid {
     if self.mode(MODE_ALTERNATE_SCREEN) {
       &mut self.alternate_grid
     } else {
@@ -862,7 +873,7 @@ impl<Reply: TermReplySender> Screen<Reply> {
   pub fn is_wide_continuation(&self, row: u16, col: u16) -> bool {
     self
       .grid()
-      .is_wide_continuation(crate::grid::Pos { row, col })
+      .is_wide_continuation(crate::vt100::grid::Pos { row, col })
   }
 }
 
@@ -893,7 +904,7 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
     // cells, which i really don't want to do).
     let mut wrap = false;
     if pos.col > size.cols - width {
-      let last_cell_pos = crate::grid::Pos {
+      let last_cell_pos = crate::vt100::grid::Pos {
         row: pos.row,
         col: size.cols - 1,
       };
@@ -915,12 +926,12 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
 
     if width == 0 {
       if pos.col > 0 {
-        let prev_cell_pos = crate::grid::Pos {
+        let prev_cell_pos = crate::vt100::grid::Pos {
           row: pos.row,
           col: pos.col - 1,
         };
         let prev_cell_pos = if self.grid().is_wide_continuation(prev_cell_pos) {
-          crate::grid::Pos {
+          crate::vt100::grid::Pos {
             row: pos.row,
             col: pos.col - 2,
           }
@@ -947,13 +958,13 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
           // checked for pos.row > 0.
           .unwrap();
         if prev_row.wrapped() {
-          let prev_cell_pos = crate::grid::Pos {
+          let prev_cell_pos = crate::vt100::grid::Pos {
             row: pos.row - 1,
             col: size.cols - 1,
           };
           let prev_cell_pos = if self.grid().is_wide_continuation(prev_cell_pos)
           {
-            crate::grid::Pos {
+            crate::vt100::grid::Pos {
               row: pos.row - 1,
               col: size.cols - 2,
             }
@@ -979,7 +990,7 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
       if self.grid().is_wide_continuation(pos) {
         let prev_cell = self
           .grid_mut()
-          .drawing_cell_mut(crate::grid::Pos {
+          .drawing_cell_mut(crate::vt100::grid::Pos {
             row: pos.row,
             col: pos.col - 1,
           })
@@ -1005,7 +1016,7 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
         .is_wide()
       {
         if let Some(next_cell) =
-          self.grid_mut().drawing_cell_mut(crate::grid::Pos {
+          self.grid_mut().drawing_cell_mut(crate::vt100::grid::Pos {
             row: pos.row,
             col: pos.col + 1,
           })
@@ -1039,7 +1050,7 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
           .unwrap()
           .is_wide()
         {
-          let next_next_pos = crate::grid::Pos {
+          let next_next_pos = crate::vt100::grid::Pos {
             row: pos.row,
             col: pos.col + 1,
           };
@@ -1078,7 +1089,7 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
           // only happens if width > 1, and col_wrap takes width
           // into account.
           .unwrap();
-        next_cell.clear(crate::attrs::Attrs::default());
+        next_cell.clear(crate::vt100::attrs::Attrs::default());
         self.grid_mut().col_inc(1);
       }
     }
@@ -1396,7 +1407,7 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
           skip!("CharacterPositionForward")
         }
         Cursor::CharacterAndLinePosition { line, col } => {
-          self.grid_mut().set_pos(crate::grid::Pos {
+          self.grid_mut().set_pos(crate::vt100::grid::Pos {
             row: line.as_zero_based() as u16,
             col: col.as_zero_based() as u16,
           });
@@ -1427,7 +1438,7 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
         Cursor::Down(count) => self.grid_mut().row_inc_clamp(count as u16),
         Cursor::Right(count) => self.grid_mut().col_inc_clamp(count as u16),
         Cursor::Position { line, col } => {
-          self.grid_mut().set_pos(crate::grid::Pos {
+          self.grid_mut().set_pos(crate::vt100::grid::Pos {
             row: line.as_zero_based() as u16,
             col: col.as_zero_based() as u16,
           })

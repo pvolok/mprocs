@@ -22,7 +22,6 @@ name = "mprocs"
 path = "main.rs"
 
 [dependencies]
-vt100 = { package = "mprocs-vt100", path = "../vendor/vt100", version = "0.7.3" }
 anyhow = "1.0.72"
 assert_matches = "1.5.0"
 base64 = "0.22.0"
@@ -61,6 +60,7 @@ tokio-util = { version = "0.7.8", features = ["full"] }
 bytes = "1.5.0"
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 scopeguard = "1.2.0"
+itoa = "1"
 
 [target."cfg(unix)".dependencies]
 daemonize = "0.5.0"

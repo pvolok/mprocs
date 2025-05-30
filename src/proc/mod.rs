@@ -12,11 +12,11 @@ use proc::Proc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 use tui::layout::Rect;
-use vt100::TermReplySender;
 
 use crate::config::ProcConfig;
 use crate::key::Key;
 use crate::mouse::MouseEvent;
+use crate::vt100::TermReplySender;
 use crate::yaml_val::Val;
 
 use self::msg::ProcEvent;
@@ -89,8 +89,8 @@ impl Size {
 
 pub enum CopyMode {
   None(Option<Pos>),
-  Start(vt100::Screen<ReplySender>, Pos),
-  Range(vt100::Screen<ReplySender>, Pos, Pos),
+  Start(crate::vt100::Screen<ReplySender>, Pos),
+  Range(crate::vt100::Screen<ReplySender>, Pos, Pos),
 }
 
 impl Default for CopyMode {

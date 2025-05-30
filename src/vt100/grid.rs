@@ -1,16 +1,16 @@
-use crate::term::BufWrite as _;
+use crate::vt100::term::BufWrite as _;
 
 #[derive(Clone, Debug)]
 pub struct Grid {
   size: Size,
   pos: Pos,
   saved_pos: Pos,
-  rows: Vec<crate::row::Row>,
+  rows: Vec<crate::vt100::row::Row>,
   scroll_top: u16,
   scroll_bottom: u16,
   origin_mode: bool,
   saved_origin_mode: bool,
-  scrollback: std::collections::VecDeque<crate::row::Row>,
+  scrollback: std::collections::VecDeque<crate::vt100::row::Row>,
   scrollback_len: usize,
   scrollback_offset: usize,
 }
@@ -81,21 +81,21 @@ impl Grid {
   pub fn allocate_rows(&mut self) {
     if self.rows.is_empty() {
       self.rows.extend(
-        std::iter::repeat_with(|| crate::row::Row::new(self.size.cols))
+        std::iter::repeat_with(|| crate::vt100::row::Row::new(self.size.cols))
           .take(usize::from(self.size.rows)),
       );
     }
   }
 
-  fn new_row(&self) -> crate::row::Row {
-    crate::row::Row::new(self.size.cols)
+  fn new_row(&self) -> crate::vt100::row::Row {
+    crate::vt100::row::Row::new(self.size.cols)
   }
 
   pub fn clear(&mut self) {
     self.pos = Pos::default();
     self.saved_pos = Pos::default();
     for row in self.drawing_rows_mut() {
-      row.clear(crate::attrs::Attrs::default());
+      row.clear(crate::vt100::attrs::Attrs::default());
     }
     self.scroll_top = 0;
     self.scroll_bottom = self.size.rows - 1;
@@ -120,7 +120,7 @@ impl Grid {
 
     self.size = size;
     for row in &mut self.rows {
-      row.resize(size.cols, crate::cell::Cell::default());
+      row.resize(size.cols, crate::vt100::cell::Cell::default());
     }
     self.rows.resize(usize::from(size.rows), self.new_row());
 
@@ -160,7 +160,7 @@ impl Grid {
     self.origin_mode = self.saved_origin_mode;
   }
 
-  pub fn visible_rows(&self) -> impl Iterator<Item = &crate::row::Row> {
+  pub fn visible_rows(&self) -> impl Iterator<Item = &crate::vt100::row::Row> {
     let scrollback_len = self.scrollback.len();
     let rows_len = self.rows.len();
     self
@@ -175,47 +175,50 @@ impl Grid {
       )
   }
 
-  pub fn drawing_rows(&self) -> impl Iterator<Item = &crate::row::Row> {
+  pub fn drawing_rows(&self) -> impl Iterator<Item = &crate::vt100::row::Row> {
     self.rows.iter()
   }
 
   pub fn drawing_rows_mut(
     &mut self,
-  ) -> impl Iterator<Item = &mut crate::row::Row> {
+  ) -> impl Iterator<Item = &mut crate::vt100::row::Row> {
     self.rows.iter_mut()
   }
 
-  pub fn visible_row(&self, row: u16) -> Option<&crate::row::Row> {
+  pub fn visible_row(&self, row: u16) -> Option<&crate::vt100::row::Row> {
     self.visible_rows().nth(usize::from(row))
   }
 
-  pub fn drawing_row(&self, row: u16) -> Option<&crate::row::Row> {
+  pub fn drawing_row(&self, row: u16) -> Option<&crate::vt100::row::Row> {
     self.drawing_rows().nth(usize::from(row))
   }
 
-  pub fn drawing_row_mut(&mut self, row: u16) -> Option<&mut crate::row::Row> {
+  pub fn drawing_row_mut(
+    &mut self,
+    row: u16,
+  ) -> Option<&mut crate::vt100::row::Row> {
     self.drawing_rows_mut().nth(usize::from(row))
   }
 
-  pub fn current_row_mut(&mut self) -> &mut crate::row::Row {
+  pub fn current_row_mut(&mut self) -> &mut crate::vt100::row::Row {
     self
       .drawing_row_mut(self.pos.row)
       // we assume self.pos.row is always valid
       .unwrap()
   }
 
-  pub fn visible_cell(&self, pos: Pos) -> Option<&crate::cell::Cell> {
+  pub fn visible_cell(&self, pos: Pos) -> Option<&crate::vt100::cell::Cell> {
     self.visible_row(pos.row).and_then(|r| r.get(pos.col))
   }
 
-  pub fn drawing_cell(&self, pos: Pos) -> Option<&crate::cell::Cell> {
+  pub fn drawing_cell(&self, pos: Pos) -> Option<&crate::vt100::cell::Cell> {
     self.drawing_row(pos.row).and_then(|r| r.get(pos.col))
   }
 
   pub fn drawing_cell_mut(
     &mut self,
     pos: Pos,
-  ) -> Option<&mut crate::cell::Cell> {
+  ) -> Option<&mut crate::vt100::cell::Cell> {
     self
       .drawing_row_mut(pos.row)
       .and_then(|r| r.get_mut(pos.col))
@@ -251,11 +254,11 @@ impl Grid {
   pub fn write_contents_formatted(
     &self,
     contents: &mut Vec<u8>,
-  ) -> crate::attrs::Attrs {
-    crate::term::ClearAttrs::default().write_buf(contents);
-    crate::term::ClearScreen::default().write_buf(contents);
+  ) -> crate::vt100::attrs::Attrs {
+    crate::vt100::term::ClearAttrs::default().write_buf(contents);
+    crate::vt100::term::ClearScreen::default().write_buf(contents);
 
-    let mut prev_attrs = crate::attrs::Attrs::default();
+    let mut prev_attrs = crate::vt100::attrs::Attrs::default();
     let mut prev_pos = Pos::default();
     let mut wrapping = false;
     for (i, row) in self.visible_rows().enumerate() {
@@ -289,8 +292,8 @@ impl Grid {
     &self,
     contents: &mut Vec<u8>,
     prev: &Self,
-    mut prev_attrs: crate::attrs::Attrs,
-  ) -> crate::attrs::Attrs {
+    mut prev_attrs: crate::vt100::attrs::Attrs,
+  ) -> crate::vt100::attrs::Attrs {
     let mut prev_pos = prev.pos;
     let mut wrapping = false;
     let mut prev_wrapping = false;
@@ -330,7 +333,7 @@ impl Grid {
     &self,
     contents: &mut Vec<u8>,
     prev_pos: Option<Pos>,
-    prev_attrs: Option<crate::attrs::Attrs>,
+    prev_attrs: Option<crate::vt100::attrs::Attrs>,
   ) {
     let prev_attrs = prev_attrs.unwrap_or_default();
     // writing a character to the last column of a row doesn't wrap the
@@ -356,9 +359,10 @@ impl Grid {
                 self.drawing_cell(pos).unwrap();
       if cell.has_contents() {
         if let Some(prev_pos) = prev_pos {
-          crate::term::MoveFromTo::new(prev_pos, pos).write_buf(contents);
+          crate::vt100::term::MoveFromTo::new(prev_pos, pos)
+            .write_buf(contents);
         } else {
-          crate::term::MoveTo::new(pos).write_buf(contents);
+          crate::vt100::term::MoveTo::new(pos).write_buf(contents);
         }
         cell.attrs().write_escape_code_diff(contents, &prev_attrs);
         contents.extend(cell.contents().as_bytes());
@@ -393,13 +397,14 @@ impl Grid {
           if cell.has_contents() {
             if let Some(prev_pos) = prev_pos {
               if prev_pos.row != i || prev_pos.col < self.size.cols {
-                crate::term::MoveFromTo::new(prev_pos, pos).write_buf(contents);
+                crate::vt100::term::MoveFromTo::new(prev_pos, pos)
+                  .write_buf(contents);
                 cell.attrs().write_escape_code_diff(contents, &prev_attrs);
                 contents.extend(cell.contents().as_bytes());
                 prev_attrs.write_escape_code_diff(contents, cell.attrs());
               }
             } else {
-              crate::term::MoveTo::new(pos).write_buf(contents);
+              crate::vt100::term::MoveTo::new(pos).write_buf(contents);
               cell.attrs().write_escape_code_diff(contents, &prev_attrs);
               contents.extend(cell.contents().as_bytes());
               prev_attrs.write_escape_code_diff(contents, cell.attrs());
@@ -423,9 +428,10 @@ impl Grid {
             col: self.size.cols - 1,
           };
           if let Some(prev_pos) = prev_pos {
-            crate::term::MoveFromTo::new(prev_pos, pos).write_buf(contents);
+            crate::vt100::term::MoveFromTo::new(prev_pos, pos)
+              .write_buf(contents);
           } else {
-            crate::term::MoveTo::new(pos).write_buf(contents);
+            crate::vt100::term::MoveTo::new(pos).write_buf(contents);
           }
           contents.push(b' ');
           // we know that the cell has no contents, but it still may
@@ -438,27 +444,28 @@ impl Grid {
           end_cell
             .attrs()
             .write_escape_code_diff(contents, &prev_attrs);
-          crate::term::SaveCursor::default().write_buf(contents);
-          crate::term::Backspace::default().write_buf(contents);
-          crate::term::EraseChar::new(1).write_buf(contents);
-          crate::term::RestoreCursor::default().write_buf(contents);
+          crate::vt100::term::SaveCursor::default().write_buf(contents);
+          crate::vt100::term::Backspace::default().write_buf(contents);
+          crate::vt100::term::EraseChar::new(1).write_buf(contents);
+          crate::vt100::term::RestoreCursor::default().write_buf(contents);
           prev_attrs.write_escape_code_diff(contents, end_cell.attrs());
         }
       }
     } else if let Some(prev_pos) = prev_pos {
-      crate::term::MoveFromTo::new(prev_pos, self.pos).write_buf(contents);
+      crate::vt100::term::MoveFromTo::new(prev_pos, self.pos)
+        .write_buf(contents);
     } else {
-      crate::term::MoveTo::new(self.pos).write_buf(contents);
+      crate::vt100::term::MoveTo::new(self.pos).write_buf(contents);
     }
   }
 
-  pub fn erase_all(&mut self, attrs: crate::attrs::Attrs) {
+  pub fn erase_all(&mut self, attrs: crate::vt100::attrs::Attrs) {
     for row in self.drawing_rows_mut() {
       row.clear(attrs);
     }
   }
 
-  pub fn erase_all_forward(&mut self, attrs: crate::attrs::Attrs) {
+  pub fn erase_all_forward(&mut self, attrs: crate::vt100::attrs::Attrs) {
     let pos = self.pos;
     for row in self.drawing_rows_mut().skip(usize::from(pos.row) + 1) {
       row.clear(attrs);
@@ -467,7 +474,7 @@ impl Grid {
     self.erase_row_forward(attrs);
   }
 
-  pub fn erase_all_backward(&mut self, attrs: crate::attrs::Attrs) {
+  pub fn erase_all_backward(&mut self, attrs: crate::vt100::attrs::Attrs) {
     let pos = self.pos;
     for row in self.drawing_rows_mut().take(usize::from(pos.row)) {
       row.clear(attrs);
@@ -476,11 +483,11 @@ impl Grid {
     self.erase_row_backward(attrs);
   }
 
-  pub fn erase_row(&mut self, attrs: crate::attrs::Attrs) {
+  pub fn erase_row(&mut self, attrs: crate::vt100::attrs::Attrs) {
     self.current_row_mut().clear(attrs);
   }
 
-  pub fn erase_row_forward(&mut self, attrs: crate::attrs::Attrs) {
+  pub fn erase_row_forward(&mut self, attrs: crate::vt100::attrs::Attrs) {
     let size = self.size;
     let pos = self.pos;
     let row = self.current_row_mut();
@@ -489,7 +496,7 @@ impl Grid {
     }
   }
 
-  pub fn erase_row_backward(&mut self, attrs: crate::attrs::Attrs) {
+  pub fn erase_row_backward(&mut self, attrs: crate::vt100::attrs::Attrs) {
     let size = self.size;
     let pos = self.pos;
     let row = self.current_row_mut();
@@ -503,7 +510,7 @@ impl Grid {
     let pos = self.pos;
     let row = self.current_row_mut();
     for _ in 0..count {
-      row.insert(pos.col, crate::cell::Cell::default());
+      row.insert(pos.col, crate::vt100::cell::Cell::default());
     }
     row.truncate(size.cols);
   }
@@ -515,10 +522,10 @@ impl Grid {
     for _ in 0..(count.min(size.cols - pos.col)) {
       row.remove(pos.col);
     }
-    row.resize(size.cols, crate::cell::Cell::default());
+    row.resize(size.cols, crate::vt100::cell::Cell::default());
   }
 
-  pub fn erase_cells(&mut self, count: u16, attrs: crate::attrs::Attrs) {
+  pub fn erase_cells(&mut self, count: u16, attrs: crate::vt100::attrs::Attrs) {
     let size = self.size;
     let pos = self.pos;
     let row = self.current_row_mut();

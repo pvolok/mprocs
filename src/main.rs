@@ -24,6 +24,7 @@ mod ui_keymap;
 mod ui_procs;
 mod ui_term;
 mod ui_zoom_tip;
+mod vt100;
 mod widgets;
 mod yaml_val;
 

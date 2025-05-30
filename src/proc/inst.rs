@@ -35,7 +35,7 @@ impl Debug for Inst {
   }
 }
 
-pub type VtWrap = Arc<RwLock<vt100::Parser<ReplySender>>>;
+pub type VtWrap = Arc<RwLock<crate::vt100::Parser<ReplySender>>>;
 
 impl Inst {
   pub fn spawn(
@@ -45,7 +45,7 @@ impl Inst {
     size: &Size,
     scrollback_len: usize,
   ) -> anyhow::Result<Self> {
-    let vt = vt100::Parser::new(
+    let vt = crate::vt100::Parser::new(
       size.height,
       size.width,
       scrollback_len,

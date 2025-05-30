@@ -5,7 +5,7 @@ use unicode_width::UnicodeWidthStr;
 #[derive(Clone, Debug, Default, Eq)]
 pub struct Cell {
   text: CompactString,
-  attrs: crate::attrs::Attrs,
+  attrs: crate::vt100::attrs::Attrs,
 }
 
 impl PartialEq<Self> for Cell {
@@ -21,7 +21,7 @@ impl PartialEq<Self> for Cell {
 }
 
 impl Cell {
-  pub(crate) fn set(&mut self, c: char, a: crate::attrs::Attrs) {
+  pub(crate) fn set(&mut self, c: char, a: crate::vt100::attrs::Attrs) {
     self.text.clear();
     self.text.push(c);
     self.attrs = a;
@@ -34,7 +34,7 @@ impl Cell {
     self.text.push(c);
   }
 
-  pub(crate) fn clear(&mut self, attrs: crate::attrs::Attrs) {
+  pub(crate) fn clear(&mut self, attrs: crate::vt100::attrs::Attrs) {
     self.text.clear();
     self.attrs = attrs;
   }
@@ -61,19 +61,19 @@ impl Cell {
     self.text.width() >= 2
   }
 
-  pub(crate) fn attrs(&self) -> &crate::attrs::Attrs {
+  pub(crate) fn attrs(&self) -> &crate::vt100::attrs::Attrs {
     &self.attrs
   }
 
   /// Returns the foreground color of the cell.
   #[must_use]
-  pub fn fgcolor(&self) -> crate::attrs::Color {
+  pub fn fgcolor(&self) -> crate::vt100::attrs::Color {
     self.attrs.fgcolor
   }
 
   /// Returns the background color of the cell.
   #[must_use]
-  pub fn bgcolor(&self) -> crate::attrs::Color {
+  pub fn bgcolor(&self) -> crate::vt100::attrs::Color {
     self.attrs.bgcolor
   }
 

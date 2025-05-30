@@ -1,6 +1,6 @@
 use tui::style::Modifier;
 
-use crate::term::BufWrite as _;
+use crate::vt100::term::BufWrite as _;
 
 /// Represents a foreground or background color for cells.
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
@@ -107,11 +107,11 @@ impl Attrs {
 
   pub fn write_escape_code_diff(&self, contents: &mut Vec<u8>, other: &Self) {
     if self != other && self == &Self::default() {
-      crate::term::ClearAttrs::default().write_buf(contents);
+      crate::vt100::term::ClearAttrs::default().write_buf(contents);
       return;
     }
 
-    let attrs = crate::term::Attrs::default();
+    let attrs = crate::vt100::term::Attrs::default();
 
     let attrs = if self.fgcolor == other.fgcolor {
       attrs

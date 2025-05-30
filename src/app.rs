@@ -14,8 +14,8 @@ use tui::{
   widgets::Widget,
   Terminal,
 };
-use vt100::Size;
 
+use crate::vt100::Size;
 use crate::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
   error::ResultLogger,
