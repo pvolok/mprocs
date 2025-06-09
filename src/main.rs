@@ -10,6 +10,7 @@ mod event;
 mod host;
 mod just;
 mod kernel;
+mod kernel2;
 mod key;
 mod keymap;
 mod modal;

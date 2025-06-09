@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::bail;
 use crossterm::event::{
   Event, KeyEvent, KeyEventKind, MouseButton, MouseEventKind,
@@ -15,7 +17,6 @@ use tui::{
   Terminal,
 };
 
-use crate::vt100::Size;
 use crate::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
   error::ResultLogger,
@@ -23,7 +24,12 @@ use crate::{
   host::{
     receiver::MsgReceiver, sender::MsgSender, socket::bind_server_socket,
   },
-  kernel::kernel_message::{KernelMessage, KernelSender},
+  kernel::kernel_message::KernelMessage,
+  kernel2::{
+    kernel::Kernel2,
+    kernel_message::KernelCommand,
+    proc::{ProcInit, ProcStatus},
+  },
   key::Key,
   keymap::Keymap,
   modal::{
@@ -44,6 +50,7 @@ use crate::{
   ui_term::{render_term, term_check_hit},
   ui_zoom_tip::render_zoom_tip,
 };
+use crate::{kernel::kernel_message::KernelSender, vt100::Size};
 
 type Term = Terminal<ProxyBackend>;
 
@@ -150,6 +157,24 @@ impl App {
       self.screen_size.height,
     ))?;
 
+    let (stop_sender, stop_receiver) = tokio::sync::oneshot::channel();
+    let kernel_thread = tokio::task::spawn(async move {
+      let mut kernel2 = Kernel2::new();
+      kernel2.spawn_proc(|ks| {
+        let (sender, _) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(async move {
+          let _ = stop_receiver.await;
+          ks.send(KernelCommand::Quit);
+        });
+        ProcInit {
+          sender,
+          stop_on_quit: false,
+          status: ProcStatus::Running,
+        }
+      });
+      kernel2.run().await;
+    });
+
     let mut render_needed = true;
     loop {
       if render_needed {
@@ -199,6 +224,17 @@ impl App {
         }
         LoopAction::ForceQuit => break,
       };
+    }
+
+    stop_sender.send(());
+    if !kernel_thread.is_finished() {
+      log::info!("Waiting for kernel to finish.");
+
+      let r = tokio::time::timeout(Duration::from_secs(5), kernel_thread).await;
+      match r {
+        Ok(_) => (),
+        Err(_) => log::warn!("Kernel shutdown timeout."),
+      }
     }
 
     for client in self.clients.into_iter() {
