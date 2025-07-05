@@ -27,8 +27,8 @@ use crate::{
   kernel::kernel_message::KernelMessage,
   kernel2::{
     kernel::Kernel2,
-    kernel_message::KernelCommand,
-    proc::{ProcInit, ProcStatus},
+    kernel_message::{KernelCommand, KernelMessage2, KernelSender2},
+    proc::{ProcCommand, ProcInit, ProcStatus},
   },
   key::Key,
   keymap::Keymap,
@@ -139,41 +139,45 @@ impl App {
       None
     };
 
-    let result = self.main_loop().await;
+    let mut kernel = Kernel2::new();
+    kernel.spawn_proc(|ks| {
+      let (sender, mut pr) = tokio::sync::mpsc::unbounded_channel();
+      tokio::spawn(async move {
+        let result = self.main_loop(&ks, &mut pr).await;
+        if let Err(err) = result {
+          log::error!("App main loop error: {err}");
+        }
 
-    exit_trigger.trigger();
-    if let Some(server_thread) = server_thread {
-      let _ = server_thread.await;
-    }
+        exit_trigger.trigger();
+        if let Some(server_thread) = server_thread {
+          let _ = server_thread.await;
+        }
 
-    result
+        ks.send(KernelCommand::Quit);
+      });
+      ProcInit {
+        sender,
+        stop_on_quit: false,
+        status: ProcStatus::Running,
+      }
+    });
+
+    kernel.run().await;
+
+    Ok(())
   }
 
-  async fn main_loop(mut self) -> anyhow::Result<()> {
+  async fn main_loop(
+    mut self,
+    ks: &KernelSender2,
+    pr: &mut UnboundedReceiver<ProcCommand>,
+  ) -> anyhow::Result<()> {
     self.start_procs(Rect::new(
       0,
       0,
       self.screen_size.width,
       self.screen_size.height,
     ))?;
-
-    let (stop_sender, stop_receiver) = tokio::sync::oneshot::channel();
-    let kernel_thread = tokio::task::spawn(async move {
-      let mut kernel2 = Kernel2::new();
-      kernel2.spawn_proc(|ks| {
-        let (sender, _) = tokio::sync::mpsc::unbounded_channel();
-        tokio::spawn(async move {
-          let _ = stop_receiver.await;
-          ks.send(KernelCommand::Quit);
-        });
-        ProcInit {
-          sender,
-          stop_on_quit: false,
-          status: ProcStatus::Running,
-        }
-      });
-      kernel2.run().await;
-    });
 
     let mut render_needed = true;
     loop {
@@ -209,6 +213,11 @@ impl App {
             self.handle_event(&mut loop_action, &event)
           }
         }
+        command = pr.recv().fuse() => {
+          if let Some(command) = command {
+            self.handle_proc_command(&mut loop_action, command)
+          }
+        }
       };
 
       if self.state.quitting && self.state.all_procs_down() {
@@ -224,17 +233,6 @@ impl App {
         }
         LoopAction::ForceQuit => break,
       };
-    }
-
-    stop_sender.send(());
-    if !kernel_thread.is_finished() {
-      log::info!("Waiting for kernel to finish.");
-
-      let r = tokio::time::timeout(Duration::from_secs(5), kernel_thread).await;
-      match r {
-        Ok(_) => (),
-        Err(_) => log::warn!("Kernel shutdown timeout."),
-      }
     }
 
     for client in self.clients.into_iter() {
@@ -732,6 +730,17 @@ impl App {
     if let Some(proc) = self.state.get_proc_mut(event.0) {
       proc.handle_event(event.1, selected);
       loop_action.render();
+    }
+  }
+
+  fn handle_proc_command(
+    &mut self,
+    loop_action: &mut LoopAction,
+    command: ProcCommand,
+  ) {
+    match command {
+      ProcCommand::Start => (),
+      ProcCommand::Stop => (),
     }
   }
 

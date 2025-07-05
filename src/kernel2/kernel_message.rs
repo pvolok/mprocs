@@ -10,19 +10,19 @@ pub struct KernelMessage2 {
 pub enum KernelCommand {
   Quit,
 
-  AddProc(Box<dyn FnOnce(KernelSender) -> ProcInit + Send>),
+  AddProc(Box<dyn FnOnce(KernelSender2) -> ProcInit + Send>),
   StopProc,
 
   // Proc reporting
   ProcStopped,
 }
 
-pub struct KernelSender {
+pub struct KernelSender2 {
   sender: UnboundedSender<KernelMessage2>,
-  proc_id: ProcId,
+  pub proc_id: ProcId,
 }
 
-impl KernelSender {
+impl KernelSender2 {
   pub fn new(proc_id: ProcId, sender: UnboundedSender<KernelMessage2>) -> Self {
     Self { sender, proc_id }
   }

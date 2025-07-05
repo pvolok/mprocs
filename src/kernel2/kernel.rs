@@ -2,7 +2,7 @@ use std::{collections::HashMap, time::Duration};
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use crate::kernel2::kernel_message::KernelSender;
+use crate::kernel2::kernel_message::KernelSender2;
 
 use super::{
   kernel_message::{KernelCommand, KernelMessage2},
@@ -34,11 +34,11 @@ impl Kernel2 {
 
   pub fn spawn_proc<F>(&mut self, f: F) -> ProcId
   where
-    F: FnOnce(KernelSender) -> ProcInit,
+    F: FnOnce(KernelSender2) -> ProcInit,
   {
     self.last_proc_id += 1;
     let proc_id = ProcId(self.last_proc_id);
-    let kernel_sender = KernelSender::new(proc_id, self.sender.clone());
+    let kernel_sender = KernelSender2::new(proc_id, self.sender.clone());
     let init = f(kernel_sender);
     let proc_handle = ProcHandle2 {
       proc_id,
