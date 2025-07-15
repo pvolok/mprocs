@@ -145,7 +145,7 @@ from `~/.config/mprocs/mprocs.yaml` (or
 `~\AppData\Roaming\mprocs\mprocs.yaml` on Windows). _Local_ config
 is loaded from `mprocs.yaml` from current directory (or set via cli argument:
 `mprocs --config ./cfg/mprocs.yaml`). Settings in the _local_ config override
-settings the _global_.
+settings in the _global_ config.
 
 - **procs**: _object_ - Processes to run. Only allowed in local config.
   - **shell**: _string_ - Shell command to run (exactly one of **shell** or
@@ -293,7 +293,7 @@ Copy mode:
 - `C-u` or `page up` - Scroll output up
 - `C-e` - Scroll output down by 3 lines
 - `C-y` - Scroll output up by 3 lines
-- `h` or `↑` - Move cursor up
+- `k` or `↑` - Move cursor up
 - `l` or `→` - Move cursor right
 - `j` or `↓` - Move cursor down
 - `h` or `←` - Move cursor left
