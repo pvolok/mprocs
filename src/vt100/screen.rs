@@ -12,6 +12,8 @@ use termwiz::escape::{
 };
 use unicode_width::UnicodeWidthChar as _;
 
+use super::grid::Size;
+
 const MODE_APPLICATION_KEYPAD: u8 = 0b0000_0001;
 const MODE_APPLICATION_CURSOR: u8 = 0b0000_0010;
 const MODE_HIDE_CURSOR: u8 = 0b0000_0100;
@@ -171,9 +173,8 @@ impl<Reply: TermReplySender> Screen<Reply> {
   ///
   /// The return value will be (rows, cols).
   #[must_use]
-  pub fn size(&self) -> (u16, u16) {
-    let size = self.grid().size();
-    (size.rows, size.cols)
+  pub fn size(&self) -> Size {
+    self.grid().size()
   }
 
   /// Returns the current position in the scrollback.
@@ -192,6 +193,16 @@ impl<Reply: TermReplySender> Screen<Reply> {
 
   pub fn set_scrollback(&mut self, rows: usize) {
     self.grid_mut().set_scrollback(rows);
+  }
+
+  pub fn scroll_screen_up(&mut self, n: usize) {
+    let pos = usize::saturating_add(self.scrollback(), n);
+    self.set_scrollback(pos);
+  }
+
+  pub fn scroll_screen_down(&mut self, n: usize) {
+    let pos = usize::saturating_sub(self.scrollback(), n);
+    self.set_scrollback(pos);
   }
 
   /// Returns the text contents of the terminal.
@@ -244,7 +255,7 @@ impl<Reply: TermReplySender> Screen<Reply> {
   ) -> String {
     match start_row.cmp(&end_row) {
       std::cmp::Ordering::Less => {
-        let (_, cols) = self.size();
+        let cols = self.size().cols;
         let mut contents = String::new();
         for (i, row) in self
           .grid()

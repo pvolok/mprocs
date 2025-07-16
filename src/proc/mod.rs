@@ -14,22 +14,14 @@ use tokio::sync::mpsc::UnboundedSender;
 use tui::layout::Rect;
 
 use crate::config::ProcConfig;
+use crate::kernel2::kernel_message::KernelSender2;
+use crate::kernel2::proc::ProcId;
 use crate::key::Key;
 use crate::mouse::MouseEvent;
 use crate::vt100::TermReplySender;
 use crate::yaml_val::Val;
 
 use self::msg::ProcEvent;
-
-pub fn create_proc(
-  name: String,
-  cfg: &ProcConfig,
-  tx: UnboundedSender<(usize, ProcEvent)>,
-  size: Rect,
-) -> ProcHandle {
-  let proc = Proc::new(cfg, tx, size);
-  ProcHandle::from_proc(name, proc, cfg.autorestart)
-}
 
 #[derive(Clone, Debug, Default)]
 pub enum StopSignal {
@@ -73,7 +65,7 @@ fn translate_mouse_pos(event: &MouseEvent, scrollback: usize) -> Pos {
 }
 
 #[derive(Clone)]
-struct Size {
+pub struct Size {
   width: u16,
   height: u16,
 }
@@ -87,10 +79,10 @@ impl Size {
   }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum CopyMode {
   None(Option<Pos>),
-  Start(crate::vt100::Screen<ReplySender>, Pos),
-  Range(crate::vt100::Screen<ReplySender>, Pos, Pos),
+  Active(crate::vt100::Screen<ReplySender>, Pos, Option<Pos>),
 }
 
 impl Default for CopyMode {
@@ -146,12 +138,12 @@ impl Pos {
 
 #[derive(Clone)]
 pub struct ReplySender {
-  proc_id: usize,
-  sender: UnboundedSender<(usize, ProcEvent)>,
+  proc_id: ProcId,
+  sender: UnboundedSender<ProcEvent>,
 }
 
 impl TermReplySender for ReplySender {
   fn reply(&self, s: CompactString) {
-    let _ = self.sender.send((self.proc_id, ProcEvent::TermReply(s)));
+    let _ = self.sender.send(ProcEvent::TermReply(s));
   }
 }

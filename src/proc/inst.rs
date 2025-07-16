@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 use std::io::Write;
-use std::sync::{Arc, RwLock};
 use std::thread::spawn;
 
 use portable_pty::MasterPty;
@@ -9,12 +8,14 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::spawn_blocking;
 
 use crate::error::ResultLogger;
+use crate::kernel2::kernel_message::SharedVt;
+use crate::kernel2::proc::ProcId;
 
 use super::msg::ProcEvent;
 use super::{ReplySender, Size};
 
 pub struct Inst {
-  pub vt: VtWrap,
+  pub vt: SharedVt,
 
   pub pid: u32,
   pub master: Option<Box<dyn MasterPty + Send>>,
@@ -35,13 +36,11 @@ impl Debug for Inst {
   }
 }
 
-pub type VtWrap = Arc<RwLock<crate::vt100::Parser<ReplySender>>>;
-
 impl Inst {
   pub fn spawn(
-    id: usize,
+    id: ProcId,
     cmd: CommandBuilder,
-    tx: UnboundedSender<(usize, ProcEvent)>,
+    tx: UnboundedSender<ProcEvent>,
     size: &Size,
     scrollback_len: usize,
   ) -> anyhow::Result<Self> {
@@ -54,7 +53,9 @@ impl Inst {
         sender: tx.clone(),
       },
     );
-    let vt = Arc::new(RwLock::new(vt));
+    let vt = SharedVt::new(vt);
+
+    tx.send(ProcEvent::SetVt(Some(vt.clone())));
 
     let pty_system = native_pty_system();
     let pair = pty_system.openpty(PtySize {
@@ -68,7 +69,7 @@ impl Inst {
     let pid = child.process_id().unwrap_or(0);
     let killer = child.clone_killer();
 
-    let _r = tx.send((id, ProcEvent::Started));
+    let _r = tx.send(ProcEvent::Started);
 
     let mut reader = pair.master.try_clone_reader().unwrap();
     let writer = pair.master.take_writer().unwrap();
@@ -86,7 +87,7 @@ impl Inst {
               }
               if let Ok(mut vt) = vt.write() {
                 vt.process(&buf[..count]);
-                match tx.send((id, ProcEvent::Render)) {
+                match tx.send(ProcEvent::Render) {
                   Ok(_) => (),
                   Err(err) => {
                     log::debug!("Proc read error: ({:?})", err);
@@ -98,7 +99,7 @@ impl Inst {
             _ => break,
           }
         }
-        let _ = tx.send((id, ProcEvent::StdoutEOF));
+        let _ = tx.send(ProcEvent::StdoutEOF);
       });
     }
 
@@ -110,7 +111,7 @@ impl Inst {
           Ok(status) => status.exit_code(),
           Err(_e) => 211,
         };
-        let _result = tx.send((id, ProcEvent::Exited(exit_code)));
+        let _result = tx.send(ProcEvent::Exited(exit_code));
       });
     }
 

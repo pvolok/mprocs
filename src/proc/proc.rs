@@ -1,29 +1,30 @@
 use std::fmt::Debug;
 use std::io::Write;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 
 use assert_matches::assert_matches;
-use crossterm::event::{MouseButton, MouseEventKind};
 use portable_pty::CommandBuilder;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::select;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tui::layout::Rect;
 
 use crate::config::ProcConfig;
 use crate::encode_term::{encode_key, encode_mouse_event, KeyCodeEncodeModes};
 use crate::error::ResultLogger;
-use crate::event::CopyMove;
+use crate::kernel2::kernel_message::{KernelCommand, KernelSender2, SharedVt};
+use crate::kernel2::proc::{ProcId, ProcInit, ProcStatus};
 use crate::key::Key;
 use crate::mouse::MouseEvent;
-use crate::vt100;
+use crate::vt100::{self};
 
 use super::handle::ProcHandle;
 use super::inst::Inst;
 use super::msg::{ProcCmd, ProcEvent};
 use super::StopSignal;
-use super::{CopyMode, Pos, ReplySender, Size};
+use super::{Pos, ReplySender, Size};
 
 pub struct Proc {
-  pub id: usize,
+  pub id: ProcId,
   pub cmd: CommandBuilder,
   size: Size,
 
@@ -31,10 +32,9 @@ pub struct Proc {
   mouse_scroll_speed: usize,
   scrollback_len: usize,
 
-  pub tx: UnboundedSender<(usize, ProcEvent)>,
+  pub tx: UnboundedSender<ProcEvent>,
 
   pub inst: ProcState,
-  pub copy_mode: CopyMode,
 }
 
 static NEXT_PROC_ID: AtomicUsize = AtomicUsize::new(1);
@@ -46,23 +46,95 @@ pub enum ProcState {
   Error(String),
 }
 
-pub fn create_proc(
-  name: String,
-  cfg: &ProcConfig,
-  tx: UnboundedSender<(usize, ProcEvent)>,
+pub fn launch_proc(
+  parent_ks: &KernelSender2,
+  cfg: ProcConfig,
   size: Rect,
 ) -> ProcHandle {
-  let proc = Proc::new(cfg, tx, size);
-  ProcHandle::from_proc(name, proc, cfg.autorestart)
+  let cfg_ = cfg.clone();
+  let child_ks = parent_ks.add_proc(Box::new(move |ks| {
+    let (cmd_sender, cmd_receiver) = tokio::sync::mpsc::unbounded_channel();
+
+    let cfg = cfg_;
+    tokio::spawn(async move {
+      let proc_id = ks.proc_id;
+      proc_main_loop(ks, proc_id, &cfg, size, cmd_receiver).await;
+    });
+
+    ProcInit {
+      sender: cmd_sender,
+      stop_on_quit: true,
+      status: ProcStatus::Running,
+    }
+  }));
+
+  ProcHandle::new(child_ks.proc_id, cfg)
+}
+
+async fn proc_main_loop(
+  ks: KernelSender2,
+  proc_id: ProcId,
+  cfg: &ProcConfig,
+  size: Rect,
+  mut cmd_receiver: UnboundedReceiver<ProcCmd>,
+) -> ProcHandle {
+  let (internal_sender, mut internal_receiver) =
+    tokio::sync::mpsc::unbounded_channel();
+  let mut proc = Proc::new(proc_id, cfg, internal_sender, size);
+  loop {
+    enum NextValue {
+      Cmd(Option<ProcCmd>),
+      Internal(Option<ProcEvent>),
+    }
+    let value = select! {
+      cmd = cmd_receiver.recv() => NextValue::Cmd(cmd),
+      event = internal_receiver.recv() => NextValue::Internal(event),
+    };
+    match value {
+      NextValue::Cmd(Some(cmd)) => proc.handle_cmd(cmd),
+      NextValue::Cmd(None) => (),
+      NextValue::Internal(Some(proc_event)) => match proc_event {
+        ProcEvent::Render => ks.send(KernelCommand::ProcRendered),
+        ProcEvent::Exited(exit_code) => {
+          proc.handle_exited(exit_code);
+          if !proc.is_up() {
+            ks.send(KernelCommand::ProcStopped(exit_code));
+          }
+        }
+        ProcEvent::StdoutEOF => {
+          proc.handle_stdout_eof();
+          if !proc.is_up() {
+            ks.send(KernelCommand::ProcStopped(
+              proc.exit_code().unwrap_or(199),
+            ));
+          }
+        }
+        ProcEvent::Started => {
+          ks.send(KernelCommand::ProcStarted);
+        }
+        ProcEvent::TermReply(s) => match &mut proc.inst {
+          ProcState::None => (),
+          ProcState::Some(inst) => {
+            let _ = inst.writer.write_all(s.as_bytes());
+          }
+          ProcState::Error(_) => (),
+        },
+        ProcEvent::SetVt(vt) => {
+          ks.send(KernelCommand::ProcUpdatedScreen(vt));
+        }
+      },
+      NextValue::Internal(None) => (),
+    }
+  }
 }
 
 impl Proc {
   pub fn new(
+    id: ProcId,
     cfg: &ProcConfig,
-    tx: UnboundedSender<(usize, ProcEvent)>,
+    tx: UnboundedSender<ProcEvent>,
     size: Rect,
   ) -> Self {
-    let id = NEXT_PROC_ID.fetch_add(1, Ordering::Relaxed);
     let size = Size::new(size);
     let mut proc = Proc {
       id,
@@ -76,32 +148,12 @@ impl Proc {
       tx,
 
       inst: ProcState::None,
-      copy_mode: CopyMode::None(None),
     };
 
     if cfg.autostart {
       proc.spawn_new_inst();
     }
 
-    proc
-  }
-
-  pub fn duplicate(&self) -> Self {
-    let id = NEXT_PROC_ID.fetch_add(1, Ordering::Relaxed);
-    let proc = Self {
-      id,
-      cmd: self.cmd.clone(),
-      size: self.size.clone(),
-
-      stop_signal: self.stop_signal.clone(),
-      mouse_scroll_speed: self.mouse_scroll_speed,
-      scrollback_len: self.scrollback_len,
-
-      tx: self.tx.clone(),
-
-      inst: ProcState::None,
-      copy_mode: CopyMode::None(None),
-    };
     proc
   }
 
@@ -153,6 +205,21 @@ impl Proc {
       inst.exit_code.is_none() || !inst.stdout_eof
     } else {
       false
+    }
+  }
+
+  pub fn exit_code(&self) -> Option<u32> {
+    match &self.inst {
+      ProcState::Some(inst) => inst.exit_code,
+      ProcState::None | ProcState::Error(_) => None,
+    }
+  }
+
+  pub fn clone_vt(&self) -> Option<SharedVt> {
+    match &self.inst {
+      ProcState::None => None,
+      ProcState::Some(inst) => Some(inst.vt.clone()),
+      ProcState::Error(_) => None,
     }
   }
 
@@ -267,15 +334,8 @@ impl Proc {
   }
 
   pub fn scroll_up_lines(&mut self, n: usize) {
-    match &mut self.copy_mode {
-      CopyMode::None(_) => {
-        if let Some(mut vt) = self.lock_vt_mut() {
-          Self::scroll_vt_up(&mut vt, n);
-        }
-      }
-      CopyMode::Start(screen, _) | CopyMode::Range(screen, _, _) => {
-        Self::scroll_screen_up(screen, n)
-      }
+    if let Some(mut vt) = self.lock_vt_mut() {
+      vt.screen.scroll_screen_up(n);
     }
   }
 
@@ -284,32 +344,15 @@ impl Proc {
     vt.set_scrollback(pos);
   }
 
-  fn scroll_screen_up(screen: &mut vt100::Screen<ReplySender>, n: usize) {
-    let pos = usize::saturating_add(screen.scrollback(), n);
-    screen.set_scrollback(pos);
-  }
-
   pub fn scroll_down_lines(&mut self, n: usize) {
-    match &mut self.copy_mode {
-      CopyMode::None(_) => {
-        if let Some(mut vt) = self.lock_vt_mut() {
-          Self::scroll_vt_down(&mut vt, n);
-        }
-      }
-      CopyMode::Start(screen, _) | CopyMode::Range(screen, _, _) => {
-        Self::scroll_screen_down(screen, n)
-      }
+    if let Some(mut vt) = self.lock_vt_mut() {
+      vt.screen.scroll_screen_down(n);
     }
   }
 
   fn scroll_vt_down(vt: &mut vt100::Parser<ReplySender>, n: usize) {
     let pos = usize::saturating_sub(vt.screen().scrollback(), n);
     vt.set_scrollback(pos);
-  }
-
-  fn scroll_screen_down(screen: &mut vt100::Screen<ReplySender>, n: usize) {
-    let pos = usize::saturating_sub(screen.scrollback(), n);
-    screen.set_scrollback(pos);
   }
 
   pub fn scroll_half_screen_up(&mut self) {
@@ -321,121 +364,16 @@ impl Proc {
   }
 
   pub fn handle_mouse(&mut self, event: MouseEvent) {
-    let copy_mode = match self.copy_mode {
-      CopyMode::None(_) => false,
-      CopyMode::Start(_, _) | CopyMode::Range(_, _, _) => true,
-    };
-    let mouse_mode = self
-      .lock_vt()
-      .map(|vt| vt.screen().mouse_protocol_mode())
-      .unwrap_or_default();
-
-    if copy_mode {
-      match event.kind {
-        MouseEventKind::Down(btn) => match btn {
-          MouseButton::Left => {
-            let scrollback = match &self.copy_mode {
-              CopyMode::None(_) => unreachable!(),
-              CopyMode::Start(screen, _) | CopyMode::Range(screen, _, _) => {
-                screen.scrollback()
-              }
-            };
-            self.copy_mode =
-              CopyMode::None(Some(translate_mouse_pos(&event, scrollback)));
-          }
-          MouseButton::Right => {
-            self.copy_mode = match std::mem::take(&mut self.copy_mode) {
-              CopyMode::None(_) => unreachable!(),
-              CopyMode::Start(screen, start)
-              | CopyMode::Range(screen, start, _) => {
-                let pos = translate_mouse_pos(&event, screen.scrollback());
-                CopyMode::Range(screen, start, pos)
-              }
-            };
-          }
-          MouseButton::Middle => (),
-        },
-        MouseEventKind::Up(_) => (),
-        MouseEventKind::Drag(MouseButton::Left) => {
-          self.copy_mode = match std::mem::take(&mut self.copy_mode) {
-            CopyMode::None(_) => unreachable!(),
-            CopyMode::Start(screen, start)
-            | CopyMode::Range(screen, start, _) => {
-              let pos = translate_mouse_pos(&event, screen.scrollback());
-              CopyMode::Range(screen, start, pos)
-            }
-          };
-        }
-        MouseEventKind::Drag(_) => (),
-        MouseEventKind::Moved => (),
-        MouseEventKind::ScrollDown => match &mut self.copy_mode {
-          CopyMode::None(_) => unreachable!(),
-          CopyMode::Start(screen, _) | CopyMode::Range(screen, _, _) => {
-            Self::scroll_screen_down(screen, self.mouse_scroll_speed);
-          }
-        },
-        MouseEventKind::ScrollUp => match &mut self.copy_mode {
-          CopyMode::None(_) => unreachable!(),
-          CopyMode::Start(screen, _) | CopyMode::Range(screen, _, _) => {
-            Self::scroll_screen_up(screen, self.mouse_scroll_speed);
-          }
-        },
-        MouseEventKind::ScrollLeft => (),
-        MouseEventKind::ScrollRight => (),
-      }
-    } else {
-      if let ProcState::Some(inst) = &mut self.inst {
-        match mouse_mode {
-          vt100::MouseProtocolMode::None => match event.kind {
-            MouseEventKind::Down(btn) => match btn {
-              MouseButton::Left => {
-                if let Some(vt) = inst.vt.read().log_get() {
-                  self.copy_mode = CopyMode::None(Some(translate_mouse_pos(
-                    &event,
-                    vt.screen().scrollback(),
-                  )));
-                }
-              }
-              MouseButton::Right | MouseButton::Middle => (),
-            },
-            MouseEventKind::Up(_) => (),
-            MouseEventKind::Drag(MouseButton::Left) => {
-              if let Some(vt) = inst.vt.read().log_get() {
-                let pos = translate_mouse_pos(&event, vt.screen().scrollback());
-                self.copy_mode = match std::mem::take(&mut self.copy_mode) {
-                  CopyMode::None(pos_) => CopyMode::Range(
-                    vt.screen().clone(),
-                    pos_.unwrap_or_default(),
-                    pos,
-                  ),
-                  CopyMode::Start(..) | CopyMode::Range(..) => {
-                    unreachable!()
-                  }
-                };
-              }
-            }
-            MouseEventKind::Drag(_) => (),
-            MouseEventKind::Moved => (),
-            MouseEventKind::ScrollDown => {
-              if let Some(mut vt) = inst.vt.write().log_get() {
-                Self::scroll_vt_down(&mut vt, self.mouse_scroll_speed);
-              }
-            }
-            MouseEventKind::ScrollUp => {
-              if let Some(mut vt) = inst.vt.write().log_get() {
-                Self::scroll_vt_up(&mut vt, self.mouse_scroll_speed);
-              }
-            }
-            MouseEventKind::ScrollLeft => (),
-            MouseEventKind::ScrollRight => (),
-          },
-          vt100::MouseProtocolMode::Press
-          | vt100::MouseProtocolMode::PressRelease
-          | vt100::MouseProtocolMode::ButtonMotion
-          | vt100::MouseProtocolMode::AnyMotion => {
-            let seq = encode_mouse_event(event);
-            let _r = inst.writer.write_all(seq.as_bytes());
-          }
+    if let ProcState::Some(inst) = &mut self.inst {
+      let mouse_mode = inst.vt.read().unwrap().screen().mouse_protocol_mode();
+      match mouse_mode {
+        vt100::MouseProtocolMode::None => (),
+        vt100::MouseProtocolMode::Press
+        | vt100::MouseProtocolMode::PressRelease
+        | vt100::MouseProtocolMode::ButtonMotion
+        | vt100::MouseProtocolMode::AnyMotion => {
+          let seq = encode_mouse_event(event);
+          let _r = inst.writer.write_all(seq.as_bytes());
         }
       }
     }
@@ -451,84 +389,11 @@ impl Proc {
 
       ProcCmd::SendKey(key) => self.send_key(&key),
       ProcCmd::SendMouse(event) => self.handle_mouse(event),
-      ProcCmd::SendRaw(s) => match &mut self.inst {
-        ProcState::None => (),
-        ProcState::Some(inst) => {
-          let _ = inst.writer.write_all(s.as_bytes());
-        }
-        ProcState::Error(_) => (),
-      },
 
       ProcCmd::ScrollUp => self.scroll_half_screen_up(),
       ProcCmd::ScrollDown => self.scroll_half_screen_down(),
       ProcCmd::ScrollUpLines { n } => self.scroll_up_lines(n),
       ProcCmd::ScrollDownLines { n } => self.scroll_down_lines(n),
-
-      ProcCmd::CopyModeEnter => match &mut self.inst {
-        ProcState::None => (),
-        ProcState::Some(inst) => {
-          let screen = inst.vt.read().unwrap().screen().clone();
-          let y = (screen.size().0 - 1) as i32;
-          self.copy_mode = CopyMode::Start(screen, Pos { y, x: 0 });
-        }
-        ProcState::Error(_) => (),
-      },
-      ProcCmd::CopyModeLeave => {
-        self.copy_mode = CopyMode::None(None);
-      }
-      ProcCmd::CopyModeMove { dir } => match &self.inst {
-        ProcState::None => (),
-        ProcState::Some(inst) => {
-          let vt = inst.vt.read().unwrap();
-          let screen = vt.screen();
-          match &mut self.copy_mode {
-            CopyMode::None(_) => (),
-            CopyMode::Start(_, pos_) | CopyMode::Range(_, _, pos_) => {
-              match dir {
-                CopyMove::Up => {
-                  if pos_.y > -(screen.scrollback_len() as i32) {
-                    pos_.y -= 1
-                  }
-                }
-                CopyMove::Right => {
-                  if pos_.x + 1 < screen.size().1 as i32 {
-                    pos_.x += 1
-                  }
-                }
-                CopyMove::Left => {
-                  if pos_.x > 0 {
-                    pos_.x -= 1
-                  }
-                }
-                CopyMove::Down => {
-                  if pos_.y + 1 < screen.size().0 as i32 {
-                    pos_.y += 1
-                  }
-                }
-              };
-            }
-          }
-        }
-        ProcState::Error(_) => (),
-      },
-      ProcCmd::CopyModeEnd => {
-        self.copy_mode = match std::mem::take(&mut self.copy_mode) {
-          CopyMode::Start(screen, start) => {
-            CopyMode::Range(screen, start.clone(), start)
-          }
-          other => other,
-        };
-      }
-      ProcCmd::CopyModeCopy => {
-        if let CopyMode::Range(screen, start, end) = &self.copy_mode {
-          let (low, high) = Pos::to_low_high(start, end);
-          let text = screen.get_selected_text(low.x, low.y, high.x, high.y);
-
-          // TODO: send copy event instead
-          crate::clipboard::copy(text.as_str());
-        }
-        self.copy_mode = CopyMode::None(None);
-      }
 
       ProcCmd::Resize { x, y, w, h } => self.resize(Rect {
         x,
@@ -536,6 +401,10 @@ impl Proc {
         width: w,
         height: h,
       }),
+
+      ProcCmd::OnProcUpdate(_, _) => {
+        log::warn!("Proc received ProcCmd::OnProcUpdate.");
+      }
     }
   }
 }

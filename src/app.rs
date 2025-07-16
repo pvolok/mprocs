@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::Instant;
 
 use anyhow::bail;
 use crossterm::event::{
@@ -20,15 +20,15 @@ use tui::{
 use crate::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
   error::ResultLogger,
-  event::AppEvent,
+  event::{AppEvent, CopyMove},
   host::{
     receiver::MsgReceiver, sender::MsgSender, socket::bind_server_socket,
   },
   kernel::kernel_message::KernelMessage,
   kernel2::{
     kernel::Kernel2,
-    kernel_message::{KernelCommand, KernelMessage2, KernelSender2},
-    proc::{ProcCommand, ProcInit, ProcStatus},
+    kernel_message::{KernelCommand, KernelSender2},
+    proc::{ProcInit, ProcStatus},
   },
   key::Key,
   keymap::Keymap,
@@ -39,9 +39,10 @@ use crate::{
   },
   mouse::MouseEvent,
   proc::{
-    create_proc,
-    msg::{ProcCmd, ProcEvent},
-    StopSignal,
+    handle::RESTART_THRESHOLD_SECONDS,
+    msg::{ProcCmd, ProcUpdate},
+    proc::launch_proc,
+    CopyMode, Pos, StopSignal,
   },
   protocol::{CltToSrv, ProxyBackend, SrvToClt},
   state::{Scope, State},
@@ -49,6 +50,7 @@ use crate::{
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
   ui_term::{render_term, term_check_hit},
   ui_zoom_tip::render_zoom_tip,
+  vt100::MouseProtocolMode,
 };
 use crate::{kernel::kernel_message::KernelSender, vt100::Size};
 
@@ -81,8 +83,6 @@ pub struct App {
   keymap: Keymap,
   state: State,
   modal: Option<Box<dyn Modal>>,
-  proc_rx: UnboundedReceiver<(usize, ProcEvent)>,
-  proc_tx: UnboundedSender<(usize, ProcEvent)>,
   ev_rx: UnboundedReceiver<AppEvent>,
   ev_tx: UnboundedSender<AppEvent>,
   // kernel_sender: KernelSender,
@@ -170,14 +170,14 @@ impl App {
   async fn main_loop(
     mut self,
     ks: &KernelSender2,
-    pr: &mut UnboundedReceiver<ProcCommand>,
+    pr: &mut UnboundedReceiver<ProcCmd>,
   ) -> anyhow::Result<()> {
-    self.start_procs(Rect::new(
-      0,
-      0,
-      self.screen_size.width,
-      self.screen_size.height,
-    ))?;
+    ks.send(KernelCommand::ListenProcUpdates);
+
+    self.start_procs(
+      Rect::new(0, 0, self.screen_size.width, self.screen_size.height),
+      ks,
+    )?;
 
     let mut render_needed = true;
     loop {
@@ -200,22 +200,17 @@ impl App {
       let () = select! {
         event = self.kernel_receiver.recv().fuse() => {
           if let Some(event) = event {
-            self.handle_kernel_message(&mut loop_action, event)?
-          }
-        }
-        event = self.proc_rx.recv().fuse() => {
-          if let Some(event) = event {
-            self.handle_proc_event(&mut loop_action, event)
+            self.handle_kernel_message(&mut loop_action, ks, event)?
           }
         }
         event = self.ev_rx.recv().fuse() => {
           if let Some(event) = event {
-            self.handle_event(&mut loop_action, &event)
+            self.handle_event(&mut loop_action, ks, &event)
           }
         }
         command = pr.recv().fuse() => {
           if let Some(command) = command {
-            self.handle_proc_command(&mut loop_action, command)
+            self.handle_proc_command(&mut loop_action, ks, command)
           }
         }
       };
@@ -244,14 +239,16 @@ impl App {
     Ok(())
   }
 
-  fn start_procs(&mut self, size: Rect) -> anyhow::Result<()> {
+  fn start_procs(
+    &mut self,
+    size: Rect,
+    ks: &KernelSender2,
+  ) -> anyhow::Result<()> {
     let mut procs = self
       .config
       .procs
       .iter()
-      .map(|proc_cfg| {
-        create_proc(proc_cfg.name.clone(), proc_cfg, self.proc_tx.clone(), size)
-      })
+      .map(|proc_cfg| launch_proc(ks, proc_cfg.clone(), size))
       .collect::<Vec<_>>();
 
     self.state.procs.append(&mut procs);
@@ -262,51 +259,56 @@ impl App {
   fn handle_kernel_message(
     &mut self,
     loop_action: &mut LoopAction,
+    ks: &KernelSender2,
     msg: KernelMessage,
   ) -> anyhow::Result<()> {
     match msg {
       KernelMessage::ClientMessage { client_id, msg } => {
-        self.handle_client_msg(loop_action, client_id, msg)?;
+        self.handle_client_msg(loop_action, ks, client_id, msg)?;
       }
       KernelMessage::ClientConnected { handle } => {
         self.clients.push(handle);
-        self.update_screen_size();
+        self.update_screen_size(ks);
         loop_action.render();
       }
       KernelMessage::ClientDisconnected { client_id } => {
         self.clients.retain(|c| c.id != client_id);
-        self.update_screen_size();
+        self.update_screen_size(ks);
         loop_action.render();
       }
     }
     Ok(())
   }
 
-  fn update_screen_size(&mut self) {
+  fn update_screen_size(&mut self, ks: &KernelSender2) {
     if let Some(client) = self.clients.first_mut() {
       let size = client.size();
       if self.screen_size != size {
         self.screen_size = size;
-        self.sync_proc_handle_size();
+        self.sync_proc_handle_size(ks);
       }
     }
   }
 
-  fn sync_proc_handle_size(&mut self) {
+  fn sync_proc_handle_size(&mut self, ks: &KernelSender2) {
     let area = self.get_layout().term_area();
     for proc_handle in &mut self.state.procs {
-      proc_handle.send(ProcCmd::Resize {
-        x: area.x,
-        y: area.y,
-        w: area.width,
-        h: area.height,
-      });
+      ks.send(KernelCommand::ProcCmd(
+        proc_handle.id(),
+        ProcCmd::Resize {
+          x: area.x,
+          y: area.y,
+          w: area.width,
+          h: area.height,
+        },
+      ));
     }
   }
 
   fn handle_client_msg(
     &mut self,
     loop_action: &mut LoopAction,
+    ks: &KernelSender2,
     client_id: ClientId,
     msg: CltToSrv,
   ) -> anyhow::Result<()> {
@@ -314,7 +316,7 @@ impl App {
     let ret = match msg {
       CltToSrv::Init { .. } => bail!("Init message is unexpected."),
       CltToSrv::Key(event) => {
-        self.handle_input(loop_action, client_id, event);
+        self.handle_input(loop_action, ks, client_id, event);
         Ok(())
       }
     };
@@ -325,6 +327,7 @@ impl App {
   fn handle_input(
     &mut self,
     loop_action: &mut LoopAction,
+    ks: &KernelSender2,
     client_id: ClientId,
     event: Event,
   ) {
@@ -354,12 +357,12 @@ impl App {
         let group = self.state.get_keymap_group();
         if let Some(bound) = self.keymap.resolve(group, &key) {
           let bound = bound.clone();
-          self.handle_event(loop_action, &bound)
+          self.handle_event(loop_action, ks, &bound)
         } else {
           match self.state.scope {
             Scope::Procs => (),
             Scope::Term | Scope::TermZoom => {
-              self.handle_event(loop_action, &AppEvent::SendKey { key })
+              self.handle_event(loop_action, ks, &AppEvent::SendKey { key })
             }
           }
         }
@@ -384,9 +387,126 @@ impl App {
             _ => (),
           }
           if let Some(proc) = self.state.get_current_proc_mut() {
-            proc.send(ProcCmd::SendMouse(
-              mouse_event.translate(layout.term_area()),
-            ));
+            let local_event = mouse_event.translate(layout.term_area());
+
+            proc.copy_mode = match std::mem::take(&mut proc.copy_mode) {
+              CopyMode::None(pos) => {
+                let mouse_mode = proc
+                  .vt
+                  .as_ref()
+                  .map(|vt| vt.read().unwrap().screen().mouse_protocol_mode())
+                  .unwrap_or_default();
+
+                match mouse_mode {
+                  MouseProtocolMode::None => match local_event.kind {
+                    MouseEventKind::Down(btn) => match btn {
+                      MouseButton::Left => {
+                        if let Some(vt_ref) = proc.vt.as_mut() {
+                          let vt = vt_ref.read().log_get().unwrap();
+                          CopyMode::None(Some(
+                            local_event
+                              .pos_with_scrollback(vt.screen().scrollback()),
+                          ))
+                        } else {
+                          CopyMode::None(pos)
+                        }
+                      }
+                      MouseButton::Right | MouseButton::Middle => {
+                        CopyMode::None(pos)
+                      }
+                    },
+                    MouseEventKind::Up(_) => CopyMode::None(pos),
+                    MouseEventKind::Drag(MouseButton::Left) => {
+                      if let Some(vt_ref) = proc.vt.as_mut() {
+                        let vt = vt_ref.read().log_get().unwrap();
+                        let new_pos = local_event
+                          .pos_with_scrollback(vt.screen().scrollback());
+                        CopyMode::Active(
+                          vt.screen().clone(),
+                          pos.unwrap_or_default(),
+                          Some(new_pos),
+                        )
+                      } else {
+                        CopyMode::None(pos)
+                      }
+                    }
+                    MouseEventKind::Drag(_) => CopyMode::None(pos),
+                    MouseEventKind::Moved => CopyMode::None(pos),
+                    MouseEventKind::ScrollDown => {
+                      if let Some(vt_ref) = proc.vt.as_mut() {
+                        let mut vt = vt_ref.write().log_get().unwrap();
+                        vt.screen
+                          .scroll_screen_down(self.config.mouse_scroll_speed);
+                      }
+                      CopyMode::None(pos)
+                    }
+                    MouseEventKind::ScrollUp => {
+                      if let Some(vt_ref) = proc.vt.as_mut() {
+                        let mut vt = vt_ref.write().log_get().unwrap();
+                        vt.screen
+                          .scroll_screen_up(self.config.mouse_scroll_speed);
+                      }
+                      CopyMode::None(pos)
+                    }
+                    MouseEventKind::ScrollLeft
+                    | MouseEventKind::ScrollRight => CopyMode::None(pos),
+                  },
+                  MouseProtocolMode::Press
+                  | MouseProtocolMode::PressRelease
+                  | MouseProtocolMode::ButtonMotion
+                  | MouseProtocolMode::AnyMotion => {
+                    ks.send(KernelCommand::ProcCmd(
+                      proc.id(),
+                      ProcCmd::SendMouse(local_event),
+                    ));
+                    CopyMode::None(pos)
+                  }
+                }
+              }
+              CopyMode::Active(mut screen, start, end) => {
+                match local_event.kind {
+                  MouseEventKind::Down(btn) => match btn {
+                    MouseButton::Left => {
+                      let pos =
+                        local_event.pos_with_scrollback(screen.scrollback());
+                      let (start, end) = if let Some(_) = end {
+                        (start, Some(pos))
+                      } else {
+                        (pos, None)
+                      };
+                      CopyMode::Active(screen, start, end)
+                    }
+                    MouseButton::Right => {
+                      let pos =
+                        local_event.pos_with_scrollback(screen.scrollback());
+                      CopyMode::Active(screen, start, Some(pos))
+                    }
+                    MouseButton::Middle => CopyMode::Active(screen, start, end),
+                  },
+                  MouseEventKind::Up(_) => CopyMode::Active(screen, start, end),
+                  MouseEventKind::Drag(MouseButton::Left) => {
+                    let pos =
+                      local_event.pos_with_scrollback(screen.scrollback());
+                    CopyMode::Active(screen, start, Some(pos))
+                  }
+                  MouseEventKind::Drag(_) => {
+                    CopyMode::Active(screen, start, end)
+                  }
+                  MouseEventKind::Moved => CopyMode::Active(screen, start, end),
+                  MouseEventKind::ScrollDown => {
+                    screen.scroll_screen_down(self.config.mouse_scroll_speed);
+                    CopyMode::Active(screen, start, end)
+                  }
+                  MouseEventKind::ScrollUp => {
+                    screen.scroll_screen_up(self.config.mouse_scroll_speed);
+                    CopyMode::Active(screen, start, end)
+                  }
+                  MouseEventKind::ScrollLeft | MouseEventKind::ScrollRight => {
+                    CopyMode::Active(screen, start, end)
+                  }
+                }
+              }
+            }
           }
         } else if procs_check_hit(layout.procs, mev.column, mev.row) {
           match (self.state.scope, mev.kind) {
@@ -438,7 +558,7 @@ impl App {
           let size = Size { width, height };
           client.resize(size);
         }
-        self.update_screen_size();
+        self.update_screen_size(ks);
 
         loop_action.render();
       }
@@ -454,11 +574,16 @@ impl App {
     }
   }
 
-  fn handle_event(&mut self, loop_action: &mut LoopAction, event: &AppEvent) {
+  fn handle_event(
+    &mut self,
+    loop_action: &mut LoopAction,
+    ks: &KernelSender2,
+    event: &AppEvent,
+  ) {
     match event {
       AppEvent::Batch { cmds } => {
         for cmd in cmds {
-          self.handle_event(loop_action, cmd);
+          self.handle_event(loop_action, ks, cmd);
           if *loop_action == LoopAction::ForceQuit {
             return;
           }
@@ -473,7 +598,7 @@ impl App {
         self.state.quitting = true;
         for proc_handle in self.state.procs.iter_mut() {
           if proc_handle.is_up() {
-            proc_handle.send(ProcCmd::Stop);
+            ks.send(KernelCommand::ProcCmd(proc_handle.id(), ProcCmd::Stop));
           }
         }
         loop_action.render();
@@ -481,7 +606,7 @@ impl App {
       AppEvent::ForceQuit => {
         for proc_handle in self.state.procs.iter_mut() {
           if proc_handle.is_up() {
-            proc_handle.send(ProcCmd::Kill);
+            ks.send(KernelCommand::ProcCmd(proc_handle.id(), ProcCmd::Kill));
           }
         }
         loop_action.force_quit();
@@ -538,26 +663,26 @@ impl App {
 
       AppEvent::StartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.send(ProcCmd::Start);
+          ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
         }
       }
       AppEvent::TermProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.send(ProcCmd::Stop);
+          ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Stop));
         }
       }
       AppEvent::KillProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.send(ProcCmd::Kill);
+          ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Kill));
         }
       }
       AppEvent::RestartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           if proc.is_up() {
             proc.to_restart = true;
-            proc.send(ProcCmd::Stop);
+            ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Stop));
           } else {
-            proc.send(ProcCmd::Start);
+            ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
           }
         }
       }
@@ -565,34 +690,60 @@ impl App {
         if let Some(proc) = self.state.get_current_proc_mut() {
           if proc.is_up() {
             proc.to_restart = true;
-            proc.send(ProcCmd::Kill);
+            ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Kill));
           } else {
-            proc.send(ProcCmd::Start);
+            ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
           }
         }
       }
 
       AppEvent::ScrollUpLines { n } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.send(ProcCmd::ScrollUpLines { n: *n });
+          match &mut proc.copy_mode {
+            CopyMode::None(_) => ks.send(KernelCommand::ProcCmd(
+              proc.id,
+              ProcCmd::ScrollUpLines { n: *n },
+            )),
+            CopyMode::Active(screen, _, _) => screen.scroll_screen_up(*n),
+          }
           loop_action.render();
         }
       }
       AppEvent::ScrollDownLines { n } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.send(ProcCmd::ScrollDownLines { n: *n });
+          match &mut proc.copy_mode {
+            CopyMode::None(_) => ks.send(KernelCommand::ProcCmd(
+              proc.id,
+              ProcCmd::ScrollDownLines { n: *n },
+            )),
+            CopyMode::Active(screen, _, _) => screen.scroll_screen_down(*n),
+          }
           loop_action.render();
         }
       }
       AppEvent::ScrollUp => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.send(ProcCmd::ScrollUp);
+          match &mut proc.copy_mode {
+            CopyMode::None(_) => {
+              ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::ScrollUp))
+            }
+            CopyMode::Active(screen, _, _) => {
+              screen.scroll_screen_up(screen.size().rows as usize / 2)
+            }
+          }
           loop_action.render();
         }
       }
       AppEvent::ScrollDown => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.send(ProcCmd::ScrollDown);
+          match &mut proc.copy_mode {
+            CopyMode::None(_) => {
+              ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::ScrollDown))
+            }
+            CopyMode::Active(screen, _, _) => {
+              screen.scroll_screen_down(screen.size().rows as usize / 2)
+            }
+          }
           loop_action.render();
         }
       }
@@ -605,33 +756,36 @@ impl App {
           Some(s) => s,
           None => cmd,
         };
-        let proc_handle = create_proc(
-          name.clone(),
-          &ProcConfig {
-            name: name.clone(),
-            cmd: CmdConfig::Shell {
-              shell: cmd.to_string(),
-            },
-            cwd: None,
-            env: None,
-            autostart: true,
-            autorestart: false,
-            stop: StopSignal::default(),
-            mouse_scroll_speed: self.config.mouse_scroll_speed,
-            scrollback_len: self.config.scrollback_len,
+        let proc_config = ProcConfig {
+          name: name.clone(),
+          cmd: CmdConfig::Shell {
+            shell: cmd.to_string(),
           },
-          self.proc_tx.clone(),
-          self.get_layout().term_area(),
-        );
+          cwd: None,
+          env: None,
+          autostart: true,
+          autorestart: false,
+          stop: StopSignal::default(),
+          mouse_scroll_speed: self.config.mouse_scroll_speed,
+          scrollback_len: self.config.scrollback_len,
+        };
+        let proc_handle =
+          launch_proc(ks, proc_config, self.get_layout().term_area());
         self.state.procs.push(proc_handle);
+
         loop_action.render();
       }
       AppEvent::DuplicateProc => {
-        if let Some(proc_handle) = self.state.get_current_proc_mut() {
-          let proc_handle = proc_handle.duplicate();
+        let cfg = match self.state.get_current_proc_mut() {
+          Some(proc_handle) => Some(proc_handle.cfg.clone()),
+          None => None,
+        };
+        if let Some(cfg) = cfg {
+          let size = self.get_layout().term_area();
+          let proc_handle = launch_proc(ks, cfg, size);
           self.state.procs.push(proc_handle);
+          loop_action.render();
         }
-        loop_action.render();
       }
       AppEvent::ShowRemoveProc => {
         let id = self
@@ -672,7 +826,11 @@ impl App {
       AppEvent::CopyModeEnter => {
         match self.state.get_current_proc_mut() {
           Some(proc) => {
-            proc.send(ProcCmd::CopyModeEnter);
+            if let Some(vt_ref) = proc.vt.as_ref() {
+              let screen = vt_ref.read().unwrap().screen().clone();
+              let y = (screen.size().rows - 1) as i32;
+              proc.copy_mode = CopyMode::Active(screen, Pos { y, x: 0 }, None);
+            }
             self.state.scope = Scope::Term;
             loop_action.render();
           }
@@ -681,66 +839,149 @@ impl App {
       }
       AppEvent::CopyModeLeave => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.send(ProcCmd::CopyModeLeave);
+          proc.copy_mode = CopyMode::None(None);
         }
         loop_action.render();
       }
       AppEvent::CopyModeMove { dir } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.send(ProcCmd::CopyModeMove { dir: *dir });
+          match &mut proc.copy_mode {
+            CopyMode::None(_) => (),
+            CopyMode::Active(screen, start, end) => {
+              let pos_ = if let Some(end) = end { end } else { start };
+              match dir {
+                CopyMove::Up => {
+                  if pos_.y > -(screen.scrollback_len() as i32) {
+                    pos_.y -= 1
+                  }
+                }
+                CopyMove::Right => {
+                  if pos_.x + 1 < screen.size().cols as i32 {
+                    pos_.x += 1
+                  }
+                }
+                CopyMove::Left => {
+                  if pos_.x > 0 {
+                    pos_.x -= 1
+                  }
+                }
+                CopyMove::Down => {
+                  if pos_.y + 1 < screen.size().rows as i32 {
+                    pos_.y += 1
+                  }
+                }
+              };
+            }
+          }
         }
         loop_action.render();
       }
       AppEvent::CopyModeEnd => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.send(ProcCmd::CopyModeEnd);
+          proc.copy_mode = match std::mem::take(&mut proc.copy_mode) {
+            CopyMode::Active(screen, start, None) => {
+              CopyMode::Active(screen, start.clone(), Some(start))
+            }
+            other => other,
+          };
         }
         loop_action.render();
       }
       AppEvent::CopyModeCopy => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.send(ProcCmd::CopyModeCopy);
+          if let CopyMode::Active(screen, start, Some(end)) = &proc.copy_mode {
+            let (low, high) = Pos::to_low_high(start, end);
+            let text = screen.get_selected_text(low.x, low.y, high.x, high.y);
+            crate::clipboard::copy(text.as_str());
+          }
+          proc.copy_mode = CopyMode::None(None);
         }
         loop_action.render();
       }
 
       AppEvent::ToggleKeymapWindow => {
         self.state.toggle_keymap_window();
-        self.sync_proc_handle_size();
+        self.sync_proc_handle_size(ks);
         loop_action.render();
       }
 
       AppEvent::SendKey { key } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.send(ProcCmd::SendKey(key.clone()));
+          ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::SendKey(*key)));
         }
       }
-    }
-  }
-
-  fn handle_proc_event(
-    &mut self,
-    loop_action: &mut LoopAction,
-    event: (usize, ProcEvent),
-  ) {
-    let selected = self
-      .state
-      .get_current_proc()
-      .map_or(false, |p| p.id() == event.0);
-    if let Some(proc) = self.state.get_proc_mut(event.0) {
-      proc.handle_event(event.1, selected);
-      loop_action.render();
     }
   }
 
   fn handle_proc_command(
     &mut self,
     loop_action: &mut LoopAction,
-    command: ProcCommand,
+    ks: &KernelSender2,
+    command: ProcCmd,
   ) {
     match command {
-      ProcCommand::Start => (),
-      ProcCommand::Stop => (),
+      ProcCmd::Start => (),
+      ProcCmd::Stop => (),
+      ProcCmd::Kill => (),
+      ProcCmd::SendKey(key) => (),
+      ProcCmd::SendMouse(mouse_event) => (),
+      ProcCmd::ScrollUp => (),
+      ProcCmd::ScrollDown => (),
+      ProcCmd::ScrollUpLines { n } => (),
+      ProcCmd::ScrollDownLines { n } => (),
+      ProcCmd::Resize { x, y, w, h } => (),
+
+      ProcCmd::OnProcUpdate(proc_id, update) => match update {
+        ProcUpdate::Started => {
+          if let Some(proc) = self.state.get_proc_mut(proc_id) {
+            proc.is_up = true;
+            proc.last_start = Some(Instant::now());
+            loop_action.render();
+          }
+        }
+        ProcUpdate::Stopped(exit_code) => {
+          if let Some(proc) = self.state.get_proc_mut(proc_id) {
+            proc.is_up = false;
+            proc.exit_code = Some(exit_code);
+
+            if proc.cfg.autorestart && !proc.to_restart && exit_code != 0 {
+              match proc.last_start {
+                Some(last_start) => {
+                  let elapsed_time = Instant::now().duration_since(last_start);
+                  if elapsed_time.as_secs_f64() > RESTART_THRESHOLD_SECONDS {
+                    proc.to_restart = true;
+                  }
+                }
+                None => proc.to_restart = true,
+              }
+            }
+            if proc.to_restart {
+              proc.to_restart = false;
+              ks.send(KernelCommand::ProcCmd(proc_id, ProcCmd::Start));
+            }
+            loop_action.render();
+          }
+        }
+        ProcUpdate::ScreenChanged(vt) => {
+          if let Some(proc) = self.state.get_proc_mut(proc_id) {
+            proc.vt = vt;
+            proc.changed = true;
+            loop_action.render();
+          }
+        }
+        ProcUpdate::Rendered => {
+          let is_current = self
+            .state
+            .get_current_proc()
+            .is_some_and(|p| p.id() == proc_id);
+          if let Some(proc) = self.state.get_proc_mut(proc_id) {
+            if !is_current {
+              proc.changed = true;
+            }
+            loop_action.render();
+          }
+        }
+      },
     }
   }
 
@@ -1049,8 +1290,6 @@ pub async fn kernel_main(
   keymap: Keymap,
   kernel_receiver: UnboundedReceiver<KernelMessage>,
 ) -> anyhow::Result<()> {
-  let (upd_tx, upd_rx) =
-    tokio::sync::mpsc::unbounded_channel::<(usize, ProcEvent)>();
   let (ev_tx, ev_rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
 
   let state = State {
@@ -1069,8 +1308,6 @@ pub async fn kernel_main(
     keymap,
     state,
     modal: None,
-    proc_rx: upd_rx,
-    proc_tx: upd_tx,
 
     ev_rx,
     ev_tx,

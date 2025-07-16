@@ -11,7 +11,6 @@ use crate::{
   proc::{handle::ProcViewFrame, CopyMode, Pos, ReplySender},
   state::{Scope, State},
   theme::Theme,
-  vt100,
 };
 
 pub fn render_term(
@@ -36,7 +35,7 @@ pub fn render_term(
     title.push(Span::styled("Terminal", theme.pane_title(active)));
     match proc.copy_mode() {
       CopyMode::None(_) => (),
-      CopyMode::Start(_, _) | CopyMode::Range(_, _, _) => {
+      CopyMode::Active(_, _, _) => {
         title.push(Span::raw(" "));
         title.push(Span::styled("COPY MODE", theme.copy_mode_label()));
       }
@@ -60,7 +59,8 @@ pub fn render_term(
             };
             (screen, cursor)
           }
-          CopyMode::Start(screen, pos) | CopyMode::Range(screen, _, pos) => {
+          CopyMode::Active(screen, start, end) => {
+            let pos = end.as_ref().unwrap_or(start);
             let y = area.y as i32 + 1 + (pos.y + screen.scrollback() as i32);
             let cursor = if y >= 0 {
               Some((area.x + 1 + pos.x as u16, y as u16))
@@ -131,8 +131,9 @@ impl Widget for UiTerm<'_> {
 
           let copy_mode = match self.copy_mode {
             CopyMode::None(_) => None,
-            CopyMode::Start(_, start) => Some((start, start)),
-            CopyMode::Range(_, start, end) => Some((start, end)),
+            CopyMode::Active(_, start, end) => {
+              Some((start, end.as_ref().unwrap_or(start)))
+            }
           };
           if let Some((start, end)) = copy_mode {
             if Pos::within(

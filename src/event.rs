@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{app::ClientId, key::Key};
+use crate::{app::ClientId, kernel2::proc::ProcId, key::Key};
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(tag = "c", rename_all = "kebab-case")]
@@ -34,7 +34,7 @@ pub enum AppEvent {
   AddProc { cmd: String, name: Option<String> },
   DuplicateProc,
   ShowRemoveProc,
-  RemoveProc { id: usize },
+  RemoveProc { id: ProcId },
 
   CloseCurrentModal,
 
@@ -82,7 +82,7 @@ impl AppEvent {
       AppEvent::AddProc { cmd, name } => format!("New process `{}`", cmd),
       AppEvent::DuplicateProc => "Duplicate current process".to_string(),
       AppEvent::ShowRemoveProc => "Remove process dialog".to_string(),
-      AppEvent::RemoveProc { id } => format!("Remove process by id {}", id),
+      AppEvent::RemoveProc { id } => format!("Remove process by id {}", id.0),
       AppEvent::CloseCurrentModal => "Close current modal".to_string(),
       AppEvent::ScrollDownLines { n } => {
         format!("Scroll down {} {}", n, lines_str(*n))

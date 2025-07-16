@@ -96,6 +96,7 @@ impl Config {
   }
 }
 
+#[derive(Clone)]
 pub struct ProcConfig {
   pub name: String,
   pub cmd: CmdConfig,
@@ -296,7 +297,7 @@ impl ServerConfig {
   }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum CmdConfig {
   Cmd { cmd: Vec<String> },

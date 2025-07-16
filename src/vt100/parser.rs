@@ -6,7 +6,7 @@ use crate::vt100::TermReplySender;
 /// the terminal contents.
 pub struct Parser<Reply: TermReplySender + Clone> {
   parser: Arc<Mutex<termwiz::escape::parser::Parser>>,
-  screen: crate::vt100::screen::Screen<Reply>,
+  pub screen: crate::vt100::screen::Screen<Reply>,
 }
 
 impl<Reply: TermReplySender + Clone> Parser<Reply> {

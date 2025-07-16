@@ -7,19 +7,19 @@ use tui::{
 };
 
 use crate::{
-  app::LoopAction, error::ResultLogger, event::AppEvent, state::State,
-  theme::Theme,
+  app::LoopAction, error::ResultLogger, event::AppEvent, kernel2::proc::ProcId,
+  state::State, theme::Theme,
 };
 
 use super::modal::Modal;
 
 pub struct RemoveProcModal {
-  id: usize,
+  id: ProcId,
   app_sender: UnboundedSender<AppEvent>,
 }
 
 impl RemoveProcModal {
-  pub fn new(id: usize, app_sender: UnboundedSender<AppEvent>) -> Self {
+  pub fn new(id: ProcId, app_sender: UnboundedSender<AppEvent>) -> Self {
     RemoveProcModal { id, app_sender }
   }
 }

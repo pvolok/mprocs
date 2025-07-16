@@ -1,5 +1,6 @@
 use crate::{
   app::ClientId,
+  kernel2::proc::ProcId,
   keymap::KeymapGroup,
   proc::{handle::ProcHandle, CopyMode},
 };
@@ -56,7 +57,7 @@ impl State {
     }
   }
 
-  pub fn get_proc_mut(&mut self, id: usize) -> Option<&mut ProcHandle> {
+  pub fn get_proc_mut(&mut self, id: ProcId) -> Option<&mut ProcHandle> {
     self.procs.iter_mut().find(|p| p.id() == id)
   }
 
@@ -66,7 +67,7 @@ impl State {
       Scope::Term | Scope::TermZoom => match self.get_current_proc() {
         Some(proc) => match proc.copy_mode() {
           CopyMode::None(_) => KeymapGroup::Term,
-          CopyMode::Start(_, _) | CopyMode::Range(_, _, _) => KeymapGroup::Copy,
+          CopyMode::Active(_, _, _) => KeymapGroup::Copy,
         },
         None => KeymapGroup::Term,
       },

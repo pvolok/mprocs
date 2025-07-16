@@ -1,12 +1,18 @@
-use std::{collections::HashMap, time::Duration};
+use std::{
+  collections::{HashMap, HashSet},
+  sync::{atomic::AtomicUsize, Arc},
+};
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use crate::kernel2::kernel_message::KernelSender2;
+use crate::{
+  kernel2::kernel_message::KernelSender2,
+  proc::msg::{ProcCmd, ProcUpdate},
+};
 
 use super::{
   kernel_message::{KernelCommand, KernelMessage2},
-  proc::{ProcCommand, ProcHandle2, ProcId, ProcInit, ProcStatus},
+  proc::{ProcHandle2, ProcId, ProcInit, ProcStatus},
 };
 
 pub struct Kernel2 {
@@ -14,8 +20,9 @@ pub struct Kernel2 {
   receiver: UnboundedReceiver<KernelMessage2>,
 
   quitting: bool,
-  last_proc_id: usize,
+  next_proc_id: Arc<AtomicUsize>,
   procs: HashMap<ProcId, ProcHandle2>,
+  listeners: HashSet<ProcId>,
 }
 
 impl Kernel2 {
@@ -27,18 +34,33 @@ impl Kernel2 {
       receiver,
 
       quitting: false,
-      last_proc_id: 0,
+      next_proc_id: Arc::new(AtomicUsize::new(1)),
       procs: HashMap::new(),
+      listeners: Default::default(),
     }
   }
 
-  pub fn spawn_proc<F>(&mut self, f: F) -> ProcId
+  pub fn spawn_proc<F>(&mut self, f: F)
   where
     F: FnOnce(KernelSender2) -> ProcInit,
   {
-    self.last_proc_id += 1;
-    let proc_id = ProcId(self.last_proc_id);
-    let kernel_sender = KernelSender2::new(proc_id, self.sender.clone());
+    let proc_id = ProcId(
+      self
+        .next_proc_id
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+    );
+    self.spawn_proc_with_id(proc_id, f)
+  }
+
+  pub fn spawn_proc_with_id<F>(&mut self, proc_id: ProcId, f: F)
+  where
+    F: FnOnce(KernelSender2) -> ProcInit,
+  {
+    let kernel_sender = KernelSender2::new(
+      self.next_proc_id.clone(),
+      proc_id,
+      self.sender.clone(),
+    );
     let init = f(kernel_sender);
     let proc_handle = ProcHandle2 {
       proc_id,
@@ -48,29 +70,9 @@ impl Kernel2 {
       status: init.status,
     };
     self.procs.insert(proc_id, proc_handle);
-
-    proc_id
   }
 
   pub async fn run(mut self) {
-    let _ = self.sender.send(KernelMessage2 {
-      from: ProcId(0),
-      command: KernelCommand::AddProc(Box::new(|kernel_sender| {
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-
-        tokio::spawn(async move {
-          tokio::time::sleep(Duration::from_secs(3)).await;
-          kernel_sender.send(KernelCommand::ProcStopped);
-        });
-
-        ProcInit {
-          sender,
-          stop_on_quit: true,
-          status: ProcStatus::Running,
-        }
-      })),
-    });
-
     loop {
       let msg = if let Some(msg) = self.receiver.recv().await {
         msg
@@ -87,7 +89,7 @@ impl Kernel2 {
           self.quitting = true;
 
           for proc in self.procs.values() {
-            let _ = proc.sender.send(ProcCommand::Stop);
+            let _ = proc.sender.send(ProcCmd::Stop);
           }
 
           if self.is_ready_to_quit() {
@@ -95,18 +97,69 @@ impl Kernel2 {
           }
         }
 
-        KernelCommand::AddProc(create_proc) => {
-          self.spawn_proc(create_proc);
+        KernelCommand::AddProc(proc_id, create_proc) => {
+          self.spawn_proc_with_id(proc_id, create_proc);
         }
-        KernelCommand::StopProc => todo!(),
+        KernelCommand::ProcCmd(proc_id, cmd) => {
+          if let Some(proc) = self.procs.get(&proc_id) {
+            proc.send(cmd);
+          }
+        }
 
-        KernelCommand::ProcStopped => {
+        KernelCommand::ProcStarted => {
+          if let Some(proc) = self.procs.get_mut(&msg.from) {
+            proc.status = ProcStatus::Running;
+          }
+
+          for listener_id in self.listeners.iter() {
+            if let Some(listener) = self.procs.get(listener_id) {
+              listener
+                .send(ProcCmd::OnProcUpdate(msg.from, ProcUpdate::Started));
+            }
+          }
+        }
+        KernelCommand::ProcStopped(exit_code) => {
           if let Some(proc) = self.procs.get_mut(&msg.from) {
             proc.status = ProcStatus::Down;
           }
+
+          for listener_id in self.listeners.iter() {
+            if let Some(listener) = self.procs.get(listener_id) {
+              listener.send(ProcCmd::OnProcUpdate(
+                msg.from,
+                ProcUpdate::Stopped(exit_code),
+              ));
+            }
+          }
+
           if self.quitting && self.is_ready_to_quit() {
             break;
           }
+        }
+        KernelCommand::ProcUpdatedScreen(vt) => {
+          for listener_id in self.listeners.iter() {
+            if let Some(listener) = self.procs.get(listener_id) {
+              listener.send(ProcCmd::OnProcUpdate(
+                msg.from,
+                ProcUpdate::ScreenChanged(vt.clone()),
+              ));
+            }
+          }
+        }
+        KernelCommand::ProcRendered => {
+          for listener_id in self.listeners.iter() {
+            if let Some(listener) = self.procs.get(listener_id) {
+              listener
+                .send(ProcCmd::OnProcUpdate(msg.from, ProcUpdate::Rendered));
+            }
+          }
+        }
+
+        KernelCommand::ListenProcUpdates => {
+          self.listeners.insert(msg.from);
+        }
+        KernelCommand::UnlistenProcUpdates => {
+          self.listeners.remove(&msg.from);
         }
       }
     }
