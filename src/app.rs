@@ -1039,7 +1039,7 @@ impl AppLayout {
   }
 
   pub fn term_area(&self) -> Rect {
-    self.term.inner(&Margin {
+    self.term.inner(Margin {
       vertical: 1,
       horizontal: 1,
     })

@@ -132,7 +132,7 @@ pub fn procs_get_clicked_index(
   y: u16,
   state: &State,
 ) -> Option<usize> {
-  let inner = area.inner(&Margin {
+  let inner = area.inner(Margin {
     vertical: 1,
     horizontal: 1,
   });

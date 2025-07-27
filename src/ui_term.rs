@@ -74,7 +74,7 @@ pub fn render_term(
         let term = UiTerm::new(screen, proc.copy_mode());
         frame.render_widget(
           term,
-          area.inner(&Margin {
+          area.inner(Margin {
             vertical: 1,
             horizontal: 1,
           }),
@@ -92,7 +92,7 @@ pub fn render_term(
           Text::styled(*err, Style::default().fg(tui::style::Color::Red));
         frame.render_widget(
           Paragraph::new(text).wrap(Wrap { trim: false }),
-          area.inner(&Margin {
+          area.inner(Margin {
             vertical: 1,
             horizontal: 1,
           }),

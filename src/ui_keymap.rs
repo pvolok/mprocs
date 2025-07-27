@@ -67,7 +67,7 @@ pub fn render_keymap(
   let p = Paragraph::new(line);
   frame.render_widget(
     p,
-    area.inner(&Margin {
+    area.inner(Margin {
       vertical: 1,
       horizontal: 1,
     }),

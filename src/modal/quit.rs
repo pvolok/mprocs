@@ -109,7 +109,7 @@ impl Modal for QuitModal {
     let block = theme.pane(true);
     frame.render_widget(block, area);
 
-    let inner = area.inner(&Margin::new(1, 1));
+    let inner = area.inner(Margin::new(1, 1));
 
     let txt = Paragraph::new(vec![
       Line::from("<e>   - exit client and server"),

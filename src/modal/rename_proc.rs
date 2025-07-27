@@ -73,7 +73,7 @@ impl Modal for RenameProcModal {
       _ => (),
     }
 
-    let req = tui_input::backend::crossterm::to_input_request(&event);
+    let req = tui_input::backend::crossterm::to_input_request(event);
     if let Some(req) = req {
       self.input.handle(req);
       loop_action.render();
@@ -106,7 +106,7 @@ impl Modal for RenameProcModal {
       .title(Span::styled("Rename process", theme.pane_title(true)));
     frame.render_widget(block, area);
 
-    let inner = area.inner(&Margin::new(1, 1));
+    let inner = area.inner(Margin::new(1, 1));
 
     let mut cursor = (0u16, 0u16);
     let text_input = TextInput::new(&mut self.input);

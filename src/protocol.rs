@@ -241,13 +241,28 @@ impl Backend for ProxyBackend {
     Ok(win_size)
   }
 
-  fn size(&self) -> Result<tui::layout::Rect, std::io::Error> {
-    let rect = tui::layout::Rect::new(0, 0, self.width, self.height);
+  fn size(&self) -> Result<tui::layout::Size, std::io::Error> {
+    let rect = tui::layout::Size::new(self.width, self.height);
     Ok(rect)
   }
 
   fn flush(&mut self) -> Result<(), std::io::Error> {
     self.send(SrvToClt::Flush);
+    Ok(())
+  }
+
+  fn get_cursor_position(&mut self) -> std::io::Result<tui::prelude::Position> {
+    // Only called for Viewport::Inline
+    log::error!("ProxyBackend::get_cursor_position() should not be called.");
+    Ok(Default::default())
+  }
+
+  fn set_cursor_position<P: Into<tui::prelude::Position>>(
+    &mut self,
+    position: P,
+  ) -> std::io::Result<()> {
+    let pos: tui::prelude::Position = position.into();
+    self.send(SrvToClt::SetCursor { x: pos.x, y: pos.y });
     Ok(())
   }
 }

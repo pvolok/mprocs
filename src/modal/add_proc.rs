@@ -107,7 +107,7 @@ impl Modal for AddProcModal {
       .title(Span::styled("Add process", theme.pane_title(true)));
     frame.render_widget(block, area);
 
-    let inner = area.inner(&Margin::new(1, 1));
+    let inner = area.inner(Margin::new(1, 1));
 
     let mut cursor = (0u16, 0u16);
     let text_input = TextInput::new(&mut self.input);

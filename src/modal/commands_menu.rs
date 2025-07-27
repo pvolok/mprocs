@@ -147,7 +147,7 @@ impl Modal for CommandsMenuModal {
       .border_type(tui::widgets::BorderType::Rounded);
     frame.render_widget(block, area);
 
-    let inner = area.inner(&Margin::new(1, 1));
+    let inner = area.inner(Margin::new(1, 1));
     let list_area = Rect::new(
       inner.x,
       inner.y,
