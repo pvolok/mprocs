@@ -91,7 +91,13 @@ async fn proc_main_loop(
       event = internal_receiver.recv() => NextValue::Internal(event),
     };
     match value {
-      NextValue::Cmd(Some(cmd)) => proc.handle_cmd(cmd),
+      NextValue::Cmd(Some(cmd)) => {
+        let mut rendered = false;
+        proc.handle_cmd(cmd, &mut rendered);
+        if rendered {
+          ks.send(KernelCommand::ProcRendered);
+        }
+      }
       NextValue::Cmd(None) => (),
       NextValue::Internal(Some(proc_event)) => match proc_event {
         ProcEvent::Render => ks.send(KernelCommand::ProcRendered),
@@ -381,26 +387,44 @@ impl Proc {
 }
 
 impl Proc {
-  pub fn handle_cmd(&mut self, cmd: ProcCmd) {
+  pub fn handle_cmd(&mut self, cmd: ProcCmd, rendered: &mut bool) {
     match cmd {
-      ProcCmd::Start => self.start(),
+      ProcCmd::Start => {
+        self.start();
+        *rendered = true;
+      }
       ProcCmd::Stop => self.stop(),
       ProcCmd::Kill => self.kill(),
 
       ProcCmd::SendKey(key) => self.send_key(&key),
       ProcCmd::SendMouse(event) => self.handle_mouse(event),
 
-      ProcCmd::ScrollUp => self.scroll_half_screen_up(),
-      ProcCmd::ScrollDown => self.scroll_half_screen_down(),
-      ProcCmd::ScrollUpLines { n } => self.scroll_up_lines(n),
-      ProcCmd::ScrollDownLines { n } => self.scroll_down_lines(n),
+      ProcCmd::ScrollUp => {
+        self.scroll_half_screen_up();
+        *rendered = true;
+      }
+      ProcCmd::ScrollDown => {
+        self.scroll_half_screen_down();
+        *rendered = true;
+      }
+      ProcCmd::ScrollUpLines { n } => {
+        self.scroll_up_lines(n);
+        *rendered = true;
+      }
+      ProcCmd::ScrollDownLines { n } => {
+        self.scroll_down_lines(n);
+        *rendered = true;
+      }
 
-      ProcCmd::Resize { x, y, w, h } => self.resize(Rect {
-        x,
-        y,
-        width: w,
-        height: h,
-      }),
+      ProcCmd::Resize { x, y, w, h } => {
+        self.resize(Rect {
+          x,
+          y,
+          width: w,
+          height: h,
+        });
+        *rendered = true;
+      }
 
       ProcCmd::OnProcUpdate(_, _) => {
         log::warn!("Proc received ProcCmd::OnProcUpdate.");
