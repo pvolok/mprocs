@@ -27,7 +27,7 @@ assert_matches = "1.5.0"
 base64 = "0.22.0"
 clap = { version = "4.3.19", features = ["cargo"] }
 clipboard-win = "5.3.1"
-crossterm = { version = "0.28", features = ["event-stream", "serde"] }
+crossterm = { version = "0.29", features = ["event-stream", "serde"] }
 dunce = "1.0.4"
 # Excluded "textfilter" feature that depends on regex (~0.7 MiB).
 flexi_logger = { version = "0.31.2", default-features = false, features = [
@@ -40,13 +40,18 @@ libc = "0.2.147"
 log = "0.4.19"
 mlua = { version = "0.9.0", features = ["lua52", "vendored", "serialize"] }
 phf = { version = "0.12.1", features = ["macros"] }
-tui = { package = "ratatui", version = "0.29.0", features = ["serde"] }
+tui = { package = "ratatui", version = "0.29.0", default-features = false, features = [
+  "serde",
+  "underline-color",
+] }
 serde = { version = "1.0.177", features = ["derive"] }
 serde_json = "1.0.138"
 serde_yaml = "0.9.25"
 tokio = { version = "1", features = ["full"] }
 triggered = "0.1.2"
-tui-input = "0.14.0"
+tui-input = { version = "0.14.0", default-features = false, features = [
+  "crossterm",
+] }
 unicode-segmentation = "1.12.0"
 unicode-width = "0.2.0"
 which = "8.0.0"

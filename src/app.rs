@@ -1180,7 +1180,7 @@ impl ClientHandle {
     self.terminal.draw(|f| {
       let mut cursor_style = self.cursor_style;
 
-      render_procs(layout.procs, f, state, &config);
+      render_procs(layout.procs, f, state, config);
       render_term(layout.term, f, state, &mut cursor_style);
       render_keymap(layout.keymap, f, state, keymap);
       render_zoom_tip(layout.zoom_banner, f, keymap);

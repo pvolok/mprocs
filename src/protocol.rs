@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crossterm::event::Event;
+use crossterm::{event::Event, style::Attribute};
 use serde::{Deserialize, Serialize};
 use tui::{backend::Backend, style::Modifier};
 
@@ -8,7 +8,10 @@ use crate::{error::ResultLogger, host::sender::MsgSender};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum SrvToClt {
-  Draw { cells: Vec<(u16, u16, Cell)> },
+  Print(String),
+  SetAttr(Attribute),
+  SetFg(Color),
+  SetBg(Color),
   SetCursor { x: u16, y: u16 },
   ShowCursor,
   HideCursor,
@@ -168,6 +171,33 @@ impl From<tui::style::Color> for Color {
   }
 }
 
+impl From<Color> for crossterm::style::Color {
+  fn from(value: Color) -> Self {
+    use crossterm::style::Color as C;
+    match value {
+      Color::Reset => C::Reset,
+      Color::Black => C::Black,
+      Color::Red => C::DarkRed,
+      Color::Green => C::DarkGreen,
+      Color::Yellow => C::DarkYellow,
+      Color::Blue => C::DarkBlue,
+      Color::Magenta => C::DarkMagenta,
+      Color::Cyan => C::DarkCyan,
+      Color::Gray => C::DarkGrey,
+      Color::DarkGray => C::DarkGrey,
+      Color::LightRed => C::Red,
+      Color::LightGreen => C::Green,
+      Color::LightYellow => C::Yellow,
+      Color::LightBlue => C::Blue,
+      Color::LightMagenta => C::Magenta,
+      Color::LightCyan => C::Cyan,
+      Color::White => C::White,
+      Color::Rgb(r, g, b) => C::Rgb { r, g, b },
+      Color::Indexed(idx) => C::AnsiValue(idx),
+    }
+  }
+}
+
 pub struct ProxyBackend {
   pub tx: MsgSender<SrvToClt>,
   pub height: u16,
@@ -192,12 +222,93 @@ impl Backend for ProxyBackend {
   where
     I: Iterator<Item = (u16, u16, &'a tui::buffer::Cell)>,
   {
-    let msg = SrvToClt::Draw {
-      cells: content
-        .map(|(a, b, cell)| (a, b, Cell::from(cell)))
-        .collect(),
-    };
-    self.send(msg);
+    let mut fg = tui::style::Color::Reset;
+    let mut bg = tui::style::Color::Reset;
+    let mut modifier = Modifier::empty();
+    let mut last_pos: Option<tui::layout::Position> = None;
+    for (x, y, cell) in content {
+      // Move the cursor if the previous location was not (x - 1, y)
+      if !matches!(last_pos, Some(p) if x == p.x + 1 && y == p.y) {
+        self.send(SrvToClt::SetCursor { x, y });
+      }
+      last_pos = Some(tui::layout::Position { x, y });
+      if cell.modifier != modifier {
+        let removed = modifier - cell.modifier;
+        let added = cell.modifier - modifier;
+
+        if removed.contains(Modifier::REVERSED) {
+          self.send(SrvToClt::SetAttr(Attribute::NoReverse));
+        }
+        if removed.contains(Modifier::BOLD) || removed.contains(Modifier::DIM) {
+          // Bold and Dim are both reset by applying the Normal intensity
+          self.send(SrvToClt::SetAttr(Attribute::NormalIntensity));
+
+          // The remaining Bold and Dim attributes must be
+          // reapplied after the intensity reset above.
+          if cell.modifier.contains(Modifier::DIM) {
+            self.send(SrvToClt::SetAttr(Attribute::Dim));
+          }
+
+          if cell.modifier.contains(Modifier::BOLD) {
+            self.send(SrvToClt::SetAttr(Attribute::Bold));
+          }
+        }
+        if removed.contains(Modifier::ITALIC) {
+          self.send(SrvToClt::SetAttr(Attribute::NoItalic));
+        }
+        if removed.contains(Modifier::UNDERLINED) {
+          self.send(SrvToClt::SetAttr(Attribute::NoUnderline));
+        }
+        if removed.contains(Modifier::CROSSED_OUT) {
+          self.send(SrvToClt::SetAttr(Attribute::NotCrossedOut));
+        }
+        if removed.contains(Modifier::SLOW_BLINK)
+          || removed.contains(Modifier::RAPID_BLINK)
+        {
+          self.send(SrvToClt::SetAttr(Attribute::NoBlink));
+        }
+
+        if added.contains(Modifier::REVERSED) {
+          self.send(SrvToClt::SetAttr(Attribute::Reverse));
+        }
+        if added.contains(Modifier::BOLD) {
+          self.send(SrvToClt::SetAttr(Attribute::Bold));
+        }
+        if added.contains(Modifier::ITALIC) {
+          self.send(SrvToClt::SetAttr(Attribute::Italic));
+        }
+        if added.contains(Modifier::UNDERLINED) {
+          self.send(SrvToClt::SetAttr(Attribute::Underlined));
+        }
+        if added.contains(Modifier::DIM) {
+          self.send(SrvToClt::SetAttr(Attribute::Dim));
+        }
+        if added.contains(Modifier::CROSSED_OUT) {
+          self.send(SrvToClt::SetAttr(Attribute::CrossedOut));
+        }
+        if added.contains(Modifier::SLOW_BLINK) {
+          self.send(SrvToClt::SetAttr(Attribute::SlowBlink));
+        }
+        if added.contains(Modifier::RAPID_BLINK) {
+          self.send(SrvToClt::SetAttr(Attribute::RapidBlink));
+        }
+
+        modifier = cell.modifier;
+      }
+      if cell.fg != fg || cell.bg != bg {
+        self.send(SrvToClt::SetFg(cell.fg.into()));
+        self.send(SrvToClt::SetBg(cell.bg.into()));
+        fg = cell.fg;
+        bg = cell.bg;
+      }
+
+      self.send(SrvToClt::Print(cell.symbol().to_string()));
+    }
+
+    self.send(SrvToClt::SetFg(Color::Reset));
+    self.send(SrvToClt::SetBg(Color::Reset));
+    self.send(SrvToClt::SetAttr(Attribute::Reset));
+
     Ok(())
   }
 

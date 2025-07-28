@@ -1,7 +1,9 @@
+use std::io::{stdout, Write};
+
 use crossterm::{
   cursor::SetCursorStyle,
   event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream},
-  execute,
+  execute, queue,
   terminal::{
     disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
     LeaveAlternateScreen,
@@ -10,7 +12,6 @@ use crossterm::{
 use futures::StreamExt;
 use scopeguard::defer;
 use tokio::select;
-use tui::backend::{Backend, CrosstermBackend};
 
 use crate::{
   error::ResultLogger,
@@ -61,13 +62,8 @@ async fn client_main_loop(
   mut sender: MsgSender<CltToSrv>,
   mut receiver: MsgReceiver<SrvToClt>,
 ) -> anyhow::Result<()> {
-  let mut backend = CrosstermBackend::new(std::io::stdout());
-
-  let init_size = backend.size()?;
-  sender.send(CltToSrv::Init {
-    width: init_size.width,
-    height: init_size.height,
-  })?;
+  let (width, height) = crossterm::terminal::size()?;
+  sender.send(CltToSrv::Init { width, height })?;
 
   let mut term_events = EventStream::new();
   loop {
@@ -83,15 +79,33 @@ async fn client_main_loop(
     match event {
       LocalEvent::ServerMsg(msg) => match msg {
         Some(msg) => match msg {
-          SrvToClt::Draw { cells } => {
-            let cells = cells
-              .iter()
-              .map(|(a, b, cell)| (*a, *b, tui::buffer::Cell::from(cell)))
-              .collect::<Vec<_>>();
-            backend.draw(cells.iter().map(|(a, b, cell)| (*a, *b, cell)))?
+          SrvToClt::Print(text) => {
+            queue!(std::io::stdout(), crossterm::style::Print(text))?;
           }
-          SrvToClt::SetCursor { x, y } => backend.set_cursor(x, y)?,
-          SrvToClt::ShowCursor => backend.show_cursor()?,
+          SrvToClt::SetAttr(attr) => {
+            queue!(std::io::stdout(), crossterm::style::SetAttribute(attr))?;
+          }
+          SrvToClt::SetFg(fg) => {
+            queue!(
+              std::io::stdout(),
+              crossterm::style::SetForegroundColor(fg.into())
+            )?;
+          }
+          SrvToClt::SetBg(bg) => {
+            queue!(
+              std::io::stdout(),
+              crossterm::style::SetBackgroundColor(bg.into())
+            )?;
+          }
+          SrvToClt::SetCursor { x, y } => {
+            execute!(stdout(), crossterm::cursor::MoveTo(x, y))?;
+          }
+          SrvToClt::ShowCursor => {
+            execute!(stdout(), crossterm::cursor::Show)?;
+          }
+          SrvToClt::HideCursor => {
+            execute!(stdout(), crossterm::cursor::Hide)?;
+          }
           SrvToClt::CursorShape(cursor_style) => {
             let cursor_style = match cursor_style {
               CursorStyle::Default => SetCursorStyle::DefaultUserShape,
@@ -106,9 +120,12 @@ async fn client_main_loop(
             };
             execute!(std::io::stdout(), cursor_style)?;
           }
-          SrvToClt::HideCursor => backend.hide_cursor()?,
-          SrvToClt::Clear => backend.clear()?,
-          SrvToClt::Flush => backend.flush()?,
+          SrvToClt::Clear => {
+            execute!(stdout(), crossterm::terminal::Clear(ClearType::All))?;
+          }
+          SrvToClt::Flush => {
+            stdout().flush()?;
+          }
           SrvToClt::Quit => break,
         },
         _ => break,
