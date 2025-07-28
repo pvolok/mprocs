@@ -9,7 +9,6 @@ mod error;
 mod event;
 mod host;
 mod just;
-mod kernel;
 mod kernel2;
 mod key;
 mod keymap;
@@ -18,6 +17,7 @@ mod mouse;
 mod package_json;
 mod proc;
 mod protocol;
+mod server;
 mod settings;
 mod state;
 mod theme;
@@ -32,7 +32,7 @@ mod yaml_val;
 use std::{io::Read, path::Path};
 
 use anyhow::{bail, Result};
-use app::start_kernel_thread;
+use app::start_server_thread;
 use clap::{arg, command, ArgMatches};
 use client::client_main;
 use config::{CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig};
@@ -206,7 +206,7 @@ async fn run_app() -> anyhow::Result<()> {
         (sender, receiver)
       };
 
-      start_kernel_thread(
+      start_server_thread(
         config,
         keymap,
         (srv_to_clt_sender, clt_to_srv_receiver),

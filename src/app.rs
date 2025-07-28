@@ -24,7 +24,6 @@ use crate::{
   host::{
     receiver::MsgReceiver, sender::MsgSender, socket::bind_server_socket,
   },
-  kernel::kernel_message::KernelMessage,
   kernel2::{
     kernel::Kernel2,
     kernel_message::{KernelCommand, KernelSender2},
@@ -45,14 +44,14 @@ use crate::{
     CopyMode, Pos, StopSignal,
   },
   protocol::{CltToSrv, ProxyBackend, SrvToClt},
+  server::server_message::{ServerMessage, ServerSender},
   state::{Scope, State},
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
   ui_term::{render_term, term_check_hit},
   ui_zoom_tip::render_zoom_tip,
-  vt100::MouseProtocolMode,
+  vt100::{MouseProtocolMode, Size},
 };
-use crate::{kernel::kernel_message::KernelSender, vt100::Size};
 
 type Term = Terminal<ProxyBackend>;
 
@@ -86,7 +85,7 @@ pub struct App {
   ev_rx: UnboundedReceiver<AppEvent>,
   ev_tx: UnboundedSender<AppEvent>,
   // kernel_sender: KernelSender,
-  kernel_receiver: tokio::sync::mpsc::UnboundedReceiver<KernelMessage>,
+  kernel_receiver: tokio::sync::mpsc::UnboundedReceiver<ServerMessage>,
 
   screen_size: Size,
   clients: Vec<ClientHandle>,
@@ -260,18 +259,18 @@ impl App {
     &mut self,
     loop_action: &mut LoopAction,
     ks: &KernelSender2,
-    msg: KernelMessage,
+    msg: ServerMessage,
   ) -> anyhow::Result<()> {
     match msg {
-      KernelMessage::ClientMessage { client_id, msg } => {
+      ServerMessage::ClientMessage { client_id, msg } => {
         self.handle_client_msg(loop_action, ks, client_id, msg)?;
       }
-      KernelMessage::ClientConnected { handle } => {
+      ServerMessage::ClientConnected { handle } => {
         self.clients.push(handle);
         self.update_screen_size(ks);
         loop_action.render();
       }
-      KernelMessage::ClientDisconnected { client_id } => {
+      ServerMessage::ClientDisconnected { client_id } => {
         self.clients.retain(|c| c.id != client_id);
         self.update_screen_size(ks);
         loop_action.render();
@@ -1055,7 +1054,7 @@ impl ClientConnector {
   fn connect(
     id: ClientId,
     (sender, mut receiver): (MsgSender<SrvToClt>, MsgReceiver<CltToSrv>),
-    kernel_sender: KernelSender,
+    server_sender: ServerSender,
   ) -> Self {
     tokio::spawn(async move {
       let init_msg = receiver.recv().await;
@@ -1064,13 +1063,13 @@ impl ClientConnector {
           let client_handle = ClientHandle::create(
             id,
             (receiver, sender),
-            kernel_sender.clone(),
+            server_sender.clone(),
             Size { width, height },
           );
           match client_handle {
             Ok(handle) => {
-              kernel_sender
-                .send(KernelMessage::ClientConnected { handle })
+              server_sender
+                .send(ServerMessage::ClientConnected { handle })
                 .log_ignore();
             }
             Err(err) => {
@@ -1098,11 +1097,11 @@ impl ClientHandle {
   fn create(
     id: ClientId,
     (mut read, write): (MsgReceiver<CltToSrv>, MsgSender<SrvToClt>),
-    kernel_sender: KernelSender,
+    server_sender: ServerSender,
     size: Size,
   ) -> anyhow::Result<Self> {
     {
-      let kernel_sender = kernel_sender.clone();
+      let kernel_sender = server_sender.clone();
       tokio::spawn(async move {
         loop {
           let msg = if let Some(msg) = read.recv().await {
@@ -1115,7 +1114,7 @@ impl ClientHandle {
             Ok(msg) => {
               kernel_sender
                 .send(
-                  crate::kernel::kernel_message::KernelMessage::ClientMessage {
+                  crate::server::server_message::ServerMessage::ClientMessage {
                     client_id: id,
                     msg,
                   },
@@ -1126,7 +1125,7 @@ impl ClientHandle {
           }
         }
         kernel_sender
-          .send(KernelMessage::ClientDisconnected { client_id: id })
+          .send(ServerMessage::ClientDisconnected { client_id: id })
           .log_ignore();
       });
     }
@@ -1265,10 +1264,10 @@ pub async fn start_kernel_process(
     })
   };
 
-  kernel_main(config, keymap, kernel_receiver).await
+  server_main(config, keymap, kernel_receiver).await
 }
 
-pub async fn start_kernel_thread(
+pub async fn start_server_thread(
   config: Config,
   keymap: Keymap,
   socket: (MsgSender<SrvToClt>, MsgReceiver<CltToSrv>),
@@ -1279,16 +1278,16 @@ pub async fn start_kernel_thread(
   ClientConnector::connect(id, socket, kernel_sender.clone());
 
   tokio::spawn(async {
-    kernel_main(config, keymap, kernel_receiver).await;
+    server_main(config, keymap, kernel_receiver).await;
   });
 
   Ok(())
 }
 
-pub async fn kernel_main(
+pub async fn server_main(
   config: Config,
   keymap: Keymap,
-  kernel_receiver: UnboundedReceiver<KernelMessage>,
+  kernel_receiver: UnboundedReceiver<ServerMessage>,
 ) -> anyhow::Result<()> {
   let (ev_tx, ev_rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
 

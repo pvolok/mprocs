@@ -3,9 +3,9 @@ use crate::{
   protocol::CltToSrv,
 };
 
-pub type KernelSender = tokio::sync::mpsc::UnboundedSender<KernelMessage>;
+pub type ServerSender = tokio::sync::mpsc::UnboundedSender<ServerMessage>;
 
-pub enum KernelMessage {
+pub enum ServerMessage {
   ClientMessage { client_id: ClientId, msg: CltToSrv },
   ClientConnected { handle: ClientHandle },
   ClientDisconnected { client_id: ClientId },
