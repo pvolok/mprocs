@@ -1,12 +1,14 @@
 use crate::{
   app::{ClientHandle, ClientId},
+  proc::msg::CustomProcCmd,
   protocol::CltToSrv,
 };
 
-pub type ServerSender = tokio::sync::mpsc::UnboundedSender<ServerMessage>;
-
+#[derive(Debug)]
 pub enum ServerMessage {
   ClientMessage { client_id: ClientId, msg: CltToSrv },
   ClientConnected { handle: ClientHandle },
   ClientDisconnected { client_id: ClientId },
 }
+
+impl CustomProcCmd for ServerMessage {}

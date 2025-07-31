@@ -1,5 +1,4 @@
 use crossterm::event::{Event, KeyCode, KeyEvent};
-use tokio::sync::mpsc::UnboundedSender;
 use tui::{
   prelude::{Margin, Rect},
   text::Line,
@@ -8,19 +7,19 @@ use tui::{
 };
 
 use crate::{
-  app::LoopAction, error::ResultLogger, event::AppEvent, state::State,
-  theme::Theme,
+  app::LoopAction, event::AppEvent, kernel2::kernel_message::ProcContext,
+  state::State, theme::Theme,
 };
 
 use super::modal::Modal;
 
 pub struct QuitModal {
-  app_sender: UnboundedSender<AppEvent>,
+  pc: ProcContext,
 }
 
 impl QuitModal {
-  pub fn new(app_sender: UnboundedSender<AppEvent>) -> Self {
-    QuitModal { app_sender }
+  pub fn new(pc: ProcContext) -> Self {
+    QuitModal { pc }
   }
 }
 
@@ -41,11 +40,8 @@ impl Modal for QuitModal {
         modifiers,
         ..
       }) if modifiers.is_empty() => {
-        self
-          .app_sender
-          .send(AppEvent::CloseCurrentModal)
-          .log_ignore();
-        self.app_sender.send(AppEvent::Quit).unwrap();
+        self.pc.send_self_custom(AppEvent::CloseCurrentModal);
+        self.pc.send_self_custom(AppEvent::Quit);
         return true;
       }
       Event::Key(KeyEvent {
@@ -54,14 +50,8 @@ impl Modal for QuitModal {
         ..
       }) if modifiers.is_empty() => {
         if let Some(client_id) = state.current_client_id {
-          self
-            .app_sender
-            .send(AppEvent::CloseCurrentModal)
-            .log_ignore();
-          self
-            .app_sender
-            .send(AppEvent::Detach { client_id })
-            .unwrap();
+          self.pc.send_self_custom(AppEvent::CloseCurrentModal);
+          self.pc.send_self_custom(AppEvent::Detach { client_id });
         }
         return true;
       }
@@ -75,10 +65,7 @@ impl Modal for QuitModal {
         modifiers,
         ..
       }) if modifiers.is_empty() => {
-        self
-          .app_sender
-          .send(AppEvent::CloseCurrentModal)
-          .log_ignore();
+        self.pc.send_self_custom(AppEvent::CloseCurrentModal);
         loop_action.render();
         return true;
       }
@@ -103,7 +90,7 @@ impl Modal for QuitModal {
   }
 
   fn render(&mut self, frame: &mut Frame) {
-    let area = self.area(frame.size());
+    let area = self.area(frame.area());
     let theme = Theme::default();
 
     let block = theme.pane(true);

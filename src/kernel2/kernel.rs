@@ -6,7 +6,7 @@ use std::{
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::{
-  kernel2::kernel_message::KernelSender2,
+  kernel2::kernel_message::ProcContext,
   proc::msg::{ProcCmd, ProcUpdate},
 };
 
@@ -40,27 +40,25 @@ impl Kernel2 {
     }
   }
 
-  pub fn spawn_proc<F>(&mut self, f: F)
+  pub fn spawn_proc<F>(&mut self, f: F) -> ProcId
   where
-    F: FnOnce(KernelSender2) -> ProcInit,
+    F: FnOnce(ProcContext) -> ProcInit,
   {
     let proc_id = ProcId(
       self
         .next_proc_id
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
     );
-    self.spawn_proc_with_id(proc_id, f)
+    self.spawn_proc_with_id(proc_id, f);
+    proc_id
   }
 
   pub fn spawn_proc_with_id<F>(&mut self, proc_id: ProcId, f: F)
   where
-    F: FnOnce(KernelSender2) -> ProcInit,
+    F: FnOnce(ProcContext) -> ProcInit,
   {
-    let kernel_sender = KernelSender2::new(
-      self.next_proc_id.clone(),
-      proc_id,
-      self.sender.clone(),
-    );
+    let kernel_sender =
+      ProcContext::new(self.next_proc_id.clone(), proc_id, self.sender.clone());
     let init = f(kernel_sender);
     let proc_handle = ProcHandle2 {
       proc_id,

@@ -1,5 +1,4 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
-use tokio::sync::mpsc::UnboundedSender;
 use tui::{
   prelude::{Margin, Rect},
   style::{Modifier, Style},
@@ -10,26 +9,26 @@ use tui::{
 use tui_input::Input;
 
 use crate::{
-  app::LoopAction, error::ResultLogger, event::AppEvent, state::State,
-  theme::Theme, widgets::text_input::TextInput,
+  app::LoopAction, event::AppEvent, kernel2::kernel_message::ProcContext,
+  state::State, theme::Theme, widgets::text_input::TextInput,
 };
 
 use super::modal::Modal;
 
 pub struct CommandsMenuModal {
+  pc: ProcContext,
   input: Input,
   list_state: ListState,
   items: Vec<CommandInfo>,
-  app_sender: UnboundedSender<AppEvent>,
 }
 
 impl CommandsMenuModal {
-  pub fn new(app_sender: UnboundedSender<AppEvent>) -> Self {
+  pub fn new(pc: ProcContext) -> Self {
     CommandsMenuModal {
+      pc,
       input: Input::default(),
       list_state: ListState::default().with_selected(Some(0)),
       items: get_commands(""),
-      app_sender,
     }
   }
 }
@@ -51,14 +50,11 @@ impl Modal for CommandsMenuModal {
         modifiers,
         ..
       }) if modifiers.is_empty() => {
-        self
-          .app_sender
-          .send(AppEvent::CloseCurrentModal)
-          .log_ignore();
+        self.pc.send_self_custom(AppEvent::CloseCurrentModal);
         if let Some((_, _, event)) =
           self.list_state.selected().and_then(|i| self.items.get(i))
         {
-          self.app_sender.send(event.clone()).unwrap();
+          self.pc.send_self_custom(event.clone());
         }
         // Skip because AddProc event will immediately rerender.
         return true;
@@ -68,10 +64,7 @@ impl Modal for CommandsMenuModal {
         modifiers,
         ..
       }) if modifiers.is_empty() => {
-        self
-          .app_sender
-          .send(AppEvent::CloseCurrentModal)
-          .log_ignore();
+        self.pc.send_self_custom(AppEvent::CloseCurrentModal);
         loop_action.render();
         return true;
       }
@@ -139,7 +132,7 @@ impl Modal for CommandsMenuModal {
   }
 
   fn render(&mut self, frame: &mut Frame) {
-    let area = self.area(frame.size());
+    let area = self.area(frame.area());
     let theme = Theme::default();
 
     let block = theme

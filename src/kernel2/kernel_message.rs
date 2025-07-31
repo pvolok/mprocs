@@ -7,7 +7,10 @@ use std::{
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
-  proc::{msg::ProcCmd, ReplySender},
+  proc::{
+    msg::{CustomProcCmd, ProcCmd},
+    ReplySender,
+  },
   vt100::Parser,
 };
 
@@ -21,7 +24,7 @@ pub struct KernelMessage2 {
 pub enum KernelCommand {
   Quit,
 
-  AddProc(ProcId, Box<dyn FnOnce(KernelSender2) -> ProcInit + Send>),
+  AddProc(ProcId, Box<dyn FnOnce(ProcContext) -> ProcInit + Send>),
   ProcCmd(ProcId, ProcCmd),
 
   ListenProcUpdates,
@@ -57,13 +60,14 @@ impl Deref for SharedVt {
   }
 }
 
-pub struct KernelSender2 {
+#[derive(Clone)]
+pub struct ProcContext {
   next_proc_id: Arc<AtomicUsize>,
   sender: UnboundedSender<KernelMessage2>,
   pub proc_id: ProcId,
 }
 
-impl KernelSender2 {
+impl ProcContext {
   pub fn new(
     next_proc_id: Arc<AtomicUsize>,
     proc_id: ProcId,
@@ -72,14 +76,6 @@ impl KernelSender2 {
     Self {
       next_proc_id,
       sender,
-      proc_id,
-    }
-  }
-
-  pub fn for_proc(&self, proc_id: ProcId) -> Self {
-    Self {
-      next_proc_id: self.next_proc_id.clone(),
-      sender: self.sender.clone(),
       proc_id,
     }
   }
@@ -96,16 +92,47 @@ impl KernelSender2 {
     }
   }
 
+  pub fn send_self_custom<T: CustomProcCmd + Send>(&self, custom: T) {
+    self.send(KernelCommand::ProcCmd(
+      self.proc_id,
+      ProcCmd::Custom(Box::new(custom)),
+    ));
+  }
+
   pub fn add_proc(
     &self,
-    f: Box<dyn FnOnce(KernelSender2) -> ProcInit + Send>,
-  ) -> KernelSender2 {
+    f: Box<dyn FnOnce(ProcContext) -> ProcInit + Send>,
+  ) -> ProcId {
     let proc_id = ProcId(
       self
         .next_proc_id
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
     );
     self.send(KernelCommand::AddProc(proc_id, f));
-    self.for_proc(proc_id)
+    proc_id
+  }
+
+  pub fn get_proc_sender(&self, target_id: ProcId) -> ProcSender {
+    ProcSender {
+      proc_id: target_id,
+      from_id: self.proc_id,
+      sender: self.sender.clone(),
+    }
+  }
+}
+
+#[derive(Clone)]
+pub struct ProcSender {
+  pub proc_id: ProcId,
+  pub from_id: ProcId,
+  sender: UnboundedSender<KernelMessage2>,
+}
+
+impl ProcSender {
+  pub fn send(&self, cmd: ProcCmd) {
+    self.sender.send(KernelMessage2 {
+      from: self.from_id,
+      command: KernelCommand::ProcCmd(self.proc_id, cmd),
+    });
   }
 }

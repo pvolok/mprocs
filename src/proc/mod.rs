@@ -14,7 +14,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tui::layout::Rect;
 
 use crate::config::ProcConfig;
-use crate::kernel2::kernel_message::KernelSender2;
+use crate::kernel2::kernel_message::ProcContext;
 use crate::kernel2::proc::ProcId;
 use crate::key::Key;
 use crate::mouse::MouseEvent;

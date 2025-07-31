@@ -32,15 +32,22 @@ mod yaml_val;
 use std::{io::Read, path::Path};
 
 use anyhow::{bail, Result};
-use app::start_server_thread;
+use app::{client_loop, create_app_proc, ClientId};
 use clap::{arg, command, ArgMatches};
 use client::client_main;
 use config::{CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig};
 use config_lua::load_lua_config;
 use ctl::run_ctl;
 use flexi_logger::{FileSpec, LoggerHandle};
-use host::{receiver::MsgReceiver, sender::MsgSender};
+use host::{
+  receiver::MsgReceiver, sender::MsgSender, socket::bind_server_socket,
+};
 use just::load_just_procs;
+use kernel2::{
+  kernel::Kernel2,
+  kernel_message::KernelCommand,
+  proc::{ProcInit, ProcStatus},
+};
 use keymap::Keymap;
 use package_json::load_npm_procs;
 use proc::StopSignal;
@@ -181,12 +188,61 @@ async fn run_app() -> anyhow::Result<()> {
     //   drop(logger);
     //   ret
     // }
-    // Some(("server", _args)) => {
-    //   let logger = setup_logger(LogTarget::Stderr);
-    //   let ret = start_kernel_process(config, keymap).await;
-    //   drop(logger);
-    //   ret
-    // }
+    Some(("server", _args)) => {
+      let logger = setup_logger(LogTarget::Stderr);
+
+      let mut kernel = Kernel2::new();
+      kernel.spawn_proc(|pc| {
+        let app_proc_id = create_app_proc(config, keymap, &pc);
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        let app_sender = pc.get_proc_sender(app_proc_id);
+
+        tokio::spawn(async move {
+          let mut last_client_id = 0;
+
+          let mut server_socket = match bind_server_socket().await {
+            Ok(server_socket) => {
+              log::info!("Server is listening.");
+              server_socket
+            }
+            Err(err) => {
+              log::error!("Failed to bind the server: {:?}", err);
+              pc.send(KernelCommand::Quit);
+              return;
+            }
+          };
+          log::debug!("Waiting for clients...");
+          loop {
+            match server_socket.accept().await {
+              Ok(socket) => {
+                last_client_id += 1;
+                let client_id = ClientId(last_client_id);
+                let app_sender = app_sender.clone();
+                tokio::spawn(async move {
+                  client_loop(client_id, app_sender, socket).await;
+                });
+              }
+              Err(err) => {
+                log::info!("Server socket accept error: {}", err);
+                break;
+              }
+            }
+          }
+        });
+
+        ProcInit {
+          sender,
+          stop_on_quit: false,
+          status: ProcStatus::Down,
+        }
+      });
+
+      kernel.run().await;
+
+      drop(logger);
+      Ok(())
+    }
     Some((cmd, _args)) => {
       bail!("Unexpected command: {}", cmd);
     }
@@ -206,12 +262,28 @@ async fn run_app() -> anyhow::Result<()> {
         (sender, receiver)
       };
 
-      start_server_thread(
-        config,
-        keymap,
-        (srv_to_clt_sender, clt_to_srv_receiver),
-      )
-      .await?;
+      let mut kernel = Kernel2::new();
+      kernel.spawn_proc(|pc| {
+        let app_proc_id = create_app_proc(config, keymap, &pc);
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        let app_sender = pc.get_proc_sender(app_proc_id);
+        tokio::spawn(async move {
+          client_loop(
+            ClientId(1),
+            app_sender,
+            (srv_to_clt_sender, clt_to_srv_receiver),
+          )
+          .await
+        });
+
+        ProcInit {
+          sender,
+          stop_on_quit: false,
+          status: ProcStatus::Down,
+        }
+      });
+      tokio::spawn(async { kernel.run().await });
 
       let ret = client_main(clt_to_srv_sender, srv_to_clt_receiver).await;
       drop(logger);

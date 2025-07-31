@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 use std::io::Write;
-use std::sync::atomic::AtomicUsize;
 
 use assert_matches::assert_matches;
 use portable_pty::CommandBuilder;
@@ -11,7 +10,7 @@ use tui::layout::Rect;
 use crate::config::ProcConfig;
 use crate::encode_term::{encode_key, encode_mouse_event, KeyCodeEncodeModes};
 use crate::error::ResultLogger;
-use crate::kernel2::kernel_message::{KernelCommand, KernelSender2, SharedVt};
+use crate::kernel2::kernel_message::{KernelCommand, ProcContext};
 use crate::kernel2::proc::{ProcId, ProcInit, ProcStatus};
 use crate::key::Key;
 use crate::mouse::MouseEvent;
@@ -21,7 +20,7 @@ use super::handle::ProcHandle;
 use super::inst::Inst;
 use super::msg::{ProcCmd, ProcEvent};
 use super::StopSignal;
-use super::{Pos, ReplySender, Size};
+use super::{ReplySender, Size};
 
 pub struct Proc {
   pub id: ProcId,
@@ -29,15 +28,12 @@ pub struct Proc {
   size: Size,
 
   stop_signal: StopSignal,
-  mouse_scroll_speed: usize,
   scrollback_len: usize,
 
   pub tx: UnboundedSender<ProcEvent>,
 
   pub inst: ProcState,
 }
-
-static NEXT_PROC_ID: AtomicUsize = AtomicUsize::new(1);
 
 #[derive(Debug)]
 pub enum ProcState {
@@ -47,12 +43,12 @@ pub enum ProcState {
 }
 
 pub fn launch_proc(
-  parent_ks: &KernelSender2,
+  parent_ks: &ProcContext,
   cfg: ProcConfig,
   size: Rect,
 ) -> ProcHandle {
   let cfg_ = cfg.clone();
-  let child_ks = parent_ks.add_proc(Box::new(move |ks| {
+  let child_id = parent_ks.add_proc(Box::new(move |ks| {
     let (cmd_sender, cmd_receiver) = tokio::sync::mpsc::unbounded_channel();
 
     let cfg = cfg_;
@@ -68,11 +64,11 @@ pub fn launch_proc(
     }
   }));
 
-  ProcHandle::new(child_ks.proc_id, cfg)
+  ProcHandle::new(child_id, cfg)
 }
 
 async fn proc_main_loop(
-  ks: KernelSender2,
+  ks: ProcContext,
   proc_id: ProcId,
   cfg: &ProcConfig,
   size: Rect,
@@ -148,7 +144,6 @@ impl Proc {
       size,
 
       stop_signal: cfg.stop.clone(),
-      mouse_scroll_speed: cfg.mouse_scroll_speed,
       scrollback_len: cfg.scrollback_len,
 
       tx,
@@ -218,14 +213,6 @@ impl Proc {
     match &self.inst {
       ProcState::Some(inst) => inst.exit_code,
       ProcState::None | ProcState::Error(_) => None,
-    }
-  }
-
-  pub fn clone_vt(&self) -> Option<SharedVt> {
-    match &self.inst {
-      ProcState::None => None,
-      ProcState::Some(inst) => Some(inst.vt.clone()),
-      ProcState::Error(_) => None,
     }
   }
 
@@ -345,20 +332,10 @@ impl Proc {
     }
   }
 
-  fn scroll_vt_up(vt: &mut vt100::Parser<ReplySender>, n: usize) {
-    let pos = usize::saturating_add(vt.screen().scrollback(), n);
-    vt.set_scrollback(pos);
-  }
-
   pub fn scroll_down_lines(&mut self, n: usize) {
     if let Some(mut vt) = self.lock_vt_mut() {
       vt.screen.scroll_screen_down(n);
     }
-  }
-
-  fn scroll_vt_down(vt: &mut vt100::Parser<ReplySender>, n: usize) {
-    let pos = usize::saturating_sub(vt.screen().scrollback(), n);
-    vt.set_scrollback(pos);
   }
 
   pub fn scroll_half_screen_up(&mut self) {
@@ -426,16 +403,13 @@ impl Proc {
         *rendered = true;
       }
 
+      ProcCmd::Custom(custom) => {
+        log::error!("Proc received unknown custom command: {:?}", custom);
+      }
+
       ProcCmd::OnProcUpdate(_, _) => {
         log::warn!("Proc received ProcCmd::OnProcUpdate.");
       }
     }
-  }
-}
-
-fn translate_mouse_pos(event: &MouseEvent, scrollback: usize) -> Pos {
-  Pos {
-    y: event.y - scrollback as i32,
-    x: event.x,
   }
 }

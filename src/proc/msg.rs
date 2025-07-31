@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{any::Any, fmt::Debug};
 
 use compact_str::CompactString;
 
@@ -24,7 +24,17 @@ pub enum ProcCmd {
 
   Resize { x: u16, y: u16, w: u16, h: u16 },
 
+  Custom(Box<dyn CustomProcCmd + Send + 'static>),
+
   OnProcUpdate(ProcId, ProcUpdate),
+}
+
+pub trait CustomProcCmd: Any + Debug {}
+
+impl ProcCmd {
+  pub fn custom<T: CustomProcCmd + Send>(custom: T) -> Self {
+    Self::Custom(Box::new(custom))
+  }
 }
 
 #[derive(Debug)]

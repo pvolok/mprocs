@@ -2,7 +2,9 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{app::ClientId, kernel2::proc::ProcId, key::Key};
+use crate::{
+  app::ClientId, kernel2::proc::ProcId, key::Key, proc::msg::CustomProcCmd,
+};
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(tag = "c", rename_all = "kebab-case")]
@@ -53,6 +55,8 @@ pub enum AppEvent {
   SendKey { key: Key },
 }
 
+impl CustomProcCmd for AppEvent {}
+
 impl AppEvent {
   pub fn desc(&self) -> String {
     match self {
@@ -79,7 +83,7 @@ impl AppEvent {
       AppEvent::ForceRestartProc => "Force restart".to_string(),
       AppEvent::ShowAddProc => "New process dialog".to_string(),
       AppEvent::ShowRenameProc => "Rename process dialog".to_string(),
-      AppEvent::AddProc { cmd, name } => format!("New process `{}`", cmd),
+      AppEvent::AddProc { cmd, name: _ } => format!("New process `{}`", cmd),
       AppEvent::DuplicateProc => "Duplicate current process".to_string(),
       AppEvent::ShowRemoveProc => "Remove process dialog".to_string(),
       AppEvent::RemoveProc { id } => format!("Remove process by id {}", id.0),

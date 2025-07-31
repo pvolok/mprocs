@@ -1,5 +1,4 @@
 use crossterm::event::{Event, KeyCode, KeyEvent};
-use tokio::sync::mpsc::UnboundedSender;
 use tui::{
   prelude::{Margin, Rect},
   text::Span,
@@ -8,22 +7,22 @@ use tui::{
 use tui_input::Input;
 
 use crate::{
-  app::LoopAction, error::ResultLogger, event::AppEvent, state::State,
-  theme::Theme, widgets::text_input::TextInput,
+  app::LoopAction, event::AppEvent, kernel2::kernel_message::ProcContext,
+  state::State, theme::Theme, widgets::text_input::TextInput,
 };
 
 use super::modal::Modal;
 
 pub struct RenameProcModal {
+  pc: ProcContext,
   input: Input,
-  app_sender: UnboundedSender<AppEvent>,
 }
 
 impl RenameProcModal {
-  pub fn new(app_sender: UnboundedSender<AppEvent>) -> Self {
+  pub fn new(pc: ProcContext) -> Self {
     RenameProcModal {
+      pc,
       input: Input::default(),
-      app_sender,
     }
   }
 }
@@ -45,16 +44,10 @@ impl Modal for RenameProcModal {
         modifiers,
         ..
       }) if modifiers.is_empty() => {
-        self
-          .app_sender
-          .send(AppEvent::CloseCurrentModal)
-          .log_ignore();
-        self
-          .app_sender
-          .send(AppEvent::RenameProc {
-            name: self.input.value().to_string(),
-          })
-          .log_ignore();
+        self.pc.send_self_custom(AppEvent::CloseCurrentModal);
+        self.pc.send_self_custom(AppEvent::RenameProc {
+          name: self.input.value().to_string(),
+        });
         // Skip because RenameProc event will immediately rerender.
         return true;
       }
@@ -63,10 +56,7 @@ impl Modal for RenameProcModal {
         modifiers,
         ..
       }) if modifiers.is_empty() => {
-        self
-          .app_sender
-          .send(AppEvent::CloseCurrentModal)
-          .log_ignore();
+        self.pc.send_self_custom(AppEvent::CloseCurrentModal);
         loop_action.render();
         return true;
       }
@@ -98,7 +88,7 @@ impl Modal for RenameProcModal {
   }
 
   fn render(&mut self, frame: &mut Frame) {
-    let area = self.area(frame.size());
+    let area = self.area(frame.area());
     let theme = Theme::default();
 
     let block = theme

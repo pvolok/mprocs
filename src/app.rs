@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{any::Any, fmt::Debug, time::Instant};
 
 use anyhow::bail;
 use crossterm::event::{
@@ -7,10 +7,7 @@ use crossterm::event::{
 use futures::{future::FutureExt, select};
 use serde::{Deserialize, Serialize};
 use termwiz::escape::csi::CursorStyle;
-use tokio::{
-  io::AsyncReadExt,
-  sync::mpsc::{UnboundedReceiver, UnboundedSender},
-};
+use tokio::{io::AsyncReadExt, sync::mpsc::UnboundedReceiver};
 use tui::{
   layout::{Constraint, Direction, Layout, Margin, Rect},
   widgets::Widget,
@@ -21,13 +18,10 @@ use crate::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
   error::ResultLogger,
   event::{AppEvent, CopyMove},
-  host::{
-    receiver::MsgReceiver, sender::MsgSender, socket::bind_server_socket,
-  },
+  host::{receiver::MsgReceiver, sender::MsgSender},
   kernel2::{
-    kernel::Kernel2,
-    kernel_message::{KernelCommand, KernelSender2},
-    proc::{ProcInit, ProcStatus},
+    kernel_message::{KernelCommand, ProcContext, ProcSender},
+    proc::{ProcId, ProcInit, ProcStatus},
   },
   key::Key,
   keymap::Keymap,
@@ -44,7 +38,7 @@ use crate::{
     CopyMode, Pos, StopSignal,
   },
   protocol::{CltToSrv, ProxyBackend, SrvToClt},
-  server::server_message::{ServerMessage, ServerSender},
+  server::server_message::ServerMessage,
   state::{Scope, State},
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
@@ -82,10 +76,8 @@ pub struct App {
   keymap: Keymap,
   state: State,
   modal: Option<Box<dyn Modal>>,
-  ev_rx: UnboundedReceiver<AppEvent>,
-  ev_tx: UnboundedSender<AppEvent>,
-  // kernel_sender: KernelSender,
-  kernel_receiver: tokio::sync::mpsc::UnboundedReceiver<ServerMessage>,
+  pr: tokio::sync::mpsc::UnboundedReceiver<ProcCmd>,
+  pc: ProcContext,
 
   screen_size: Size,
   clients: Vec<ClientHandle>,
@@ -95,12 +87,13 @@ impl App {
   pub async fn run(self) -> anyhow::Result<()> {
     let (exit_trigger, exit_listener) = triggered::trigger();
 
+    let app_proc_id = self.pc.proc_id;
     let server_thread = if let Some(ref server_addr) = self.config.server {
       let server = match server_addr {
         ServerConfig::Tcp(addr) => tokio::net::TcpListener::bind(addr).await?,
       };
 
-      let ev_tx = self.ev_tx.clone();
+      let ev_pc = self.pc.clone();
       let server_thread = tokio::spawn(async move {
         loop {
           let on_exit = exit_listener.clone();
@@ -115,7 +108,7 @@ impl App {
             }
           };
 
-          let ctl_tx = ev_tx.clone();
+          let ctl_pc = ev_pc.clone();
           let on_exit = exit_listener.clone();
           tokio::spawn(async move {
             let mut buf: Vec<u8> = Vec::with_capacity(32);
@@ -129,7 +122,10 @@ impl App {
             };
             let msg: AppEvent = serde_yaml::from_slice(buf.as_slice()).unwrap();
             // log::info!("Received remote command: {:?}", msg);
-            ctl_tx.send(msg).unwrap();
+            ctl_pc.send(KernelCommand::ProcCmd(
+              app_proc_id,
+              ProcCmd::Custom(Box::new(msg)),
+            ));
           });
         }
       });
@@ -138,45 +134,28 @@ impl App {
       None
     };
 
-    let mut kernel = Kernel2::new();
-    kernel.spawn_proc(|ks| {
-      let (sender, mut pr) = tokio::sync::mpsc::unbounded_channel();
-      tokio::spawn(async move {
-        let result = self.main_loop(&ks, &mut pr).await;
-        if let Err(err) = result {
-          log::error!("App main loop error: {err}");
-        }
+    let result = self.main_loop().await;
+    exit_trigger.trigger();
+    if let Err(err) = result {
+      log::error!("App main loop error: {err}");
+    }
 
-        exit_trigger.trigger();
-        if let Some(server_thread) = server_thread {
-          let _ = server_thread.await;
-        }
-
-        ks.send(KernelCommand::Quit);
-      });
-      ProcInit {
-        sender,
-        stop_on_quit: false,
-        status: ProcStatus::Running,
-      }
-    });
-
-    kernel.run().await;
+    if let Some(server_thread) = server_thread {
+      let _ = server_thread.await;
+    }
 
     Ok(())
   }
 
-  async fn main_loop(
-    mut self,
-    ks: &KernelSender2,
-    pr: &mut UnboundedReceiver<ProcCmd>,
-  ) -> anyhow::Result<()> {
-    ks.send(KernelCommand::ListenProcUpdates);
+  async fn main_loop(mut self) -> anyhow::Result<()> {
+    self.pc.send(KernelCommand::ListenProcUpdates);
 
-    self.start_procs(
-      Rect::new(0, 0, self.screen_size.width, self.screen_size.height),
-      ks,
-    )?;
+    self.start_procs(Rect::new(
+      0,
+      0,
+      self.screen_size.width,
+      self.screen_size.height,
+    ))?;
 
     let mut render_needed = true;
     loop {
@@ -196,23 +175,9 @@ impl App {
       }
 
       let mut loop_action = LoopAction::default();
-      let () = select! {
-        event = self.kernel_receiver.recv().fuse() => {
-          if let Some(event) = event {
-            self.handle_kernel_message(&mut loop_action, ks, event)?
-          }
-        }
-        event = self.ev_rx.recv().fuse() => {
-          if let Some(event) = event {
-            self.handle_event(&mut loop_action, ks, &event)
-          }
-        }
-        command = pr.recv().fuse() => {
-          if let Some(command) = command {
-            self.handle_proc_command(&mut loop_action, ks, command)
-          }
-        }
-      };
+      if let Some(command) = self.pr.recv().await {
+        self.handle_proc_command(&mut loop_action, command);
+      }
 
       if self.state.quitting && self.state.all_procs_down() {
         break;
@@ -238,16 +203,12 @@ impl App {
     Ok(())
   }
 
-  fn start_procs(
-    &mut self,
-    size: Rect,
-    ks: &KernelSender2,
-  ) -> anyhow::Result<()> {
+  fn start_procs(&mut self, size: Rect) -> anyhow::Result<()> {
     let mut procs = self
       .config
       .procs
       .iter()
-      .map(|proc_cfg| launch_proc(ks, proc_cfg.clone(), size))
+      .map(|proc_cfg| launch_proc(&self.pc, proc_cfg.clone(), size))
       .collect::<Vec<_>>();
 
     self.state.procs.append(&mut procs);
@@ -255,44 +216,43 @@ impl App {
     Ok(())
   }
 
-  fn handle_kernel_message(
+  fn handle_server_message(
     &mut self,
     loop_action: &mut LoopAction,
-    ks: &KernelSender2,
     msg: ServerMessage,
   ) -> anyhow::Result<()> {
     match msg {
       ServerMessage::ClientMessage { client_id, msg } => {
-        self.handle_client_msg(loop_action, ks, client_id, msg)?;
+        self.handle_client_msg(loop_action, client_id, msg)?;
       }
       ServerMessage::ClientConnected { handle } => {
         self.clients.push(handle);
-        self.update_screen_size(ks);
+        self.update_screen_size();
         loop_action.render();
       }
       ServerMessage::ClientDisconnected { client_id } => {
         self.clients.retain(|c| c.id != client_id);
-        self.update_screen_size(ks);
+        self.update_screen_size();
         loop_action.render();
       }
     }
     Ok(())
   }
 
-  fn update_screen_size(&mut self, ks: &KernelSender2) {
+  fn update_screen_size(&mut self) {
     if let Some(client) = self.clients.first_mut() {
       let size = client.size();
       if self.screen_size != size {
         self.screen_size = size;
-        self.sync_proc_handle_size(ks);
+        self.sync_proc_handle_size();
       }
     }
   }
 
-  fn sync_proc_handle_size(&mut self, ks: &KernelSender2) {
+  fn sync_proc_handle_size(&mut self) {
     let area = self.get_layout().term_area();
     for proc_handle in &mut self.state.procs {
-      ks.send(KernelCommand::ProcCmd(
+      self.pc.send(KernelCommand::ProcCmd(
         proc_handle.id(),
         ProcCmd::Resize {
           x: area.x,
@@ -307,7 +267,6 @@ impl App {
   fn handle_client_msg(
     &mut self,
     loop_action: &mut LoopAction,
-    ks: &KernelSender2,
     client_id: ClientId,
     msg: CltToSrv,
   ) -> anyhow::Result<()> {
@@ -315,7 +274,7 @@ impl App {
     let ret = match msg {
       CltToSrv::Init { .. } => bail!("Init message is unexpected."),
       CltToSrv::Key(event) => {
-        self.handle_input(loop_action, ks, client_id, event);
+        self.handle_input(loop_action, client_id, event);
         Ok(())
       }
     };
@@ -326,16 +285,15 @@ impl App {
   fn handle_input(
     &mut self,
     loop_action: &mut LoopAction,
-    ks: &KernelSender2,
     client_id: ClientId,
     event: Event,
   ) {
-    match event {
-      Event::Key(KeyEvent {
-        kind: KeyEventKind::Release,
-        ..
-      }) => return,
-      _ => (),
+    if let Event::Key(KeyEvent {
+      kind: KeyEventKind::Release,
+      ..
+    }) = event
+    {
+      return;
     }
 
     if let Some(modal) = &mut self.modal {
@@ -356,12 +314,12 @@ impl App {
         let group = self.state.get_keymap_group();
         if let Some(bound) = self.keymap.resolve(group, &key) {
           let bound = bound.clone();
-          self.handle_event(loop_action, ks, &bound)
+          self.handle_event(loop_action, &bound)
         } else {
           match self.state.scope {
             Scope::Procs => (),
             Scope::Term | Scope::TermZoom => {
-              self.handle_event(loop_action, ks, &AppEvent::SendKey { key })
+              self.handle_event(loop_action, &AppEvent::SendKey { key })
             }
           }
         }
@@ -454,7 +412,7 @@ impl App {
                   | MouseProtocolMode::PressRelease
                   | MouseProtocolMode::ButtonMotion
                   | MouseProtocolMode::AnyMotion => {
-                    ks.send(KernelCommand::ProcCmd(
+                    self.pc.send(KernelCommand::ProcCmd(
                       proc.id(),
                       ProcCmd::SendMouse(local_event),
                     ));
@@ -557,7 +515,7 @@ impl App {
           let size = Size { width, height };
           client.resize(size);
         }
-        self.update_screen_size(ks);
+        self.update_screen_size();
 
         loop_action.render();
       }
@@ -573,16 +531,12 @@ impl App {
     }
   }
 
-  fn handle_event(
-    &mut self,
-    loop_action: &mut LoopAction,
-    ks: &KernelSender2,
-    event: &AppEvent,
-  ) {
+  fn handle_event(&mut self, loop_action: &mut LoopAction, event: &AppEvent) {
+    let pc = self.pc.clone();
     match event {
       AppEvent::Batch { cmds } => {
         for cmd in cmds {
-          self.handle_event(loop_action, ks, cmd);
+          self.handle_event(loop_action, cmd);
           if *loop_action == LoopAction::ForceQuit {
             return;
           }
@@ -590,14 +544,14 @@ impl App {
       }
 
       AppEvent::QuitOrAsk => {
-        self.modal = Some(QuitModal::new(self.ev_tx.clone()).boxed());
+        self.modal = Some(QuitModal::new(self.pc.clone()).boxed());
         loop_action.render();
       }
       AppEvent::Quit => {
         self.state.quitting = true;
         for proc_handle in self.state.procs.iter_mut() {
           if proc_handle.is_up() {
-            ks.send(KernelCommand::ProcCmd(proc_handle.id(), ProcCmd::Stop));
+            pc.send(KernelCommand::ProcCmd(proc_handle.id(), ProcCmd::Stop));
           }
         }
         loop_action.render();
@@ -605,7 +559,7 @@ impl App {
       AppEvent::ForceQuit => {
         for proc_handle in self.state.procs.iter_mut() {
           if proc_handle.is_up() {
-            ks.send(KernelCommand::ProcCmd(proc_handle.id(), ProcCmd::Kill));
+            pc.send(KernelCommand::ProcCmd(proc_handle.id(), ProcCmd::Kill));
           }
         }
         loop_action.force_quit();
@@ -635,7 +589,7 @@ impl App {
       }
 
       AppEvent::ShowCommandsMenu => {
-        self.modal = Some(CommandsMenuModal::new(self.ev_tx.clone()).boxed());
+        self.modal = Some(CommandsMenuModal::new(self.pc.clone()).boxed());
         loop_action.render();
       }
       AppEvent::NextProc => {
@@ -662,26 +616,26 @@ impl App {
 
       AppEvent::StartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
+          pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
         }
       }
       AppEvent::TermProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Stop));
+          pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Stop));
         }
       }
       AppEvent::KillProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Kill));
+          pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Kill));
         }
       }
       AppEvent::RestartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           if proc.is_up() {
             proc.to_restart = true;
-            ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Stop));
+            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Stop));
           } else {
-            ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
+            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
           }
         }
       }
@@ -689,9 +643,9 @@ impl App {
         if let Some(proc) = self.state.get_current_proc_mut() {
           if proc.is_up() {
             proc.to_restart = true;
-            ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Kill));
+            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Kill));
           } else {
-            ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
+            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
           }
         }
       }
@@ -699,7 +653,7 @@ impl App {
       AppEvent::ScrollUpLines { n } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           match &mut proc.copy_mode {
-            CopyMode::None(_) => ks.send(KernelCommand::ProcCmd(
+            CopyMode::None(_) => pc.send(KernelCommand::ProcCmd(
               proc.id,
               ProcCmd::ScrollUpLines { n: *n },
             )),
@@ -711,7 +665,7 @@ impl App {
       AppEvent::ScrollDownLines { n } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           match &mut proc.copy_mode {
-            CopyMode::None(_) => ks.send(KernelCommand::ProcCmd(
+            CopyMode::None(_) => pc.send(KernelCommand::ProcCmd(
               proc.id,
               ProcCmd::ScrollDownLines { n: *n },
             )),
@@ -724,7 +678,7 @@ impl App {
         if let Some(proc) = self.state.get_current_proc_mut() {
           match &mut proc.copy_mode {
             CopyMode::None(_) => {
-              ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::ScrollUp))
+              pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::ScrollUp))
             }
             CopyMode::Active(screen, _, _) => {
               screen.scroll_screen_up(screen.size().rows as usize / 2)
@@ -737,7 +691,7 @@ impl App {
         if let Some(proc) = self.state.get_current_proc_mut() {
           match &mut proc.copy_mode {
             CopyMode::None(_) => {
-              ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::ScrollDown))
+              pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::ScrollDown))
             }
             CopyMode::Active(screen, _, _) => {
               screen.scroll_screen_down(screen.size().rows as usize / 2)
@@ -747,7 +701,7 @@ impl App {
         }
       }
       AppEvent::ShowAddProc => {
-        self.modal = Some(AddProcModal::new(self.ev_tx.clone()).boxed());
+        self.modal = Some(AddProcModal::new(self.pc.clone()).boxed());
         loop_action.render();
       }
       AppEvent::AddProc { cmd, name } => {
@@ -769,7 +723,7 @@ impl App {
           scrollback_len: self.config.scrollback_len,
         };
         let proc_handle =
-          launch_proc(ks, proc_config, self.get_layout().term_area());
+          launch_proc(&pc, proc_config, self.get_layout().term_area());
         self.state.procs.push(proc_handle);
 
         loop_action.render();
@@ -781,7 +735,7 @@ impl App {
         };
         if let Some(cfg) = cfg {
           let size = self.get_layout().term_area();
-          let proc_handle = launch_proc(ks, cfg, size);
+          let proc_handle = launch_proc(&pc, cfg, size);
           self.state.procs.push(proc_handle);
           loop_action.render();
         }
@@ -795,7 +749,7 @@ impl App {
         match id {
           Some(id) => {
             self.modal =
-              Some(RemoveProcModal::new(id, self.ev_tx.clone()).boxed());
+              Some(RemoveProcModal::new(id, self.pc.clone()).boxed());
             loop_action.render();
           }
           None => (),
@@ -812,7 +766,7 @@ impl App {
       }
 
       AppEvent::ShowRenameProc => {
-        self.modal = Some(RenameProcModal::new(self.ev_tx.clone()).boxed());
+        self.modal = Some(RenameProcModal::new(self.pc.clone()).boxed());
         loop_action.render();
       }
       AppEvent::RenameProc { name } => {
@@ -900,13 +854,13 @@ impl App {
 
       AppEvent::ToggleKeymapWindow => {
         self.state.toggle_keymap_window();
-        self.sync_proc_handle_size(ks);
+        self.sync_proc_handle_size();
         loop_action.render();
       }
 
       AppEvent::SendKey { key } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          ks.send(KernelCommand::ProcCmd(proc.id, ProcCmd::SendKey(*key)));
+          pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::SendKey(*key)));
         }
       }
     }
@@ -915,20 +869,41 @@ impl App {
   fn handle_proc_command(
     &mut self,
     loop_action: &mut LoopAction,
-    ks: &KernelSender2,
     command: ProcCmd,
   ) {
+    log::debug!("ProcCmd: {:?}", command);
     match command {
       ProcCmd::Start => (),
       ProcCmd::Stop => (),
       ProcCmd::Kill => (),
-      ProcCmd::SendKey(key) => (),
-      ProcCmd::SendMouse(mouse_event) => (),
+      ProcCmd::SendKey(_key) => (),
+      ProcCmd::SendMouse(_mouse_event) => (),
       ProcCmd::ScrollUp => (),
       ProcCmd::ScrollDown => (),
-      ProcCmd::ScrollUpLines { n } => (),
-      ProcCmd::ScrollDownLines { n } => (),
-      ProcCmd::Resize { x, y, w, h } => (),
+      ProcCmd::ScrollUpLines { .. } => (),
+      ProcCmd::ScrollDownLines { .. } => (),
+      ProcCmd::Resize { .. } => (),
+
+      ProcCmd::Custom(custom) => {
+        match (custom as Box<dyn Any>).downcast::<AppEvent>() {
+          Ok(app_event) => {
+            self.handle_event(loop_action, &app_event);
+          }
+          Err(custom) => {
+            match (custom as Box<dyn Any>).downcast::<ServerMessage>() {
+              Ok(server_msg) => {
+                self.handle_server_message(loop_action, *server_msg);
+              }
+              Err(custom) => {
+                log::error!(
+                  "App received unknown custom command: {:?}",
+                  custom
+                );
+              }
+            }
+          }
+        }
+      }
 
       ProcCmd::OnProcUpdate(proc_id, update) => match update {
         ProcUpdate::Started => {
@@ -956,7 +931,9 @@ impl App {
             }
             if proc.to_restart {
               proc.to_restart = false;
-              ks.send(KernelCommand::ProcCmd(proc_id, ProcCmd::Start));
+              self
+                .pc
+                .send(KernelCommand::ProcCmd(proc_id, ProcCmd::Start));
             }
             loop_action.render();
           }
@@ -1046,43 +1023,55 @@ impl AppLayout {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct ClientId(u32);
+pub struct ClientId(pub u32);
 
-struct ClientConnector;
-
-impl ClientConnector {
-  fn connect(
-    id: ClientId,
-    (sender, mut receiver): (MsgSender<SrvToClt>, MsgReceiver<CltToSrv>),
-    server_sender: ServerSender,
-  ) -> Self {
-    tokio::spawn(async move {
-      let init_msg = receiver.recv().await;
-      match init_msg {
-        Some(Ok(CltToSrv::Init { width, height })) => {
-          let client_handle = ClientHandle::create(
-            id,
-            (receiver, sender),
-            server_sender.clone(),
-            Size { width, height },
-          );
-          match client_handle {
-            Ok(handle) => {
-              server_sender
-                .send(ServerMessage::ClientConnected { handle })
-                .log_ignore();
-            }
-            Err(err) => {
-              log::error!("Client creation error: {:?}", err);
-            }
-          }
+pub async fn client_loop(
+  id: ClientId,
+  app_sender: ProcSender,
+  (client_sender, mut server_receiver): (
+    MsgSender<SrvToClt>,
+    MsgReceiver<CltToSrv>,
+  ),
+) {
+  log::info!("client_loop: server_receiver.recv()");
+  let init_msg = server_receiver.recv().await;
+  match init_msg {
+    Some(Ok(CltToSrv::Init { width, height })) => {
+      let client_handle =
+        ClientHandle::create(id, client_sender, Size { width, height });
+      match client_handle {
+        Ok(handle) => {
+          app_sender
+            .send(ProcCmd::custom(ServerMessage::ClientConnected { handle }));
         }
-        _ => todo!(),
+        Err(err) => {
+          log::error!("Client creation error: {:?}", err);
+        }
       }
-    });
-
-    ClientConnector
+    }
+    _ => todo!(),
   }
+
+  loop {
+    let msg = if let Some(msg) = server_receiver.recv().await {
+      msg
+    } else {
+      break;
+    };
+
+    match msg {
+      Ok(msg) => {
+        app_sender.send(ProcCmd::custom(ServerMessage::ClientMessage {
+          client_id: id,
+          msg,
+        }));
+      }
+      Err(_err) => break,
+    }
+  }
+  app_sender.send(ProcCmd::custom(ServerMessage::ClientDisconnected {
+    client_id: id,
+  }));
 }
 
 pub struct ClientHandle {
@@ -1093,45 +1082,22 @@ pub struct ClientHandle {
   cursor_style: CursorStyle,
 }
 
+impl Debug for ClientHandle {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("ClientHandle")
+      .field("id", &self.id)
+      .finish()
+  }
+}
+
 impl ClientHandle {
   fn create(
     id: ClientId,
-    (mut read, write): (MsgReceiver<CltToSrv>, MsgSender<SrvToClt>),
-    server_sender: ServerSender,
+    client_sender: MsgSender<SrvToClt>,
     size: Size,
   ) -> anyhow::Result<Self> {
-    {
-      let kernel_sender = server_sender.clone();
-      tokio::spawn(async move {
-        loop {
-          let msg = if let Some(msg) = read.recv().await {
-            msg
-          } else {
-            break;
-          };
-
-          match msg {
-            Ok(msg) => {
-              kernel_sender
-                .send(
-                  crate::server::server_message::ServerMessage::ClientMessage {
-                    client_id: id,
-                    msg,
-                  },
-                )
-                .log_ignore();
-            }
-            Err(_err) => break,
-          }
-        }
-        kernel_sender
-          .send(ServerMessage::ClientDisconnected { client_id: id })
-          .log_ignore();
-      });
-    }
-
     let backend = ProxyBackend {
-      tx: write.clone(),
+      tx: client_sender.clone(),
       width: size.width,
       height: size.height,
       x: 0,
@@ -1141,7 +1107,7 @@ impl ClientHandle {
 
     Ok(Self {
       id,
-      sender: write,
+      sender: client_sender,
       terminal,
 
       cursor_style: CursorStyle::Default,
@@ -1190,7 +1156,7 @@ impl ClientHandle {
       }
 
       for client_handle in rest {
-        f.render_widget(RenderOtherClient(client_handle), f.size());
+        f.render_widget(RenderOtherClient(client_handle), f.area());
       }
 
       if self.cursor_style != cursor_style {
@@ -1207,7 +1173,7 @@ impl ClientHandle {
 
   fn render_from(&mut self, buf: &tui::buffer::Buffer) -> anyhow::Result<()> {
     self.terminal.draw(|f| {
-      let area = buf.area().intersection(f.size());
+      let area = buf.area().intersection(f.area());
       f.render_widget(CopyBuffer(buf), area);
     })?;
     Ok(())
@@ -1235,62 +1201,36 @@ impl Widget for CopyBuffer<'_> {
   }
 }
 
-pub async fn start_kernel_process(
+pub fn create_app_proc(
   config: Config,
   keymap: Keymap,
-) -> anyhow::Result<()> {
-  let (kernel_sender, kernel_receiver) = tokio::sync::mpsc::unbounded_channel();
-
-  let mut server_socket = bind_server_socket().await?;
-  let _accept_thread = {
-    let kernel_sender = kernel_sender.clone();
-    tokio::spawn(async move {
-      let mut last_client_id = 0;
-
-      log::debug!("Waiting for clients...");
-      loop {
-        match server_socket.accept().await {
-          Ok(socket) => {
-            last_client_id += 1;
-            let id = ClientId(last_client_id);
-            ClientConnector::connect(id, socket, kernel_sender.clone());
-          }
-          Err(err) => {
-            log::info!("Server socket accept error: {}", err.to_string());
-            break;
-          }
-        }
+  pc: &ProcContext,
+) -> ProcId {
+  let app_proc_id = pc.add_proc(Box::new(|pc| {
+    log::debug!("Creating app proc (id: {})", pc.proc_id.0);
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(async {
+      let r = server_main(config, keymap, receiver, pc).await;
+      match r {
+        Ok(()) => (),
+        Err(err) => log::error!("App proc finished with error: {:?}", err),
       }
-    })
-  };
-
-  server_main(config, keymap, kernel_receiver).await
-}
-
-pub async fn start_server_thread(
-  config: Config,
-  keymap: Keymap,
-  socket: (MsgSender<SrvToClt>, MsgReceiver<CltToSrv>),
-) -> anyhow::Result<()> {
-  let (kernel_sender, kernel_receiver) = tokio::sync::mpsc::unbounded_channel();
-
-  let id = ClientId(1);
-  ClientConnector::connect(id, socket, kernel_sender.clone());
-
-  tokio::spawn(async {
-    server_main(config, keymap, kernel_receiver).await;
-  });
-
-  Ok(())
+    });
+    ProcInit {
+      sender,
+      stop_on_quit: false,
+      status: ProcStatus::Running,
+    }
+  }));
+  app_proc_id
 }
 
 pub async fn server_main(
   config: Config,
   keymap: Keymap,
-  kernel_receiver: UnboundedReceiver<ServerMessage>,
+  pr: UnboundedReceiver<ProcCmd>,
+  pc: ProcContext,
 ) -> anyhow::Result<()> {
-  let (ev_tx, ev_rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
-
   let state = State {
     current_client_id: None,
 
@@ -1307,11 +1247,8 @@ pub async fn server_main(
     keymap,
     state,
     modal: None,
-
-    ev_rx,
-    ev_tx,
-
-    kernel_receiver,
+    pr,
+    pc,
 
     screen_size: Size {
       width: 160,

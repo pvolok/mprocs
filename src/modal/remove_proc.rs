@@ -1,5 +1,4 @@
 use crossterm::event::{Event, KeyCode, KeyEvent};
-use tokio::sync::mpsc::UnboundedSender;
 use tui::{
   prelude::{Margin, Rect},
   widgets::{Clear, Paragraph},
@@ -7,20 +6,23 @@ use tui::{
 };
 
 use crate::{
-  app::LoopAction, error::ResultLogger, event::AppEvent, kernel2::proc::ProcId,
-  state::State, theme::Theme,
+  app::LoopAction,
+  event::AppEvent,
+  kernel2::{kernel_message::ProcContext, proc::ProcId},
+  state::State,
+  theme::Theme,
 };
 
 use super::modal::Modal;
 
 pub struct RemoveProcModal {
+  pc: ProcContext,
   id: ProcId,
-  app_sender: UnboundedSender<AppEvent>,
 }
 
 impl RemoveProcModal {
-  pub fn new(id: ProcId, app_sender: UnboundedSender<AppEvent>) -> Self {
-    RemoveProcModal { id, app_sender }
+  pub fn new(id: ProcId, pc: ProcContext) -> Self {
+    RemoveProcModal { pc, id }
   }
 }
 
@@ -41,14 +43,10 @@ impl Modal for RemoveProcModal {
         modifiers,
         ..
       }) if modifiers.is_empty() => {
+        self.pc.send_self_custom(AppEvent::CloseCurrentModal);
         self
-          .app_sender
-          .send(AppEvent::CloseCurrentModal)
-          .log_ignore();
-        self
-          .app_sender
-          .send(AppEvent::RemoveProc { id: self.id })
-          .log_ignore();
+          .pc
+          .send_self_custom(AppEvent::RemoveProc { id: self.id });
         // Skip because RemoveProc event will immediately rerender.
         return true;
       }
@@ -62,10 +60,7 @@ impl Modal for RemoveProcModal {
         modifiers,
         ..
       }) if modifiers.is_empty() => {
-        self
-          .app_sender
-          .send(AppEvent::CloseCurrentModal)
-          .log_ignore();
+        self.pc.send_self_custom(AppEvent::CloseCurrentModal);
         loop_action.render();
         return true;
       }
@@ -90,7 +85,7 @@ impl Modal for RemoveProcModal {
   }
 
   fn render(&mut self, frame: &mut Frame) {
-    let area = self.area(frame.size());
+    let area = self.area(frame.area());
     let theme = Theme::default();
 
     let block = theme.pane(true);
