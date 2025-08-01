@@ -28,7 +28,8 @@ fn conv_value(lua: &Lua, value: Value) -> Result<V> {
     Value::Function(_x) => todo!(),
     Value::Thread(_x) => todo!(),
     Value::UserData(_) => todo!(),
-    Value::Error(err) => bail!(err),
+    Value::Other(_) => todo!(),
+    Value::Error(err) => bail!("{:?}", err),
   };
   Ok(v)
 }
