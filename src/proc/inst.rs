@@ -8,8 +8,8 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::spawn_blocking;
 
 use crate::error::ResultLogger;
-use crate::kernel2::kernel_message::SharedVt;
-use crate::kernel2::proc::ProcId;
+use crate::kernel::kernel_message::SharedVt;
+use crate::kernel::proc::ProcId;
 
 use super::msg::ProcEvent;
 use super::{ReplySender, Size};

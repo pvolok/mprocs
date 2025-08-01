@@ -19,7 +19,7 @@ use crate::{
   error::ResultLogger,
   event::{AppEvent, CopyMove},
   host::{receiver::MsgReceiver, sender::MsgSender},
-  kernel2::{
+  kernel::{
     kernel_message::{KernelCommand, ProcContext, ProcSender},
     proc::{ProcId, ProcInit, ProcStatus},
   },

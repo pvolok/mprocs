@@ -6,7 +6,7 @@ use std::{
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::{
-  kernel2::kernel_message::ProcContext,
+  kernel::kernel_message::ProcContext,
   proc::msg::{ProcCmd, ProcUpdate},
 };
 
@@ -15,7 +15,7 @@ use super::{
   proc::{ProcHandle2, ProcId, ProcInit, ProcStatus},
 };
 
-pub struct Kernel2 {
+pub struct Kernel {
   sender: UnboundedSender<KernelMessage2>,
   receiver: UnboundedReceiver<KernelMessage2>,
 
@@ -25,7 +25,7 @@ pub struct Kernel2 {
   listeners: HashSet<ProcId>,
 }
 
-impl Kernel2 {
+impl Kernel {
   pub fn new() -> Self {
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
 

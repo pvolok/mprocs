@@ -3,7 +3,7 @@ use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-  app::ClientId, kernel2::proc::ProcId, key::Key, proc::msg::CustomProcCmd,
+  app::ClientId, kernel::proc::ProcId, key::Key, proc::msg::CustomProcCmd,
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]

@@ -1,6 +1,6 @@
 use crate::{
   config::ProcConfig,
-  kernel2::{kernel_message::SharedVt, proc::ProcId},
+  kernel::{kernel_message::SharedVt, proc::ProcId},
 };
 
 use super::{CopyMode, ReplySender};

@@ -1,6 +1,6 @@
 use crate::{
   app::ClientId,
-  kernel2::proc::ProcId,
+  kernel::proc::ProcId,
   keymap::KeymapGroup,
   proc::{handle::ProcHandle, CopyMode},
 };

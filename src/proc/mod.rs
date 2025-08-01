@@ -7,15 +7,11 @@ use std::fmt::Debug;
 
 use anyhow::bail;
 use compact_str::CompactString;
-use handle::ProcHandle;
-use proc::Proc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 use tui::layout::Rect;
 
-use crate::config::ProcConfig;
-use crate::kernel2::kernel_message::ProcContext;
-use crate::kernel2::proc::ProcId;
+use crate::kernel::proc::ProcId;
 use crate::key::Key;
 use crate::mouse::MouseEvent;
 use crate::vt100::TermReplySender;

@@ -9,7 +9,7 @@ mod error;
 mod event;
 mod host;
 mod just;
-mod kernel2;
+mod kernel;
 mod key;
 mod keymap;
 mod modal;
@@ -43,8 +43,8 @@ use host::{
   receiver::MsgReceiver, sender::MsgSender, socket::bind_server_socket,
 };
 use just::load_just_procs;
-use kernel2::{
-  kernel::Kernel2,
+use kernel::{
+  kernel::Kernel,
   kernel_message::KernelCommand,
   proc::{ProcInit, ProcStatus},
 };
@@ -191,7 +191,7 @@ async fn run_app() -> anyhow::Result<()> {
     Some(("server", _args)) => {
       let logger = setup_logger(LogTarget::Stderr);
 
-      let mut kernel = Kernel2::new();
+      let mut kernel = Kernel::new();
       kernel.spawn_proc(|pc| {
         let app_proc_id = create_app_proc(config, keymap, &pc);
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -262,7 +262,7 @@ async fn run_app() -> anyhow::Result<()> {
         (sender, receiver)
       };
 
-      let mut kernel = Kernel2::new();
+      let mut kernel = Kernel::new();
       kernel.spawn_proc(|pc| {
         let app_proc_id = create_app_proc(config, keymap, &pc);
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();

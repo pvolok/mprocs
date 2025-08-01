@@ -7,7 +7,7 @@ use tui::{
 };
 
 use crate::{
-  app::LoopAction, event::AppEvent, kernel2::kernel_message::ProcContext,
+  app::LoopAction, event::AppEvent, kernel::kernel_message::ProcContext,
   state::State, theme::Theme,
 };
 
