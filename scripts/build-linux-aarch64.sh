@@ -10,7 +10,6 @@ podman run -it --workdir /app \
   -v $(pwd)/scripts:/app/scripts \
   -v $(pwd)/Cargo.lock:/app/Cargo.lock \
   -v $(pwd)/Cargo.toml:/app/Cargo.toml \
-  -v $(pwd)/vendor:/app/vendor \
   -v $(pwd)/src:/app/src \
   -v $(pwd)/helpers:/app/helpers \
   -v $(pwd)/scripts:/app/scripts \
