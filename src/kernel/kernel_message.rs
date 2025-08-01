@@ -16,7 +16,7 @@ use crate::{
 
 use super::proc::{ProcId, ProcInit};
 
-pub struct KernelMessage2 {
+pub struct KernelMessage {
   pub from: ProcId,
   pub command: KernelCommand,
 }
@@ -63,7 +63,7 @@ impl Deref for SharedVt {
 #[derive(Clone)]
 pub struct ProcContext {
   next_proc_id: Arc<AtomicUsize>,
-  sender: UnboundedSender<KernelMessage2>,
+  sender: UnboundedSender<KernelMessage>,
   pub proc_id: ProcId,
 }
 
@@ -71,7 +71,7 @@ impl ProcContext {
   pub fn new(
     next_proc_id: Arc<AtomicUsize>,
     proc_id: ProcId,
-    sender: UnboundedSender<KernelMessage2>,
+    sender: UnboundedSender<KernelMessage>,
   ) -> Self {
     Self {
       next_proc_id,
@@ -81,7 +81,7 @@ impl ProcContext {
   }
 
   pub fn send(&self, command: KernelCommand) {
-    if let Err(_) = self.sender.send(KernelMessage2 {
+    if let Err(_err) = self.sender.send(KernelMessage {
       from: self.proc_id,
       command,
     }) {
@@ -125,14 +125,21 @@ impl ProcContext {
 pub struct ProcSender {
   pub proc_id: ProcId,
   pub from_id: ProcId,
-  sender: UnboundedSender<KernelMessage2>,
+  sender: UnboundedSender<KernelMessage>,
 }
 
 impl ProcSender {
   pub fn send(&self, cmd: ProcCmd) {
-    self.sender.send(KernelMessage2 {
+    let r = self.sender.send(KernelMessage {
       from: self.from_id,
       command: KernelCommand::ProcCmd(self.proc_id, cmd),
     });
+    if let Err(_err) = r {
+      log::debug!(
+        "ProcSender.send() to closed channel. from_id:{} proc_id:{}",
+        self.from_id.0,
+        self.proc_id.0
+      );
+    }
   }
 }

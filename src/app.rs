@@ -200,6 +200,8 @@ impl App {
       sender.send(SrvToClt::Quit).log_ignore();
     }
 
+    self.pc.send(KernelCommand::UnlistenProcUpdates);
+
     Ok(())
   }
 
@@ -337,11 +339,10 @@ impl App {
 
         let layout = self.get_layout();
         if term_check_hit(layout.term_area(), mev.column, mev.row) {
-          match (self.state.scope, mev.kind) {
-            (Scope::Procs, MouseEventKind::Down(_)) => {
-              self.state.scope = Scope::Term
-            }
-            _ => (),
+          if let (Scope::Procs, MouseEventKind::Down(_)) =
+            (self.state.scope, mev.kind)
+          {
+            self.state.scope = Scope::Term
           }
           if let Some(proc) = self.state.get_current_proc_mut() {
             let local_event = mouse_event.translate(layout.term_area());
@@ -426,7 +427,7 @@ impl App {
                     MouseButton::Left => {
                       let pos =
                         local_event.pos_with_scrollback(screen.scrollback());
-                      let (start, end) = if let Some(_) = end {
+                      let (start, end) = if end.is_some() {
                         (start, Some(pos))
                       } else {
                         (pos, None)
@@ -466,11 +467,10 @@ impl App {
             }
           }
         } else if procs_check_hit(layout.procs, mev.column, mev.row) {
-          match (self.state.scope, mev.kind) {
-            (Scope::Term, MouseEventKind::Down(_)) => {
-              self.state.scope = Scope::Procs
-            }
-            _ => (),
+          if let (Scope::Term, MouseEventKind::Down(_)) =
+            (self.state.scope, mev.kind)
+          {
+            self.state.scope = Scope::Procs
           }
           match mev.kind {
             MouseEventKind::Down(btn) => match btn {
@@ -564,7 +564,7 @@ impl App {
         }
         loop_action.force_quit();
       }
-      AppEvent::Detach { client_id } => {
+      AppEvent::Detach { client_id: _ } => {
         // TODO: Client-server mode is disabled for mprocs 0.7
         // self.clients.retain_mut(|c| c.id != *client_id);
         // self.update_screen_size();
@@ -741,18 +741,13 @@ impl App {
         }
       }
       AppEvent::ShowRemoveProc => {
-        let id = self
-          .state
-          .get_current_proc()
-          .map(|proc| if proc.is_up() { None } else { Some(proc.id()) })
-          .flatten();
-        match id {
-          Some(id) => {
-            self.modal =
-              Some(RemoveProcModal::new(id, self.pc.clone()).boxed());
-            loop_action.render();
-          }
-          None => (),
+        let id = match self.state.get_current_proc() {
+          Some(proc) if !proc.is_up() => Some(proc.id()),
+          _ => None,
+        };
+        if let Some(id) = id {
+          self.modal = Some(RemoveProcModal::new(id, self.pc.clone()).boxed());
+          loop_action.render();
         }
       }
       AppEvent::RemoveProc { id } => {
@@ -777,17 +772,14 @@ impl App {
       }
 
       AppEvent::CopyModeEnter => {
-        match self.state.get_current_proc_mut() {
-          Some(proc) => {
-            if let Some(vt_ref) = proc.vt.as_ref() {
-              let screen = vt_ref.read().unwrap().screen().clone();
-              let y = (screen.size().rows - 1) as i32;
-              proc.copy_mode = CopyMode::Active(screen, Pos { y, x: 0 }, None);
-            }
-            self.state.scope = Scope::Term;
-            loop_action.render();
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          if let Some(vt_ref) = proc.vt.as_ref() {
+            let screen = vt_ref.read().unwrap().screen().clone();
+            let y = (screen.size().rows - 1) as i32;
+            proc.copy_mode = CopyMode::Active(screen, Pos { y, x: 0 }, None);
           }
-          None => (),
+          self.state.scope = Scope::Term;
+          loop_action.render();
         };
       }
       AppEvent::CopyModeLeave => {
@@ -892,7 +884,10 @@ impl App {
           Err(custom) => {
             match (custom as Box<dyn Any>).downcast::<ServerMessage>() {
               Ok(server_msg) => {
-                self.handle_server_message(loop_action, *server_msg);
+                let r = self.handle_server_message(loop_action, *server_msg);
+                if let Err(err) = r {
+                  log::debug!("ServerMessage error: {:?}", err);
+                }
               }
               Err(custom) => {
                 log::error!(
@@ -1194,8 +1189,10 @@ impl Widget for CopyBuffer<'_> {
   fn render(self, area: Rect, buf: &mut tui::prelude::Buffer) {
     for row in area.y..area.height {
       for col in area.x..area.width {
-        let from = self.0.get(col, row);
-        *buf.get_mut(col, row) = from.clone();
+        let from = self.0.cell((col, row));
+        if let Some(cell) = buf.cell_mut((col, row)) {
+          *cell = from.cloned().unwrap_or_default();
+        }
       }
     }
   }

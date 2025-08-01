@@ -55,7 +55,7 @@ impl Inst {
     );
     let vt = SharedVt::new(vt);
 
-    tx.send(ProcEvent::SetVt(Some(vt.clone())));
+    tx.send(ProcEvent::SetVt(Some(vt.clone()))).log_ignore();
 
     let pty_system = native_pty_system();
     let pair = pty_system.openpty(PtySize {

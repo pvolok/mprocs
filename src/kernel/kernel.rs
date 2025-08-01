@@ -11,13 +11,13 @@ use crate::{
 };
 
 use super::{
-  kernel_message::{KernelCommand, KernelMessage2},
+  kernel_message::{KernelCommand, KernelMessage},
   proc::{ProcHandle2, ProcId, ProcInit, ProcStatus},
 };
 
 pub struct Kernel {
-  sender: UnboundedSender<KernelMessage2>,
-  receiver: UnboundedReceiver<KernelMessage2>,
+  sender: UnboundedSender<KernelMessage>,
+  receiver: UnboundedReceiver<KernelMessage>,
 
   quitting: bool,
   next_proc_id: Arc<AtomicUsize>,
