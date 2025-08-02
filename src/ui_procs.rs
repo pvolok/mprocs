@@ -8,7 +8,7 @@ use tui::{
 
 use crate::{
   config::Config,
-  proc::handle::ProcHandle,
+  proc::view::ProcView,
   state::{Scope, State},
   theme::Theme,
 };
@@ -64,7 +64,7 @@ pub fn render_procs(
 }
 
 fn create_proc_item<'a>(
-  proc_handle: &mut ProcHandle,
+  proc_handle: &mut ProcView,
   is_cur: bool,
   width: u16,
   theme: &Theme,

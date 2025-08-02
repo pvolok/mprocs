@@ -8,7 +8,7 @@ use tui::{
 };
 
 use crate::{
-  proc::{handle::ProcViewFrame, CopyMode, Pos, ReplySender},
+  proc::{view::ProcViewFrame, CopyMode, Pos, ReplySender},
   state::{Scope, State},
   theme::Theme,
 };

@@ -32,9 +32,9 @@ use crate::{
   },
   mouse::MouseEvent,
   proc::{
-    handle::RESTART_THRESHOLD_SECONDS,
     msg::{ProcCmd, ProcUpdate},
     proc::launch_proc,
+    view::RESTART_THRESHOLD_SECONDS,
     CopyMode, Pos, StopSignal,
   },
   protocol::{CltToSrv, ProxyBackend, SrvToClt},

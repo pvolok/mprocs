@@ -12,7 +12,7 @@ use crate::{
 
 use super::{
   kernel_message::{KernelCommand, KernelMessage},
-  proc::{ProcHandle2, ProcId, ProcInit, ProcStatus},
+  proc::{ProcHandle, ProcId, ProcInit, ProcStatus},
 };
 
 pub struct Kernel {
@@ -21,7 +21,7 @@ pub struct Kernel {
 
   quitting: bool,
   next_proc_id: Arc<AtomicUsize>,
-  procs: HashMap<ProcId, ProcHandle2>,
+  procs: HashMap<ProcId, ProcHandle>,
   listeners: HashSet<ProcId>,
 }
 
@@ -60,7 +60,7 @@ impl Kernel {
     let kernel_sender =
       ProcContext::new(self.next_proc_id.clone(), proc_id, self.sender.clone());
     let init = f(kernel_sender);
-    let proc_handle = ProcHandle2 {
+    let proc_handle = ProcHandle {
       proc_id,
       sender: init.sender,
 

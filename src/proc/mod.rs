@@ -1,7 +1,7 @@
-pub mod handle;
 mod inst;
 pub mod msg;
 pub mod proc;
+pub mod view;
 
 use std::fmt::Debug;
 

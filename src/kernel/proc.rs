@@ -6,7 +6,7 @@ use crate::{error::ResultLogger, proc::msg::ProcCmd};
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct ProcId(pub usize);
 
-pub struct ProcHandle2 {
+pub struct ProcHandle {
   pub proc_id: ProcId,
   pub sender: UnboundedSender<ProcCmd>,
 
@@ -14,7 +14,7 @@ pub struct ProcHandle2 {
   pub status: ProcStatus,
 }
 
-impl ProcHandle2 {
+impl ProcHandle {
   pub fn send(&self, cmd: ProcCmd) {
     self.sender.send(cmd).log_ignore();
   }

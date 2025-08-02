@@ -16,9 +16,9 @@ use crate::key::Key;
 use crate::mouse::MouseEvent;
 use crate::vt100::{self};
 
-use super::handle::ProcHandle;
 use super::inst::Inst;
 use super::msg::{ProcCmd, ProcEvent};
+use super::view::ProcView;
 use super::StopSignal;
 use super::{ReplySender, Size};
 
@@ -46,7 +46,7 @@ pub fn launch_proc(
   parent_ks: &ProcContext,
   cfg: ProcConfig,
   size: Rect,
-) -> ProcHandle {
+) -> ProcView {
   let cfg_ = cfg.clone();
   let child_id = parent_ks.add_proc(Box::new(move |ks| {
     let (cmd_sender, cmd_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -64,7 +64,7 @@ pub fn launch_proc(
     }
   }));
 
-  ProcHandle::new(child_id, cfg)
+  ProcView::new(child_id, cfg)
 }
 
 async fn proc_main_loop(
@@ -73,7 +73,7 @@ async fn proc_main_loop(
   cfg: &ProcConfig,
   size: Rect,
   mut cmd_receiver: UnboundedReceiver<ProcCmd>,
-) -> ProcHandle {
+) -> ProcView {
   let (internal_sender, mut internal_receiver) =
     tokio::sync::mpsc::unbounded_channel();
   let mut proc = Proc::new(proc_id, cfg, internal_sender, size);

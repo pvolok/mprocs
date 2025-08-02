@@ -10,7 +10,7 @@ use std::time::Instant;
 /// Amount of time a process has to stay up for autorestart to trigger
 pub const RESTART_THRESHOLD_SECONDS: f64 = 1.0;
 
-pub struct ProcHandle {
+pub struct ProcView {
   pub id: ProcId,
   pub cfg: ProcConfig,
 
@@ -24,7 +24,7 @@ pub struct ProcHandle {
   pub changed: bool,
 }
 
-impl ProcHandle {
+impl ProcView {
   pub fn new(id: ProcId, cfg: ProcConfig) -> Self {
     Self {
       id,
