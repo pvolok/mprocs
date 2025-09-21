@@ -1,12 +1,12 @@
 <div align="center" markdown="1">
-   <br>
-   <br>
-   <a href="https://www.warp.dev/mprocs">
-      <img alt="Warp sponsorship" width="600" src="https://github.com/user-attachments/assets/935a899b-47fd-4449-8d24-f03476bac76c">
-   </a>
+  <sup>Special thanks to:</sup>
+  <br>
+  <a href="https://go.warp.dev/mprocs">
+    <img alt="Warp sponsorship" width="400" src="https://github.com/warpdotdev/brand-assets/blob/main/Github/Sponsor/Warp-Github-LG-02.png">
+  </a>
 
-### [Warp, the intelligent terminal for developers](https://www.warp.dev/mprocs)
-#### [Try running mprocs in Warp](https://www.warp.dev/mprocs)<br>
+### [Warp, built for coding with multiple AI agents](https://go.warp.dev/mprocs)
+[Available for MacOS, Linux, & Windows](https://go.warp.dev/mprocs)<br>
 
 </div>
 
