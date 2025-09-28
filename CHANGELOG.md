@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Use pwsh.exe for shell commands (instead of cmd.exe)
+- Properly handles lines wrappings during screen resize
 
 ## 0.7.3 - 2025-05-21
 
