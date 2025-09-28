@@ -281,8 +281,7 @@ impl Proc {
     }
   }
 
-  pub fn resize(&mut self, size: Rect) {
-    let size = Size::new(size);
+  pub fn resize(&mut self, size: Size) {
     if let ProcState::Some(inst) = &self.inst {
       inst.resize(&size);
     }
@@ -293,7 +292,7 @@ impl Proc {
     if self.is_up() {
       let application_cursor_keys = self
         .lock_vt()
-        .map_or(false, |vt| vt.screen().application_cursor());
+        .is_some_and(|vt| vt.screen().application_cursor());
       let encoder = encode_key(
         key,
         KeyCodeEncodeModes {
@@ -393,10 +392,8 @@ impl Proc {
         *rendered = true;
       }
 
-      ProcCmd::Resize { x, y, w, h } => {
-        self.resize(Rect {
-          x,
-          y,
+      ProcCmd::Resize { w, h } => {
+        self.resize(Size {
           width: w,
           height: h,
         });

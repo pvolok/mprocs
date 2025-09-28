@@ -158,10 +158,27 @@ impl App {
     ))?;
 
     let mut render_needed = true;
-    loop {
-      if render_needed {
-        let layout = self.get_layout();
+    let mut last_term_size = self.get_layout().term_area().as_size();
 
+    loop {
+      let layout = self.get_layout();
+
+      let term_size = layout.term_area().as_size();
+      if term_size != last_term_size {
+        for proc_handle in &mut self.state.procs {
+          self.pc.send(KernelCommand::ProcCmd(
+            proc_handle.id(),
+            ProcCmd::Resize {
+              w: term_size.width,
+              h: term_size.height,
+            },
+          ));
+        }
+
+        last_term_size = term_size;
+      }
+
+      if render_needed {
         if let Some((first, rest)) = self.clients.split_first_mut() {
           first.render(
             &mut self.state,
@@ -243,26 +260,7 @@ impl App {
 
   fn update_screen_size(&mut self) {
     if let Some(client) = self.clients.first_mut() {
-      let size = client.size();
-      if self.screen_size != size {
-        self.screen_size = size;
-        self.sync_proc_handle_size();
-      }
-    }
-  }
-
-  fn sync_proc_handle_size(&mut self) {
-    let area = self.get_layout().term_area();
-    for proc_handle in &mut self.state.procs {
-      self.pc.send(KernelCommand::ProcCmd(
-        proc_handle.id(),
-        ProcCmd::Resize {
-          x: area.x,
-          y: area.y,
-          w: area.width,
-          h: area.height,
-        },
-      ));
+      self.screen_size = client.size();
     }
   }
 
@@ -846,7 +844,6 @@ impl App {
 
       AppEvent::ToggleKeymapWindow => {
         self.state.toggle_keymap_window();
-        self.sync_proc_handle_size();
         loop_action.render();
       }
 

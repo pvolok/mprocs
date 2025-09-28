@@ -22,7 +22,7 @@ pub enum ProcCmd {
   ScrollUpLines { n: usize },
   ScrollDownLines { n: usize },
 
-  Resize { x: u16, y: u16, w: u16, h: u16 },
+  Resize { w: u16, h: u16 },
 
   Custom(Box<dyn CustomProcCmd + Send + 'static>),
 

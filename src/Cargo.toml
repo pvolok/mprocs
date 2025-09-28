@@ -5,7 +5,7 @@ description = "TUI for running multiple processes"
 repository = "https://github.com/pvolok/mprocs"
 authors = ["Pavel Volokitin <pavelvolokitin@gmail.com>"]
 license = "MIT"
-edition = "2021"
+edition = "2024"
 categories = [
   "command-line-interface",
   "command-line-utilities",

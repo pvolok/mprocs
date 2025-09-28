@@ -1,8 +1,11 @@
 use crate::vt100::term::BufWrite as _;
 
+use super::Cell;
+
 #[derive(Clone, Debug)]
 pub struct Row {
-  cells: Vec<crate::vt100::cell::Cell>,
+  pub cells: Vec<crate::vt100::cell::Cell>,
+  size: u16,
   wrapped: bool,
 }
 
@@ -10,6 +13,7 @@ impl Row {
   pub fn new(cols: u16) -> Self {
     Self {
       cells: vec![crate::vt100::cell::Cell::default(); usize::from(cols)],
+      size: 0,
       wrapped: false,
     }
   }
@@ -27,6 +31,7 @@ impl Row {
     for cell in &mut self.cells {
       cell.clear(attrs);
     }
+    self.size = 0;
     self.wrapped = false;
   }
 
@@ -39,6 +44,7 @@ impl Row {
   }
 
   pub fn get_mut(&mut self, col: u16) -> Option<&mut crate::vt100::cell::Cell> {
+    self.size = self.size.max(col + 1);
     self.cells.get_mut(usize::from(col))
   }
 
@@ -96,6 +102,10 @@ impl Row {
     if let Some(other) = other {
       other.clear(*other.attrs());
     }
+  }
+
+  pub fn take_cells(&self, vec: &mut Vec<Cell>) {
+    vec.extend(self.cells.iter().take(self.size as _).cloned());
   }
 
   pub fn write_contents(

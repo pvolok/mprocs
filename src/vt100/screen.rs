@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::vt100::{attrs::Attrs, term::BufWrite as _, TermReplySender};
+use crate::vt100::{attrs::Attrs, TermReplySender};
 use compact_str::ToCompactString;
 use termwiz::escape::{
   csi::{
@@ -130,8 +130,7 @@ impl<Reply: TermReplySender> Screen<Reply> {
     scrollback_len: usize,
     reply_sender: Reply,
   ) -> Self {
-    let mut grid = crate::vt100::grid::Grid::new(size, scrollback_len);
-    grid.allocate_rows();
+    let grid = crate::vt100::grid::Grid::new(size, scrollback_len);
     Self {
       reply_sender,
       grid,
@@ -265,7 +264,6 @@ impl<Reply: TermReplySender> Screen<Reply> {
   fn enter_alternate_grid(&mut self) {
     self.grid_mut().set_scrollback(0);
     self.set_mode(MODE_ALTERNATE_SCREEN);
-    self.alternate_grid.allocate_rows();
   }
 
   fn exit_alternate_grid(&mut self) {
@@ -692,7 +690,9 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
       ControlCode::FormFeed => {
         self.grid_mut().row_inc_scroll(1);
       }
-      ControlCode::CarriageReturn => self.grid_mut().col_set(0),
+      ControlCode::CarriageReturn => {
+        self.grid_mut().col_set(0);
+      }
       ControlCode::ShiftOut => self.shift_out = true,
       ControlCode::ShiftIn => self.shift_out = false,
       ControlCode::DataLinkEscape => skip!("DataLinkEscape"),
@@ -833,7 +833,7 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
         Cursor::BackwardTabulation(_) => skip!("BackwardTabulation"),
         Cursor::TabulationClear(_) => skip!("TabulationClear"),
         Cursor::CharacterAbsolute(pos) => {
-          self.grid_mut().col_set(pos.as_zero_based() as u16)
+          self.grid_mut().col_set(pos.as_zero_based() as u16);
         }
         Cursor::CharacterPositionAbsolute(_) => {
           skip!("CharacterPositionAbsolute")
@@ -851,7 +851,7 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
           });
         }
         Cursor::LinePositionAbsolute(row) => {
-          self.grid_mut().row_set((row - 1) as u16)
+          self.grid_mut().row_set((row - 1) as u16);
         }
         Cursor::LinePositionBackward(_) => skip!("LinePositionBackward"),
         Cursor::LinePositionForward(_) => skip!("LinePositionForward"),
@@ -872,16 +872,24 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
         Cursor::SaveCursor => skip!("SaveCursor"),
         Cursor::RestoreCursor => skip!("RestoreCursor"),
         Cursor::TabulationControl(_) => skip!("TabulationControl"),
-        Cursor::Left(count) => self.grid_mut().col_dec(count as u16),
-        Cursor::Down(count) => self.grid_mut().row_inc_clamp(count as u16),
-        Cursor::Right(count) => self.grid_mut().col_inc_clamp(count as u16),
+        Cursor::Left(count) => {
+          self.grid_mut().col_dec(count as u16);
+        }
+        Cursor::Down(count) => {
+          self.grid_mut().row_inc_clamp(count as u16);
+        }
+        Cursor::Right(count) => {
+          self.grid_mut().col_inc_clamp(count as u16);
+        }
         Cursor::Position { line, col } => {
           self.grid_mut().set_pos(crate::vt100::grid::Pos {
             row: line.as_zero_based() as u16,
             col: col.as_zero_based() as u16,
-          })
+          });
         }
-        Cursor::Up(count) => self.grid_mut().row_dec_clamp(count as u16),
+        Cursor::Up(count) => {
+          self.grid_mut().row_dec_clamp(count as u16);
+        }
         Cursor::LineTabulation(_) => skip!("LineTabulation"),
         Cursor::SetTopAndBottomMargins { top, bottom } => {
           self.grid_mut().set_scroll_region(
@@ -898,9 +906,11 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
       },
       CSI::Edit(edit) => match edit {
         Edit::DeleteCharacter(count) => {
-          self.grid_mut().delete_cells(count as u16)
+          self.grid_mut().delete_cells(count as u16);
         }
-        Edit::DeleteLine(count) => self.grid_mut().delete_lines(count as u16),
+        Edit::DeleteLine(count) => {
+          self.grid_mut().delete_lines(count as u16);
+        }
         Edit::EraseCharacter(count) => {
           let attrs = self.attrs;
           self.grid_mut().erase_cells(count as u16, attrs);
@@ -918,11 +928,17 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
           }
         }
         Edit::InsertCharacter(count) => {
-          self.ich(u16::try_from(count).unwrap_or_default())
+          self.ich(u16::try_from(count).unwrap_or_default());
         }
-        Edit::InsertLine(count) => self.grid_mut().insert_lines(count as u16),
-        Edit::ScrollDown(count) => self.grid_mut().scroll_down(count as u16),
-        Edit::ScrollUp(count) => self.grid_mut().scroll_up(count as u16),
+        Edit::InsertLine(count) => {
+          self.grid_mut().insert_lines(count as u16);
+        }
+        Edit::ScrollDown(count) => {
+          self.grid_mut().scroll_down(count as u16);
+        }
+        Edit::ScrollUp(count) => {
+          self.grid_mut().scroll_up(count as u16);
+        }
         Edit::EraseInDisplay(mode) => {
           let attrs = self.attrs;
           match mode {

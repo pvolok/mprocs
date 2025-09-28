@@ -61,6 +61,10 @@ impl Cell {
     self.text.width() >= 2
   }
 
+  pub fn width(&self) -> u16 {
+    self.text.width() as u16
+  }
+
   pub(crate) fn attrs(&self) -> &crate::vt100::attrs::Attrs {
     &self.attrs
   }
