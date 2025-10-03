@@ -1,4 +1,4 @@
-use std::{any::Any, fmt::Debug, time::Instant};
+use std::{any::Any, collections::HashMap, fmt::Debug, time::Instant};
 
 use anyhow::bail;
 use crossterm::event::{
@@ -223,11 +223,28 @@ impl App {
   }
 
   fn start_procs(&mut self, size: Rect) -> anyhow::Result<()> {
+    let mut id_map = HashMap::with_capacity(self.config.procs.len());
+    for proc_cfg in &self.config.procs {
+      let proc_id = self.pc.alloc_id();
+      id_map.insert(proc_cfg.name.clone(), proc_id);
+    }
+
     let mut procs = self
       .config
       .procs
       .iter()
-      .map(|proc_cfg| launch_proc(&self.pc, proc_cfg.clone(), size))
+      .map(|proc_cfg| {
+        let mut deps = Vec::new();
+        for dep_name in &proc_cfg.deps {
+          if let Some(dep_id) = id_map.get(dep_name) {
+            deps.push(*dep_id);
+          } else {
+            // TODO: Show error.
+          }
+        }
+        let proc_id = id_map.get(&proc_cfg.name).unwrap();
+        launch_proc(&self.pc, proc_cfg.clone(), *proc_id, deps, size)
+      })
       .collect::<Vec<_>>();
 
     self.state.procs.append(&mut procs);
@@ -717,11 +734,17 @@ impl App {
           autostart: true,
           autorestart: false,
           stop: StopSignal::default(),
+          deps: Vec::new(),
           mouse_scroll_speed: self.config.mouse_scroll_speed,
           scrollback_len: self.config.scrollback_len,
         };
-        let proc_handle =
-          launch_proc(&pc, proc_config, self.get_layout().term_area());
+        let proc_handle = launch_proc(
+          &pc,
+          proc_config,
+          self.pc.alloc_id(),
+          Vec::new(),
+          self.get_layout().term_area(),
+        );
         self.state.procs.push(proc_handle);
 
         loop_action.render();
@@ -733,7 +756,9 @@ impl App {
         };
         if let Some(cfg) = cfg {
           let size = self.get_layout().term_area();
-          let proc_handle = launch_proc(&pc, cfg, size);
+          log::error!("TODO: Copy deps for duplicate proc.");
+          let proc_handle =
+            launch_proc(&pc, cfg, self.pc.alloc_id(), Vec::new(), size);
           self.state.procs.push(proc_handle);
           loop_action.render();
         }
@@ -860,7 +885,6 @@ impl App {
     loop_action: &mut LoopAction,
     command: ProcCmd,
   ) {
-    log::debug!("ProcCmd: {:?}", command);
     match command {
       ProcCmd::Start => (),
       ProcCmd::Stop => (),
@@ -927,6 +951,12 @@ impl App {
                 .pc
                 .send(KernelCommand::ProcCmd(proc_id, ProcCmd::Start));
             }
+            loop_action.render();
+          }
+        }
+        ProcUpdate::Waiting(waiting) => {
+          if let Some(proc) = self.state.get_proc_mut(proc_id) {
+            proc.is_waiting = waiting;
             loop_action.render();
           }
         }
@@ -1200,7 +1230,7 @@ pub fn create_app_proc(
   keymap: Keymap,
   pc: &ProcContext,
 ) -> ProcId {
-  let app_proc_id = pc.add_proc(Box::new(|pc| {
+  pc.add_proc(Box::new(|pc| {
     log::debug!("Creating app proc (id: {})", pc.proc_id.0);
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(async {
@@ -1214,9 +1244,9 @@ pub fn create_app_proc(
       sender,
       stop_on_quit: false,
       status: ProcStatus::Running,
+      deps: Vec::new(),
     }
-  }));
-  app_proc_id
+  }))
 }
 
 pub async fn server_main(

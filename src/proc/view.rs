@@ -16,6 +16,7 @@ pub struct ProcView {
 
   pub is_up: bool,
   pub exit_code: Option<u32>,
+  pub is_waiting: bool,
   pub vt: Option<SharedVt>,
   pub copy_mode: CopyMode,
 
@@ -32,6 +33,7 @@ impl ProcView {
 
       is_up: false,
       exit_code: None,
+      is_waiting: false,
       vt: None,
       copy_mode: CopyMode::None(None),
 

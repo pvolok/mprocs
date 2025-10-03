@@ -99,15 +99,27 @@ impl ProcContext {
     ));
   }
 
+  pub fn alloc_id(&self) -> ProcId {
+    ProcId(
+      self
+        .next_proc_id
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+    )
+  }
+
   pub fn add_proc(
     &self,
     f: Box<dyn FnOnce(ProcContext) -> ProcInit + Send>,
   ) -> ProcId {
-    let proc_id = ProcId(
-      self
-        .next_proc_id
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-    );
+    let proc_id = self.alloc_id();
+    self.add_proc_with_id(proc_id, f)
+  }
+
+  pub fn add_proc_with_id(
+    &self,
+    proc_id: ProcId,
+    f: Box<dyn FnOnce(ProcContext) -> ProcInit + Send>,
+  ) -> ProcId {
     self.send(KernelCommand::AddProc(proc_id, f));
     proc_id
   }

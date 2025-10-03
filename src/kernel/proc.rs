@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -12,6 +14,9 @@ pub struct ProcHandle {
 
   pub stop_on_quit: bool,
   pub status: ProcStatus,
+  pub waiting_deps: bool,
+
+  pub deps: HashMap<ProcId, DepInfo>,
 }
 
 impl ProcHandle {
@@ -20,6 +25,7 @@ impl ProcHandle {
   }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ProcStatus {
   Down,
   Running,
@@ -28,5 +34,10 @@ pub enum ProcStatus {
 pub struct ProcInit {
   pub sender: UnboundedSender<ProcCmd>,
   pub stop_on_quit: bool,
+  pub status: ProcStatus,
+  pub deps: Vec<ProcId>,
+}
+
+pub struct DepInfo {
   pub status: ProcStatus,
 }

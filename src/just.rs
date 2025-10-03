@@ -45,6 +45,7 @@ pub fn load_just_procs(settings: &Settings) -> Result<Vec<ProcConfig>> {
       autorestart: false,
 
       stop: StopSignal::default(),
+      deps: Vec::new(),
       mouse_scroll_speed: settings.mouse_scroll_speed,
       scrollback_len: settings.scrollback_len,
     });

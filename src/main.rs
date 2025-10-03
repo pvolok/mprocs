@@ -164,6 +164,7 @@ async fn run_app() -> anyhow::Result<()> {
           autostart: true,
           autorestart: false,
           stop: StopSignal::default(),
+          deps: Vec::new(),
           mouse_scroll_speed: settings.mouse_scroll_speed,
           scrollback_len: settings.scrollback_len,
         })
@@ -235,6 +236,7 @@ async fn run_app() -> anyhow::Result<()> {
           sender,
           stop_on_quit: false,
           status: ProcStatus::Down,
+          deps: Vec::new(),
         }
       });
 
@@ -281,6 +283,7 @@ async fn run_app() -> anyhow::Result<()> {
           sender,
           stop_on_quit: false,
           status: ProcStatus::Down,
+          deps: Vec::new(),
         }
       });
       tokio::spawn(async { kernel.run().await });

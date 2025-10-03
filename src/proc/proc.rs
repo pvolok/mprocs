@@ -45,24 +45,30 @@ pub enum ProcState {
 pub fn launch_proc(
   parent_ks: &ProcContext,
   cfg: ProcConfig,
+  proc_id: ProcId,
+  deps: Vec<ProcId>,
   size: Rect,
 ) -> ProcView {
   let cfg_ = cfg.clone();
-  let child_id = parent_ks.add_proc(Box::new(move |ks| {
-    let (cmd_sender, cmd_receiver) = tokio::sync::mpsc::unbounded_channel();
+  let child_id = parent_ks.add_proc_with_id(
+    proc_id,
+    Box::new(move |ks| {
+      let (cmd_sender, cmd_receiver) = tokio::sync::mpsc::unbounded_channel();
 
-    let cfg = cfg_;
-    tokio::spawn(async move {
-      let proc_id = ks.proc_id;
-      proc_main_loop(ks, proc_id, &cfg, size, cmd_receiver).await;
-    });
+      let cfg = cfg_;
+      tokio::spawn(async move {
+        let proc_id = ks.proc_id;
+        proc_main_loop(ks, proc_id, &cfg, size, cmd_receiver).await;
+      });
 
-    ProcInit {
-      sender: cmd_sender,
-      stop_on_quit: true,
-      status: ProcStatus::Running,
-    }
-  }));
+      ProcInit {
+        sender: cmd_sender,
+        stop_on_quit: true,
+        status: ProcStatus::Down,
+        deps,
+      }
+    }),
+  );
 
   ProcView::new(child_id, cfg)
 }

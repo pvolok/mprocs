@@ -3,7 +3,10 @@ use std::{any::Any, fmt::Debug};
 use compact_str::CompactString;
 
 use crate::{
-  kernel::{kernel_message::SharedVt, proc::ProcId},
+  kernel::{
+    kernel_message::SharedVt,
+    proc::{ProcId, ProcStatus},
+  },
   key::Key,
   mouse::MouseEvent,
 };
@@ -50,6 +53,7 @@ pub enum ProcEvent {
 pub enum ProcUpdate {
   Started,
   Stopped(u32),
+  Waiting(bool),
   Rendered,
   ScreenChanged(Option<SharedVt>),
 }
@@ -59,6 +63,9 @@ impl Debug for ProcUpdate {
     match self {
       Self::Started => write!(f, "Started"),
       Self::Stopped(code) => f.debug_tuple("Stopped").field(code).finish(),
+      Self::Waiting(waiting) => {
+        f.debug_tuple("Waiting").field(waiting).finish()
+      }
       Self::Rendered => write!(f, "Rendered"),
       Self::ScreenChanged(arg0) => f
         .debug_tuple("ScreenChanged")

@@ -107,6 +107,8 @@ pub struct ProcConfig {
 
   pub stop: StopSignal,
 
+  pub deps: Vec<String>,
+
   pub mouse_scroll_speed: usize,
   pub scrollback_len: usize,
 }
@@ -133,6 +135,7 @@ impl ProcConfig {
         autostart: true,
         autorestart: false,
         stop: StopSignal::default(),
+        deps: Vec::new(),
 
         mouse_scroll_speed,
         scrollback_len,
@@ -152,6 +155,7 @@ impl ProcConfig {
           autostart: true,
           autorestart: false,
           stop: StopSignal::default(),
+          deps: Vec::new(),
           mouse_scroll_speed,
           scrollback_len,
         }))
@@ -270,6 +274,16 @@ impl ProcConfig {
           StopSignal::default()
         };
 
+        let deps = if let Some(deps) = map.get(&Value::from("deps")) {
+          deps
+            .as_array()?
+            .iter()
+            .map(|d| d.as_str().map(|s| s.to_string()))
+            .collect::<Result<Vec<_>>>()?
+        } else {
+          Vec::new()
+        };
+
         Ok(Some(ProcConfig {
           name,
           cmd,
@@ -278,6 +292,7 @@ impl ProcConfig {
           autostart,
           autorestart,
           stop: stop_signal,
+          deps,
           mouse_scroll_speed,
           scrollback_len,
         }))
