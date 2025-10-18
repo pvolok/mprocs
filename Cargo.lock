@@ -440,7 +440,6 @@ dependencies = [
  "crossterm_winapi",
  "derive_more",
  "document-features",
- "futures-core",
  "mio 1.0.4",
  "parking_lot",
  "rustix 1.0.8",
@@ -1110,9 +1109,9 @@ dependencies = [
 
 [[package]]
 name = "memchr"
-version = "2.4.1"
+version = "2.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
+checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 
 [[package]]
 name = "memmem"
@@ -1227,10 +1226,12 @@ dependencies = [
  "phf 0.12.1",
  "portable-pty",
  "ratatui",
+ "rustix 1.0.8",
  "scopeguard",
  "serde",
  "serde_json",
  "serde_yaml",
+ "signal-hook",
  "termwiz",
  "tokio",
  "tokio-util",
@@ -1353,9 +1354,9 @@ dependencies = [
 
 [[package]]
 name = "ordered-float"
-version = "4.2.0"
+version = "4.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a76df7075c7d4d01fdcb46c912dd17fba5b60c78ea480b475f2b6ab6f666584e"
+checksum = "7bb71e1b3fa6ca1c61f383464aaf2bb0e2f8e772a1f01d486832464de363b951"
 dependencies = [
  "num-traits",
 ]
@@ -2016,7 +2017,7 @@ dependencies = [
  "nix 0.29.0",
  "num-derive",
  "num-traits",
- "ordered-float 4.2.0",
+ "ordered-float 4.6.0",
  "pest",
  "pest_derive",
  "phf 0.11.2",
@@ -2369,7 +2370,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f2ab60e120fd6eaa68d9567f3226e876684639d22a4219b313ff69ec0ccd5ac"
 dependencies = [
  "log",
- "ordered-float 4.2.0",
+ "ordered-float 4.6.0",
  "strsim 0.11.1",
  "thiserror 1.0.38",
  "wezterm-dynamic-derive",

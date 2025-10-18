@@ -20,6 +20,7 @@ mod protocol;
 mod server;
 mod settings;
 mod state;
+mod term;
 mod theme;
 mod ui_keymap;
 mod ui_procs;

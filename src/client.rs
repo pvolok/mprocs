@@ -3,9 +3,8 @@ use std::io::{stdout, Write};
 use crossterm::{
   cursor::SetCursorStyle,
   event::{
-    DisableMouseCapture, EnableMouseCapture, Event, EventStream,
-    KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
-    PushKeyboardEnhancementFlags,
+    DisableMouseCapture, EnableMouseCapture, Event, KeyboardEnhancementFlags,
+    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
   },
   execute, queue,
   terminal::{
@@ -13,10 +12,10 @@ use crossterm::{
     LeaveAlternateScreen,
   },
 };
-use futures::StreamExt;
 use scopeguard::defer;
-use tokio::select;
 
+#[cfg(unix)]
+use crate::term::term_driver::TermDriver;
 use crate::{
   error::ResultLogger,
   host::{receiver::MsgReceiver, sender::MsgSender},
@@ -68,16 +67,40 @@ async fn client_main_loop(
   let (width, height) = crossterm::terminal::size()?;
   sender.send(CltToSrv::Init { width, height })?;
 
-  let mut term_events = EventStream::new();
+  #[derive(Debug)]
+  enum LocalEvent {
+    ServerMsg(Option<SrvToClt>),
+    TermEvent(Option<std::io::Result<Event>>),
+  }
+  let (client_sender, mut client_receiver) =
+    tokio::sync::mpsc::unbounded_channel();
+
+  {
+    let client_sender = client_sender.clone();
+    tokio::spawn(async move {
+      loop {
+        let msg = receiver.recv().await;
+        client_sender
+          .send(LocalEvent::ServerMsg(msg.transpose().ok().flatten()))
+          .log_ignore();
+      }
+    });
+  }
+
+  let mut term_driver = TermDriver::create()?;
+  term_driver.enable_tui()?;
+  term_driver
+    .listen(
+      |e| LocalEvent::TermEvent(Some(Ok(e))),
+      client_sender.clone(),
+    )
+    .log_ignore();
+
   loop {
-    #[derive(Debug)]
-    enum LocalEvent {
-      ServerMsg(Option<SrvToClt>),
-      TermEvent(Option<std::io::Result<Event>>),
-    }
-    let event: LocalEvent = select! {
-      msg = receiver.recv() => LocalEvent::ServerMsg(msg.transpose()?),
-      event = term_events.next() => LocalEvent::TermEvent(event),
+    let event = if let Some(event) = client_receiver.recv().await {
+      event
+    } else {
+      break;
     };
     match event {
       LocalEvent::ServerMsg(msg) => match msg {

@@ -27,7 +27,7 @@ assert_matches = "1.5.0"
 base64 = "0.22.0"
 clap = { version = "4.3.19", features = ["cargo"] }
 clipboard-win = "5.3.1"
-crossterm = { version = "0.29", features = ["event-stream", "serde"] }
+crossterm = { version = "0.29", features = ["serde"] }
 dunce = "1.0.4"
 # Excluded "textfilter" feature that depends on regex (~0.7 MiB).
 flexi_logger = { version = "0.31.2", default-features = false, features = [
@@ -66,6 +66,8 @@ bytes = "1.5.0"
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 scopeguard = "1.2.0"
 itoa = "1"
+rustix = { version = "1", features = ["all-apis"] }
+signal-hook = "0.3"
 
 [target."cfg(unix)".dependencies]
 daemonize = "0.5.0"
