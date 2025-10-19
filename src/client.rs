@@ -1,23 +1,12 @@
 use std::io::{stdout, Write};
 
 use crossterm::{
-  cursor::SetCursorStyle,
-  event::{
-    DisableMouseCapture, EnableMouseCapture, Event, KeyboardEnhancementFlags,
-    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
-  },
-  execute, queue,
-  terminal::{
-    disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
-    LeaveAlternateScreen,
-  },
+  cursor::SetCursorStyle, event::Event, execute, queue, terminal::ClearType,
 };
-use scopeguard::defer;
 
 #[cfg(unix)]
 use crate::term::term_driver::TermDriver;
 use crate::{
-  error::ResultLogger,
   host::{receiver::MsgReceiver, sender::MsgSender},
   protocol::{CltToSrv, CursorStyle, SrvToClt},
 };
@@ -26,41 +15,19 @@ pub async fn client_main(
   sender: MsgSender<CltToSrv>,
   receiver: MsgReceiver<SrvToClt>,
 ) -> anyhow::Result<()> {
-  enable_raw_mode()?;
-  defer!(disable_raw_mode().log_ignore());
+  let mut term_driver = TermDriver::create()?;
 
-  // https://wezfurlong.org/wezterm/config/key-encoding.html#xterm-modifyotherkeys
-  // If xterm modifyOtherKeys is enabled in iTerm2 then Ctrl prefixed key
-  // presses are not captured. That is while using crossterm.
-  // But termwiz works well, even though it seems to be using modifyOtherKeys
-  // also.
-  // PushKeyboardEnhancementFlags fixes this issue in iTerm2.
-  let (otherkeys_on, otherkeys_off) = ("\x1b[>4;2m", "\x1b[>4;0m");
+  let result = client_main_loop(&mut term_driver, sender, receiver).await;
 
-  execute!(
-    std::io::stdout(),
-    EnterAlternateScreen,
-    Clear(ClearType::All),
-    EnableMouseCapture,
-    crossterm::style::Print(otherkeys_on),
-    PushKeyboardEnhancementFlags(
-      KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-    )
-  )?;
+  if let Err(err) = term_driver.destroy() {
+    log::error!("Term driver destroy error: {:?}", err);
+  }
 
-  defer!(execute!(
-    std::io::stdout(),
-    PopKeyboardEnhancementFlags,
-    crossterm::style::Print(otherkeys_off),
-    DisableMouseCapture,
-    LeaveAlternateScreen
-  )
-  .log_ignore());
-
-  client_main_loop(sender, receiver).await
+  result
 }
 
 async fn client_main_loop(
+  term_driver: &mut TermDriver,
   mut sender: MsgSender<CltToSrv>,
   mut receiver: MsgReceiver<SrvToClt>,
 ) -> anyhow::Result<()> {
@@ -70,37 +37,17 @@ async fn client_main_loop(
   #[derive(Debug)]
   enum LocalEvent {
     ServerMsg(Option<SrvToClt>),
-    TermEvent(Option<std::io::Result<Event>>),
+    TermEvent(std::io::Result<Option<Event>>),
   }
-  let (client_sender, mut client_receiver) =
-    tokio::sync::mpsc::unbounded_channel();
-
-  {
-    let client_sender = client_sender.clone();
-    tokio::spawn(async move {
-      loop {
-        let msg = receiver.recv().await;
-        client_sender
-          .send(LocalEvent::ServerMsg(msg.transpose().ok().flatten()))
-          .log_ignore();
-      }
-    });
-  }
-
-  let mut term_driver = TermDriver::create()?;
-  term_driver.enable_tui()?;
-  term_driver
-    .listen(
-      |e| LocalEvent::TermEvent(Some(Ok(e))),
-      client_sender.clone(),
-    )
-    .log_ignore();
 
   loop {
-    let event = if let Some(event) = client_receiver.recv().await {
-      event
-    } else {
-      break;
+    let event = tokio::select! {
+      msg = receiver.recv() => {
+        LocalEvent::ServerMsg(msg.transpose().ok().flatten())
+      }
+      evt = term_driver.input() => {
+        LocalEvent::TermEvent(evt)
+      }
     };
     match event {
       LocalEvent::ServerMsg(msg) => match msg {
@@ -156,8 +103,8 @@ async fn client_main_loop(
         },
         _ => break,
       },
-      LocalEvent::TermEvent(event) => match event {
-        Some(Ok(event)) => sender.send(CltToSrv::Key(event))?,
+      LocalEvent::TermEvent(event) => match event? {
+        Some(event) => sender.send(CltToSrv::Key(event))?,
         _ => break,
       },
     }

@@ -1,4 +1,6 @@
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent};
+
+use crate::term::internal::InternalTermEvent as E;
 
 pub struct InputParser {
   buf: Vec<u8>,
@@ -11,7 +13,7 @@ impl InputParser {
 
   pub fn parse_input<F>(&mut self, input: &[u8], mut f: F)
   where
-    F: FnMut(crossterm::event::Event),
+    F: FnMut(E),
   {
     let more = false;
     let mut i = 0;
@@ -31,7 +33,7 @@ impl InputParser {
             if more {
               break;
             } else {
-              f(Event::Key(KeyEvent::new(KeyCode::Esc, Mods::NONE)));
+              f(E::Key(KeyEvent::new(KeyCode::Esc, Mods::NONE)));
               consumed = i;
               continue;
             }
@@ -48,31 +50,31 @@ impl InputParser {
               match next_char {
                 b'A' => {
                   consumed = i;
-                  f(Event::Key(KeyEvent::new(KeyCode::Up, Mods::NONE)));
+                  f(E::Key(KeyEvent::new(KeyCode::Up, Mods::NONE)));
                 }
                 b'B' => {
                   consumed = i;
-                  f(Event::Key(KeyEvent::new(KeyCode::Down, Mods::NONE)));
+                  f(E::Key(KeyEvent::new(KeyCode::Down, Mods::NONE)));
                 }
                 b'C' => {
                   consumed = i;
-                  f(Event::Key(KeyEvent::new(KeyCode::Right, Mods::NONE)));
+                  f(E::Key(KeyEvent::new(KeyCode::Right, Mods::NONE)));
                 }
                 b'D' => {
                   consumed = i;
-                  f(Event::Key(KeyEvent::new(KeyCode::Left, Mods::NONE)));
+                  f(E::Key(KeyEvent::new(KeyCode::Left, Mods::NONE)));
                 }
                 b'F' => {
                   consumed = i;
-                  f(Event::Key(KeyEvent::new(KeyCode::End, Mods::NONE)));
+                  f(E::Key(KeyEvent::new(KeyCode::End, Mods::NONE)));
                 }
                 b'H' => {
                   consumed = i;
-                  f(Event::Key(KeyEvent::new(KeyCode::Home, Mods::NONE)));
+                  f(E::Key(KeyEvent::new(KeyCode::Home, Mods::NONE)));
                 }
                 val @ b'P'..=b'S' => {
                   consumed = i;
-                  f(Event::Key(KeyEvent::new(
+                  f(E::Key(KeyEvent::new(
                     KeyCode::F(1 + val - b'P'),
                     Mods::NONE,
                   )));
@@ -89,7 +91,7 @@ impl InputParser {
               consumed = i;
             }
             b'\x1B' => {
-              f(Event::Key(KeyEvent::new(KeyCode::Esc, Mods::NONE)));
+              f(E::Key(KeyEvent::new(KeyCode::Esc, Mods::NONE)));
               consumed = i;
             }
             _ => {
@@ -99,38 +101,38 @@ impl InputParser {
           }
         }
         b'\r' => {
-          f(Event::Key(KeyEvent::new(KeyCode::Enter, Mods::NONE)));
+          f(E::Key(KeyEvent::new(KeyCode::Enter, Mods::NONE)));
           consumed = i;
         }
         b'\n' => {
           // TODO: Check for Ctrl-J.
-          f(Event::Key(KeyEvent::new(KeyCode::Enter, Mods::NONE)));
+          f(E::Key(KeyEvent::new(KeyCode::Enter, Mods::NONE)));
           consumed = i;
         }
         b'\t' => {
-          f(Event::Key(KeyEvent::new(KeyCode::Tab, Mods::NONE)));
+          f(E::Key(KeyEvent::new(KeyCode::Tab, Mods::NONE)));
           consumed = i;
         }
         b'\x7F' => {
-          f(Event::Key(KeyEvent::new(KeyCode::Backspace, Mods::NONE)));
+          f(E::Key(KeyEvent::new(KeyCode::Backspace, Mods::NONE)));
           consumed = i;
         }
         c @ b'\x01'..=b'\x1A' => {
-          f(Event::Key(KeyEvent::new(
+          f(E::Key(KeyEvent::new(
             KeyCode::Char((c - 0x1 + b'a') as char),
             Mods::CONTROL,
           )));
           consumed = i;
         }
         c @ b'\x1C'..=b'\x1F' => {
-          f(Event::Key(KeyEvent::new(
+          f(E::Key(KeyEvent::new(
             KeyCode::Char((c - 0x1C + b'4') as char),
             Mods::CONTROL,
           )));
           consumed = i;
         }
         b'\0' => {
-          f(Event::Key(KeyEvent::new(KeyCode::Char(' '), Mods::CONTROL)));
+          f(E::Key(KeyEvent::new(KeyCode::Char(' '), Mods::CONTROL)));
           consumed = i;
         }
         first_byte => {
@@ -143,7 +145,7 @@ impl InputParser {
             match char {
               Ok(s) => {
                 let char = s.chars().next().unwrap();
-                f(Event::Key(KeyEvent::new(KeyCode::Char(char), Mods::NONE)));
+                f(E::Key(KeyEvent::new(KeyCode::Char(char), Mods::NONE)));
               }
               Err(_) => {
                 // Invalid utf-8 char.
@@ -163,9 +165,9 @@ impl InputParser {
   }
 }
 
-fn parse_csi<F>(buf: &[u8], f: F) -> usize
+fn parse_csi<F>(buf: &[u8], mut f: F) -> usize
 where
-  F: FnMut(crossterm::event::Event),
+  F: FnMut(E),
 {
   //
   // Parse
@@ -178,11 +180,16 @@ where
   while i < buf.len() && (0x20..=0x2f).contains(&buf[i]) {
     i += 1;
   }
-  let intermediates = &buf[params.len()..i];
+  let _intermediates = &buf[params.len()..i];
 
-  let final_ = if i < buf.len() && (0x40..=0x7E).contains(&buf[i]) {
-    i += 1;
-    buf[i - 1]
+  let final_ = if i < buf.len() {
+    if (0x40..=0x7E).contains(&buf[i]) {
+      i += 1;
+      buf[i - 1]
+    } else {
+      log::error!("TODO: CSI is incomplete.");
+      return i;
+    }
   } else {
     log::error!("CSI sequence has wrong final.");
     return i;
@@ -192,7 +199,18 @@ where
   // Handle
   //
 
-  log::error!("Skip input CSI: ESC [{:?}", &buf[..i]);
+  match final_ {
+    b'u' => {
+      // Kitty keyboard protocol reply.
+      if params.starts_with(b"?") {
+        if let Some(flags_char) = params.get(1) {
+          let flags = flags_char.wrapping_sub(b'0');
+          f(E::ReplyKittyKeyboard(flags));
+        }
+      }
+    }
+    _ => (),
+  }
 
   i
 }
