@@ -118,7 +118,7 @@ impl TermDriver {
               Ok(read_count) => {
                 let slice = &read_buf[..read_count];
                 input_parser
-                  .parse_input(slice, |e| sender.send(e).log_ignore());
+                  .parse_input(slice, true, |e| sender.send(e).log_ignore());
               }
               Err(err) => log::error!("stdin(err): {:?}", err),
             }
