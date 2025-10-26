@@ -1,7 +1,7 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use crossterm::event::{
   KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MediaKeyCode,
-  ModifierKeyCode,
+  ModifierKeyCode, MouseButton, MouseEvent, MouseEventKind,
 };
 
 use crate::term::internal::InternalTermEvent as E;
@@ -90,9 +90,37 @@ impl InputParser {
               }
             }
             b'[' => {
-              let len = parse_csi(&buf[i..], is_raw_mode, &mut f);
-              i += len;
-              consumed = i;
+              if let Some(b'M') = buf.get(i) {
+                // ESC [ M CB Cx Cy
+                // http://www.xfree86.org/current/ctlseqs.html#Mouse%20Tracking
+                i += 1; // M
+                if i + 3 >= buf.len() {
+                  break;
+                }
+                let b = buf[i].saturating_sub(32);
+                let x = u16::from(buf[i + 1].saturating_sub(32)) - 1;
+                let y = u16::from(buf[i + 2].saturating_sub(32)) - 1;
+                i += 3;
+                consumed = i;
+                match parse_cb(b) {
+                  Ok((kind, modifiers)) => {
+                    f(E::Mouse(MouseEvent {
+                      kind,
+                      modifiers,
+                      column: x,
+                      row: y,
+                    }));
+                  }
+                  Err(err) => {
+                    log::error!("'CSI M bxy' error: {}", err);
+                  }
+                }
+              } else {
+                // Most of CSI
+                let len = parse_csi(&buf[i..], is_raw_mode, &mut f);
+                i += len;
+                consumed = i;
+              }
             }
             b'\x1B' => {
               f(E::Key(KeyEvent::new(KeyCode::Esc, Mods::NONE)));
@@ -169,7 +197,7 @@ impl InputParser {
   }
 }
 
-fn parse_csi<F>(buf: &[u8], is_raw_mode: bool, mut f: F) -> usize
+fn parse_csi<F>(buf: &[u8], is_raw_mode: bool, f: F) -> usize
 where
   F: FnMut(E),
 {
@@ -184,7 +212,7 @@ where
   while i < buf.len() && (0x20..=0x2f).contains(&buf[i]) {
     i += 1;
   }
-  let _intermediates = &buf[params.len()..i];
+  let intermediates = &buf[params.len()..i];
 
   let final_ = if i < buf.len() {
     if (0x40..=0x7E).contains(&buf[i]) {
@@ -199,10 +227,25 @@ where
     return i;
   };
 
-  //
-  // Handle
-  //
+  match parse_csi_impl(buf, params, intermediates, final_, is_raw_mode, f) {
+    Ok(()) => (),
+    Err(err) => log::error!("CSI error: {}", err),
+  }
 
+  i
+}
+
+fn parse_csi_impl<F>(
+  buf: &[u8],
+  params: &[u8],
+  intermediates: &[u8],
+  final_: u8,
+  is_raw_mode: bool,
+  mut f: F,
+) -> anyhow::Result<()>
+where
+  F: FnMut(E),
+{
   match final_ {
     b'u' => {
       // Kitty keyboard protocol reply.
@@ -214,13 +257,7 @@ where
       } else {
         // CSI unicode-key-code:alternate-key-codes ; modifiers:event-type ; text-as-codepoints u
 
-        let (code, mods_param, kind) = match parse_csi_u(params) {
-          Ok(code_mods) => code_mods,
-          Err(err) => {
-            log::error!("Failed to parse CSI-u: {}", err);
-            return i;
-          }
-        };
+        let (code, mods_param, kind) = parse_csi_u(params)?;
 
         let mut mods = parse_modifiers(mods_param);
         let kind = parse_key_event_kind(kind);
@@ -254,8 +291,12 @@ where
               KeyEventState::empty(),
             )
           } else {
-            log::error!("Failed to parse CSI-u: {:?}", buf);
-            return i;
+            bail!(
+              "Unhandled CSI-u {:?} {:?} {}",
+              params,
+              intermediates,
+              final_
+            );
           }
         };
 
@@ -304,12 +345,69 @@ where
         f(E::Key(key_event));
       }
     }
+    b'm' | b'M' if params.starts_with(b"<") => {
+      // SGR mouse
+      // CSI < Cb ; Cx ; Cy (;) (M or m)
+      let params_str = str::from_utf8(params)?;
+      let mut params = params_str[1..].split(';');
+
+      let b = params.next().ok_or_else(|| anyhow!("No Cb param"))?;
+      let b = b.parse::<u8>()?;
+      let (kind, modifiers) = parse_cb(b)?;
+      let kind = if final_ == b'm' {
+        match kind {
+          MouseEventKind::Down(button) => MouseEventKind::Up(button),
+          other => other,
+        }
+      } else {
+        kind
+      };
+
+      let x = params.next().ok_or_else(|| anyhow!("No Cx param"))?;
+      let x = x.parse::<u16>()? - 1;
+      let y = params.next().ok_or_else(|| anyhow!("No Cy param"))?;
+      let y = y.parse::<u16>()? - 1;
+
+      f(E::Mouse(MouseEvent {
+        kind,
+        modifiers,
+        column: x,
+        row: y,
+      }));
+    }
+    b'M' => {
+      // rxvt mouse encoding:
+      // CSI Cb ; Cx ; Cy ; M
+      let params_str = str::from_utf8(params)?;
+      let mut params = params_str.split(';');
+
+      let b = params.next().ok_or_else(|| anyhow!("No rxvt Cb param"))?;
+      let b = b.parse::<u8>()?.saturating_sub(32);
+      let (kind, modifiers) = parse_cb(b)?;
+
+      let x = params.next().ok_or_else(|| anyhow!("No rxvt Cx param"))?;
+      let x = x.parse::<u16>()? - 1;
+      let y = params.next().ok_or_else(|| anyhow!("No rxvt Cy param"))?;
+      let y = y.parse::<u16>()? - 1;
+
+      f(E::Mouse(MouseEvent {
+        kind,
+        modifiers,
+        column: x,
+        row: y,
+      }));
+    }
     _ => {
-      log::debug!("Unknown CSI: {}", str::from_utf8(buf).unwrap_or("???"))
+      log::debug!(
+        "Unknown CSI: {} ({:?}, {:?}, {})",
+        str::from_utf8(buf).unwrap_or("???"),
+        params,
+        intermediates,
+        final_
+      );
     }
   }
-
-  i
+  Ok(())
 }
 
 fn parse_csi_u(params: &[u8]) -> anyhow::Result<(u32, u8, u8)> {
@@ -479,6 +577,55 @@ fn translate_functional_key_code(
   }
 
   None
+}
+
+/// Cb is the byte of a mouse input that contains the button being used, the key modifiers being
+/// held and whether the mouse is dragging or not.
+///
+/// Bit layout of cb, from low to high:
+///
+/// - button number
+/// - button number
+/// - shift
+/// - meta (alt)
+/// - control
+/// - mouse is dragging
+/// - button number
+/// - button number
+fn parse_cb(cb: u8) -> anyhow::Result<(MouseEventKind, KeyModifiers)> {
+  let button_number = (cb & 0b0000_0011) | ((cb & 0b1100_0000) >> 4);
+  let dragging = cb & 0b0010_0000 == 0b0010_0000;
+
+  let kind = match (button_number, dragging) {
+    (0, false) => MouseEventKind::Down(MouseButton::Left),
+    (1, false) => MouseEventKind::Down(MouseButton::Middle),
+    (2, false) => MouseEventKind::Down(MouseButton::Right),
+    (0, true) => MouseEventKind::Drag(MouseButton::Left),
+    (1, true) => MouseEventKind::Drag(MouseButton::Middle),
+    (2, true) => MouseEventKind::Drag(MouseButton::Right),
+    (3, false) => MouseEventKind::Up(MouseButton::Left),
+    (3, true) | (4, true) | (5, true) => MouseEventKind::Moved,
+    (4, false) => MouseEventKind::ScrollUp,
+    (5, false) => MouseEventKind::ScrollDown,
+    (6, false) => MouseEventKind::ScrollLeft,
+    (7, false) => MouseEventKind::ScrollRight,
+    // We do not support other buttons.
+    _ => bail!("Failed to parse Cb param button"),
+  };
+
+  let mut modifiers = KeyModifiers::empty();
+
+  if cb & 0b0000_0100 == 0b0000_0100 {
+    modifiers |= KeyModifiers::SHIFT;
+  }
+  if cb & 0b0000_1000 == 0b0000_1000 {
+    modifiers |= KeyModifiers::ALT;
+  }
+  if cb & 0b0001_0000 == 0b0001_0000 {
+    modifiers |= KeyModifiers::CONTROL;
+  }
+
+  Ok((kind, modifiers))
 }
 
 fn utf8_char_len(first_byte: u8) -> usize {

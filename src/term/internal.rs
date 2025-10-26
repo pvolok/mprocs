@@ -1,8 +1,9 @@
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyEvent, MouseEvent};
 
 #[derive(Debug)]
 pub enum InternalTermEvent {
   Key(KeyEvent),
+  Mouse(MouseEvent),
   Resize(u16, u16),
 
   InitTimeout,
