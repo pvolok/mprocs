@@ -126,67 +126,36 @@ impl InputParser {
               f(E::Key(KeyEvent::new(KeyCode::Esc, Mods::NONE)));
               consumed = i;
             }
-            _ => {
-              log::error!("TODO: Handle ESC[..");
+            c => {
+              match parse_char_key(c, &buf[i - 1..]) {
+                Ok((used, key)) => {
+                  i += used;
+                  if let Some(mut key) = key {
+                    key.modifiers |= Mods::ALT;
+                    f(E::Key(key));
+                  }
+                }
+                Err(err) => {
+                  log::error!("Parse esc-char key error: {}", err);
+                }
+              }
               consumed = i;
             }
           }
         }
-        b'\r' => {
-          f(E::Key(KeyEvent::new(KeyCode::Enter, Mods::NONE)));
-          consumed = i;
-        }
-        b'\n' => {
-          // TODO: Check for Ctrl-J.
-          f(E::Key(KeyEvent::new(KeyCode::Enter, Mods::NONE)));
-          consumed = i;
-        }
-        b'\t' => {
-          f(E::Key(KeyEvent::new(KeyCode::Tab, Mods::NONE)));
-          consumed = i;
-        }
-        b'\x7F' => {
-          f(E::Key(KeyEvent::new(KeyCode::Backspace, Mods::NONE)));
-          consumed = i;
-        }
-        c @ b'\x01'..=b'\x1A' => {
-          f(E::Key(KeyEvent::new(
-            KeyCode::Char((c - 0x1 + b'a') as char),
-            Mods::CONTROL,
-          )));
-          consumed = i;
-        }
-        c @ b'\x1C'..=b'\x1F' => {
-          f(E::Key(KeyEvent::new(
-            KeyCode::Char((c - 0x1C + b'4') as char),
-            Mods::CONTROL,
-          )));
-          consumed = i;
-        }
-        b'\0' => {
-          f(E::Key(KeyEvent::new(KeyCode::Char(' '), Mods::CONTROL)));
-          consumed = i;
-        }
-        first_byte => {
-          let char_len = utf8_char_len(first_byte);
-          if char_len == 0 {
-            // Ignore invalid byte.
-            consumed = i;
-          } else if i - 1 + char_len <= buf.len() {
-            let char = str::from_utf8(&buf[i - 1..i - 1 + char_len]);
-            match char {
-              Ok(s) => {
-                let char = s.chars().next().unwrap();
-                f(E::Key(KeyEvent::new(KeyCode::Char(char), Mods::NONE)));
-              }
-              Err(_) => {
-                // Invalid utf-8 char.
+        c => {
+          match parse_char_key(c, &buf[i - 1..]) {
+            Ok((used, key)) => {
+              i += used;
+              if let Some(key) = key {
+                f(E::Key(key));
               }
             }
-            consumed = i - 1 + char_len;
-          } else {
-            // Not enough bytes.
+            Err(err) => {
+              log::error!("Parse char key error: {}", err);
+            }
           }
+          consumed = i;
         }
       }
     }
@@ -197,13 +166,54 @@ impl InputParser {
   }
 }
 
+fn parse_char_key(
+  c: u8,
+  buf: &[u8],
+) -> anyhow::Result<(usize, Option<KeyEvent>)> {
+  use crossterm::event::KeyModifiers as Mods;
+
+  let mut i = 0;
+  let key = match c {
+    b'\r' => KeyEvent::new(KeyCode::Enter, Mods::NONE),
+    b'\n' => KeyEvent::new(KeyCode::Enter, Mods::NONE),
+    b'\t' => KeyEvent::new(KeyCode::Tab, Mods::NONE),
+    b'\x7F' => KeyEvent::new(KeyCode::Backspace, Mods::NONE),
+    c @ b'\x01'..=b'\x1A' => {
+      KeyEvent::new(KeyCode::Char((c - 0x1 + b'a') as char), Mods::CONTROL)
+    }
+    c @ b'\x1C'..=b'\x1F' => {
+      KeyEvent::new(KeyCode::Char((c - 0x1C + b'4') as char), Mods::CONTROL)
+    }
+    b'\0' => KeyEvent::new(KeyCode::Char(' '), Mods::CONTROL),
+    first_byte => {
+      let char_len = utf8_char_len(first_byte);
+      if char_len == 0 {
+        // Ignore invalid byte.
+        return Ok((0, None));
+      } else if char_len - 1 <= buf.len() {
+        let char = str::from_utf8(&buf[..char_len]);
+        i = char_len - 1;
+        match char {
+          Ok(s) => {
+            let char = s.chars().next().unwrap();
+            KeyEvent::new(KeyCode::Char(char), Mods::NONE)
+          }
+          Err(_) => {
+            bail!("Invalid utf-8 char");
+          }
+        }
+      } else {
+        bail!("Not enough bytes");
+      }
+    }
+  };
+  Ok((i, Some(key)))
+}
+
 fn parse_csi<F>(buf: &[u8], is_raw_mode: bool, f: F) -> usize
 where
   F: FnMut(E),
 {
-  //
-  // Parse
-  //
   let mut i = 0;
   while i < buf.len() && (0x30..=0x3f).contains(&buf[i]) {
     i += 1;
@@ -247,6 +257,45 @@ where
   F: FnMut(E),
 {
   match final_ {
+    b'A' | b'B' | b'C' | b'D' | b'F' | b'H' | b'P' | b'Q' | b'S' => {
+      let code = match final_ {
+        b'A' => KeyCode::Up,
+        b'B' => KeyCode::Down,
+        b'C' => KeyCode::Right,
+        b'D' => KeyCode::Left,
+        b'F' => KeyCode::End,
+        b'H' => KeyCode::Home,
+        b'P' => KeyCode::F(1),
+        b'Q' => KeyCode::F(2),
+        b'S' => KeyCode::F(4),
+        _ => unreachable!("Unhanled CSI [A|B|C|...] key"),
+      };
+
+      let params = str::from_utf8(params)?;
+      let mut params = params.split(';');
+
+      params.next();
+
+      let mods = if let Some(mods) = params.next() {
+        parse_modifiers(mods.parse::<u8>()?)
+      } else {
+        KeyModifiers::NONE
+      };
+
+      f(E::Key(KeyEvent::new(code, mods)));
+    }
+    b'c' if params.starts_with(b"?") => {
+      f(E::PrimaryDeviceAttributes);
+    }
+    b'Z' => {
+      f(E::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)));
+    }
+    b'I' => {
+      f(E::FocusGained);
+    }
+    b'O' => {
+      f(E::FocusLost);
+    }
     b'u' => {
       // Kitty keyboard protocol reply.
       if params.starts_with(b"?") {
@@ -257,7 +306,7 @@ where
       } else {
         // CSI unicode-key-code:alternate-key-codes ; modifiers:event-type ; text-as-codepoints u
 
-        let (code, mods_param, kind) = parse_csi_u(params)?;
+        let (code, alt_code, mods_param, kind) = parse_csi_u(params)?;
 
         let mut mods = parse_modifiers(mods_param);
         let kind = parse_key_event_kind(kind);
@@ -329,7 +378,7 @@ where
         // contain an additional codepoint separated by a ':' character which contains
         // the shifted character according to the keyboard layout.
         if mods.contains(KeyModifiers::SHIFT) {
-          if let Some(shifted_c) = char::from_u32(code) {
+          if let Some(shifted_c) = alt_code.and_then(char::from_u32) {
             keycode = KeyCode::Char(shifted_c);
             mods.set(KeyModifiers::SHIFT, false);
           }
@@ -397,6 +446,56 @@ where
         row: y,
       }));
     }
+    b'R' => {
+      // CSI Cy ; Cx R
+      let params_str = str::from_utf8(params)?;
+      let mut params = params_str.split(';');
+
+      let y = params.next().ok_or_else(|| anyhow!("No CSI-R Cy param"))?;
+      let y = y.parse::<u16>()?.saturating_sub(1);
+      let x = params.next().ok_or_else(|| anyhow!("No CSI-R Cx param"))?;
+      let x = x.parse::<u16>()?.saturating_sub(1);
+
+      f(E::CursorPos(x, y));
+    }
+    b'~' => {
+      let params_str = str::from_utf8(params)?;
+      let mut params = params_str.split(';');
+
+      let code = params
+        .next()
+        .ok_or_else(|| anyhow!("No key param in CSI ~"))?
+        .parse::<u8>()?;
+      let code = match code {
+        1 | 7 => KeyCode::Home,
+        2 => KeyCode::Insert,
+        3 => KeyCode::Delete,
+        4 | 8 => KeyCode::End,
+        5 => KeyCode::PageUp,
+        6 => KeyCode::PageDown,
+        v @ 11..=15 => KeyCode::F(v - 10),
+        v @ 17..=21 => KeyCode::F(v - 11),
+        v @ 23..=26 => KeyCode::F(v - 12),
+        v @ 28..=29 => KeyCode::F(v - 15),
+        v @ 31..=34 => KeyCode::F(v - 17),
+        _ => bail!("Wrong key param in CSI ~"),
+      };
+
+      let mods_param = params.next();
+      let (mods, state) = if let Some(mods_param) = mods_param {
+        let mask = mods_param.parse::<u8>()?;
+        (parse_modifiers(mask), parse_modifiers_to_state(mask))
+      } else {
+        (KeyModifiers::NONE, KeyEventState::NONE)
+      };
+
+      f(E::Key(KeyEvent::new_with_kind_and_state(
+        code,
+        mods,
+        KeyEventKind::Press,
+        state,
+      )));
+    }
     _ => {
       log::debug!(
         "Unknown CSI: {} ({:?}, {:?}, {})",
@@ -410,7 +509,7 @@ where
   Ok(())
 }
 
-fn parse_csi_u(params: &[u8]) -> anyhow::Result<(u32, u8, u8)> {
+fn parse_csi_u(params: &[u8]) -> anyhow::Result<(u32, Option<u32>, u8, u8)> {
   let params = str::from_utf8(params)?;
   let mut params = params.split(';');
 
@@ -418,6 +517,8 @@ fn parse_csi_u(params: &[u8]) -> anyhow::Result<(u32, u8, u8)> {
   let mut code_param = code_param.split(':');
   let code = code_param.next().ok_or_else(|| anyhow!("No code param"))?;
   let code = code.parse::<u32>()?;
+
+  let alt_code = code_param.next().map(|c| c.parse::<u32>()).transpose()?;
 
   let mods_param =
     params.next().ok_or_else(|| anyhow!("No modifiers param"))?;
@@ -428,7 +529,7 @@ fn parse_csi_u(params: &[u8]) -> anyhow::Result<(u32, u8, u8)> {
   let mods = mods.parse::<u8>()?;
   let kind = mods_param.next().map_or(Ok(1), |n| n.parse::<u8>())?;
 
-  Ok((code, mods, kind))
+  Ok((code, alt_code, mods, kind))
 }
 
 fn parse_modifiers(mask: u8) -> KeyModifiers {

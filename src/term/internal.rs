@@ -5,6 +5,10 @@ pub enum InternalTermEvent {
   Key(KeyEvent),
   Mouse(MouseEvent),
   Resize(u16, u16),
+  FocusGained,
+  FocusLost,
+  CursorPos(u16, u16),
+  PrimaryDeviceAttributes,
 
   InitTimeout,
   ReplyKittyKeyboard(u8),

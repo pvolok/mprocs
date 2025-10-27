@@ -190,7 +190,7 @@ impl TermDriver {
       };
       match event {
         InternalTermEvent::Key(key_event) => {
-          return Ok(Some(Event::Key(key_event)))
+          return Ok(Some(Event::Key(key_event)));
         }
         InternalTermEvent::Mouse(mouse_event) => {
           return Ok(Some(Event::Mouse(mouse_event)))
@@ -198,7 +198,22 @@ impl TermDriver {
         InternalTermEvent::Resize(cols, rows) => {
           return Ok(Some(Event::Resize(cols, rows)))
         }
+        InternalTermEvent::FocusGained => return Ok(Some(Event::FocusGained)),
+        InternalTermEvent::FocusLost => return Ok(Some(Event::FocusLost)),
+        InternalTermEvent::CursorPos(_x, _y) => (),
+        InternalTermEvent::PrimaryDeviceAttributes => {
+          if let Some(timeout) = &self.init_timeout {
+            timeout.abort();
+          }
+          self.init_timeout = None;
+          if matches!(self.keyboard, KeyboardMode::Unknown) {
+            self.keyboard = KeyboardMode::ModifyOtherKeys;
+            self.stdout.write_all(b"\x1b[>4;2m")?;
+          }
+        }
+
         InternalTermEvent::InitTimeout => {
+          self.init_timeout = None;
           if matches!(self.keyboard, KeyboardMode::Unknown) {
             self.keyboard = KeyboardMode::ModifyOtherKeys;
             self.stdout.write_all(b"\x1b[>4;2m")?;
