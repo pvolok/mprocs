@@ -56,7 +56,7 @@ unicode-segmentation = "1.12.0"
 unicode-width = "0.2.0"
 which = "8.0.0"
 xdg = "3.0.0"
-termwiz = "0.23.3"
+termwiz = { version = "0.23.3", features = ["use_serde"] }
 portable-pty = { version = "0.9" }
 bitflags = { version = "2.3.3", features = ["serde"] }
 compact_str = { version = "0.9.0", features = ["serde"] }

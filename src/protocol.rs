@@ -1,7 +1,11 @@
 use std::fmt::Debug;
 
-use crossterm::{event::Event, style::Attribute};
+use crossterm::event::Event;
 use serde::{Deserialize, Serialize};
+use termwiz::{
+  cell::{AttributeChange, Blink, Intensity, Underline},
+  color::{ColorAttribute, SrgbaTuple},
+};
 use tui::{backend::Backend, style::Modifier};
 
 use crate::{error::ResultLogger, host::sender::MsgSender};
@@ -9,9 +13,7 @@ use crate::{error::ResultLogger, host::sender::MsgSender};
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum SrvToClt {
   Print(String),
-  SetAttr(Attribute),
-  SetFg(Color),
-  SetBg(Color),
+  SetAttr(AttributeChange),
   SetCursor { x: u16, y: u16 },
   ShowCursor,
   HideCursor,
@@ -198,6 +200,38 @@ impl From<Color> for crossterm::style::Color {
   }
 }
 
+impl From<Color> for termwiz::color::ColorSpec {
+  fn from(value: Color) -> Self {
+    use termwiz::color::ColorSpec as C;
+    match value {
+      Color::Reset => C::Default,
+      Color::Black => C::PaletteIndex(0),
+      Color::Red => C::PaletteIndex(1),
+      Color::Green => C::PaletteIndex(2),
+      Color::Yellow => C::PaletteIndex(3),
+      Color::Blue => C::PaletteIndex(4),
+      Color::Magenta => C::PaletteIndex(6),
+      Color::Cyan => C::PaletteIndex(6),
+      Color::Gray => C::PaletteIndex(7),
+      Color::DarkGray => C::PaletteIndex(8),
+      Color::LightRed => C::PaletteIndex(9),
+      Color::LightGreen => C::PaletteIndex(10),
+      Color::LightYellow => C::PaletteIndex(11),
+      Color::LightBlue => C::PaletteIndex(12),
+      Color::LightMagenta => C::PaletteIndex(13),
+      Color::LightCyan => C::PaletteIndex(14),
+      Color::White => C::PaletteIndex(15),
+      Color::Rgb(r, g, b) => C::TrueColor(termwiz::color::SrgbaTuple(
+        r as f32 / 255.0,
+        g as f32 / 255.0,
+        b as f32 / 255.0,
+        1.0,
+      )),
+      Color::Indexed(idx) => C::PaletteIndex(idx),
+    }
+  }
+}
+
 pub struct ProxyBackend {
   pub tx: MsgSender<SrvToClt>,
   pub height: u16,
@@ -237,67 +271,85 @@ impl Backend for ProxyBackend {
         let added = cell.modifier - modifier;
 
         if removed.contains(Modifier::REVERSED) {
-          self.send(SrvToClt::SetAttr(Attribute::NoReverse));
+          self.send(SrvToClt::SetAttr(AttributeChange::Reverse(false)));
         }
         if removed.contains(Modifier::BOLD) || removed.contains(Modifier::DIM) {
           // Bold and Dim are both reset by applying the Normal intensity
-          self.send(SrvToClt::SetAttr(Attribute::NormalIntensity));
+          self.send(SrvToClt::SetAttr(AttributeChange::Intensity(
+            Intensity::Normal,
+          )));
 
           // The remaining Bold and Dim attributes must be
           // reapplied after the intensity reset above.
           if cell.modifier.contains(Modifier::DIM) {
-            self.send(SrvToClt::SetAttr(Attribute::Dim));
+            self.send(SrvToClt::SetAttr(AttributeChange::Intensity(
+              Intensity::Half,
+            )));
           }
 
           if cell.modifier.contains(Modifier::BOLD) {
-            self.send(SrvToClt::SetAttr(Attribute::Bold));
+            self.send(SrvToClt::SetAttr(AttributeChange::Intensity(
+              Intensity::Bold,
+            )));
           }
         }
         if removed.contains(Modifier::ITALIC) {
-          self.send(SrvToClt::SetAttr(Attribute::NoItalic));
+          self.send(SrvToClt::SetAttr(AttributeChange::Italic(false)));
         }
         if removed.contains(Modifier::UNDERLINED) {
-          self.send(SrvToClt::SetAttr(Attribute::NoUnderline));
+          self.send(SrvToClt::SetAttr(AttributeChange::Underline(
+            Underline::None,
+          )));
         }
         if removed.contains(Modifier::CROSSED_OUT) {
-          self.send(SrvToClt::SetAttr(Attribute::NotCrossedOut));
+          self.send(SrvToClt::SetAttr(AttributeChange::StrikeThrough(false)));
         }
         if removed.contains(Modifier::SLOW_BLINK)
           || removed.contains(Modifier::RAPID_BLINK)
         {
-          self.send(SrvToClt::SetAttr(Attribute::NoBlink));
+          self.send(SrvToClt::SetAttr(AttributeChange::Blink(Blink::None)));
         }
 
         if added.contains(Modifier::REVERSED) {
-          self.send(SrvToClt::SetAttr(Attribute::Reverse));
+          self.send(SrvToClt::SetAttr(AttributeChange::Reverse(true)));
         }
         if added.contains(Modifier::BOLD) {
-          self.send(SrvToClt::SetAttr(Attribute::Bold));
+          self.send(SrvToClt::SetAttr(AttributeChange::Intensity(
+            Intensity::Bold,
+          )));
         }
         if added.contains(Modifier::ITALIC) {
-          self.send(SrvToClt::SetAttr(Attribute::Italic));
+          self.send(SrvToClt::SetAttr(AttributeChange::Italic(true)));
         }
         if added.contains(Modifier::UNDERLINED) {
-          self.send(SrvToClt::SetAttr(Attribute::Underlined));
+          self.send(SrvToClt::SetAttr(AttributeChange::Underline(
+            Underline::Single,
+          )));
         }
         if added.contains(Modifier::DIM) {
-          self.send(SrvToClt::SetAttr(Attribute::Dim));
+          self.send(SrvToClt::SetAttr(AttributeChange::Intensity(
+            Intensity::Half,
+          )));
         }
         if added.contains(Modifier::CROSSED_OUT) {
-          self.send(SrvToClt::SetAttr(Attribute::CrossedOut));
+          self.send(SrvToClt::SetAttr(AttributeChange::StrikeThrough(true)));
         }
         if added.contains(Modifier::SLOW_BLINK) {
-          self.send(SrvToClt::SetAttr(Attribute::SlowBlink));
+          self.send(SrvToClt::SetAttr(AttributeChange::Blink(Blink::Slow)));
         }
         if added.contains(Modifier::RAPID_BLINK) {
-          self.send(SrvToClt::SetAttr(Attribute::RapidBlink));
+          self.send(SrvToClt::SetAttr(AttributeChange::Blink(Blink::Rapid)));
         }
 
         modifier = cell.modifier;
       }
       if cell.fg != fg || cell.bg != bg {
-        self.send(SrvToClt::SetFg(cell.fg.into()));
-        self.send(SrvToClt::SetBg(cell.bg.into()));
+        self.send(SrvToClt::SetAttr(AttributeChange::Foreground(
+          tui_color_to_termwiz_color_attr(cell.fg),
+        )));
+        self.send(SrvToClt::SetAttr(AttributeChange::Background(
+          tui_color_to_termwiz_color_attr(cell.bg),
+        )));
         fg = cell.fg;
         bg = cell.bg;
       }
@@ -305,9 +357,12 @@ impl Backend for ProxyBackend {
       self.send(SrvToClt::Print(cell.symbol().to_string()));
     }
 
-    self.send(SrvToClt::SetFg(Color::Reset));
-    self.send(SrvToClt::SetBg(Color::Reset));
-    self.send(SrvToClt::SetAttr(Attribute::Reset));
+    self.send(SrvToClt::SetAttr(AttributeChange::Foreground(
+      ColorAttribute::Default,
+    )));
+    self.send(SrvToClt::SetAttr(AttributeChange::Background(
+      ColorAttribute::Default,
+    )));
 
     Ok(())
   }
@@ -375,5 +430,60 @@ impl Backend for ProxyBackend {
     let pos: tui::prelude::Position = position.into();
     self.send(SrvToClt::SetCursor { x: pos.x, y: pos.y });
     Ok(())
+  }
+}
+
+fn tui_color_to_termwiz_color_attr(
+  color: tui::style::Color,
+) -> termwiz::color::ColorAttribute {
+  match color {
+    tui::style::Color::Reset => termwiz::color::ColorAttribute::Default,
+    tui::style::Color::Black => termwiz::color::ColorAttribute::PaletteIndex(0),
+    tui::style::Color::Red => termwiz::color::ColorAttribute::PaletteIndex(1),
+    tui::style::Color::Green => termwiz::color::ColorAttribute::PaletteIndex(2),
+    tui::style::Color::Yellow => {
+      termwiz::color::ColorAttribute::PaletteIndex(3)
+    }
+    tui::style::Color::Blue => termwiz::color::ColorAttribute::PaletteIndex(4),
+    tui::style::Color::Magenta => {
+      termwiz::color::ColorAttribute::PaletteIndex(5)
+    }
+    tui::style::Color::Cyan => termwiz::color::ColorAttribute::PaletteIndex(6),
+    tui::style::Color::Gray => termwiz::color::ColorAttribute::PaletteIndex(7),
+    tui::style::Color::DarkGray => {
+      termwiz::color::ColorAttribute::PaletteIndex(8)
+    }
+    tui::style::Color::LightRed => {
+      termwiz::color::ColorAttribute::PaletteIndex(9)
+    }
+    tui::style::Color::LightGreen => {
+      termwiz::color::ColorAttribute::PaletteIndex(10)
+    }
+    tui::style::Color::LightYellow => {
+      termwiz::color::ColorAttribute::PaletteIndex(11)
+    }
+    tui::style::Color::LightBlue => {
+      termwiz::color::ColorAttribute::PaletteIndex(12)
+    }
+    tui::style::Color::LightMagenta => {
+      termwiz::color::ColorAttribute::PaletteIndex(13)
+    }
+    tui::style::Color::LightCyan => {
+      termwiz::color::ColorAttribute::PaletteIndex(14)
+    }
+    tui::style::Color::White => {
+      termwiz::color::ColorAttribute::PaletteIndex(15)
+    }
+    tui::style::Color::Rgb(r, g, b) => {
+      termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(SrgbaTuple(
+        255.0 / r as f32,
+        255.0 / g as f32,
+        255.0 / b as f32,
+        1.0,
+      ))
+    }
+    tui::style::Color::Indexed(idx) => {
+      termwiz::color::ColorAttribute::PaletteIndex(idx)
+    }
   }
 }

@@ -1,7 +1,10 @@
 use std::io::{stdout, Write};
 
-use crossterm::{
-  cursor::SetCursorStyle, event::Event, execute, queue, terminal::ClearType,
+use crossterm::event::Event;
+use termwiz::{
+  cell::AttributeChange,
+  color::{ColorAttribute, ColorSpec},
+  escape::{csi::Sgr, Action, OneBased, OperatingSystemCommand, CSI},
 };
 
 #[cfg(unix)]
@@ -53,48 +56,138 @@ async fn client_main_loop(
       LocalEvent::ServerMsg(msg) => match msg {
         Some(msg) => match msg {
           SrvToClt::Print(text) => {
-            queue!(std::io::stdout(), crossterm::style::Print(text))?;
+            std::io::stdout().write_all(text.as_bytes())?;
           }
           SrvToClt::SetAttr(attr) => {
-            queue!(std::io::stdout(), crossterm::style::SetAttribute(attr))?;
-          }
-          SrvToClt::SetFg(fg) => {
-            queue!(
-              std::io::stdout(),
-              crossterm::style::SetForegroundColor(fg.into())
-            )?;
-          }
-          SrvToClt::SetBg(bg) => {
-            queue!(
-              std::io::stdout(),
-              crossterm::style::SetBackgroundColor(bg.into())
-            )?;
+            let action = match attr {
+              AttributeChange::Intensity(intensity) => {
+                Action::CSI(CSI::Sgr(Sgr::Intensity(intensity)))
+              }
+              AttributeChange::Underline(underline) => {
+                Action::CSI(CSI::Sgr(Sgr::Underline(underline)))
+              }
+              AttributeChange::Italic(italic) => {
+                Action::CSI(CSI::Sgr(Sgr::Italic(italic)))
+              }
+              AttributeChange::Blink(blink) => {
+                Action::CSI(CSI::Sgr(Sgr::Blink(blink)))
+              }
+              AttributeChange::Reverse(reverse) => {
+                Action::CSI(CSI::Sgr(Sgr::Inverse(reverse)))
+              }
+              AttributeChange::StrikeThrough(on) => {
+                Action::CSI(CSI::Sgr(Sgr::StrikeThrough(on)))
+              }
+              AttributeChange::Invisible(invisible) => {
+                Action::CSI(CSI::Sgr(Sgr::Invisible(invisible)))
+              }
+              AttributeChange::Foreground(color_attribute) => {
+                let color = match color_attribute {
+                  ColorAttribute::TrueColorWithPaletteFallback(
+                    srgba_tuple,
+                    _,
+                  ) => ColorSpec::TrueColor(srgba_tuple),
+                  ColorAttribute::TrueColorWithDefaultFallback(srgba_tuple) => {
+                    ColorSpec::TrueColor(srgba_tuple)
+                  }
+                  ColorAttribute::PaletteIndex(idx) => {
+                    ColorSpec::PaletteIndex(idx)
+                  }
+                  ColorAttribute::Default => ColorSpec::Default,
+                };
+                Action::CSI(CSI::Sgr(Sgr::Foreground(color)))
+              }
+              AttributeChange::Background(color_attribute) => {
+                let color = match color_attribute {
+                  ColorAttribute::TrueColorWithPaletteFallback(
+                    srgba_tuple,
+                    _,
+                  ) => ColorSpec::TrueColor(srgba_tuple),
+                  ColorAttribute::TrueColorWithDefaultFallback(srgba_tuple) => {
+                    ColorSpec::TrueColor(srgba_tuple)
+                  }
+                  ColorAttribute::PaletteIndex(idx) => {
+                    ColorSpec::PaletteIndex(idx)
+                  }
+                  ColorAttribute::Default => ColorSpec::Default,
+                };
+                Action::CSI(CSI::Sgr(Sgr::Background(color)))
+              }
+              AttributeChange::Hyperlink(hyperlink) => {
+                Action::OperatingSystemCommand(Box::new(
+                  OperatingSystemCommand::SetHyperlink(
+                    hyperlink.map(|l| l.as_ref().clone()),
+                  ),
+                ))
+              }
+            };
+            write!(std::io::stdout(), "{}", action)?;
           }
           SrvToClt::SetCursor { x, y } => {
-            execute!(stdout(), crossterm::cursor::MoveTo(x, y))?;
+            let action = Action::CSI(CSI::Cursor(
+              termwiz::escape::csi::Cursor::Position {
+                line: OneBased::from_zero_based(y.into()),
+                col: OneBased::from_zero_based(x.into()),
+              },
+            ));
+            write!(stdout(), "{}", action)?;
           }
           SrvToClt::ShowCursor => {
-            execute!(stdout(), crossterm::cursor::Show)?;
+            let action = Action::CSI(CSI::Mode(
+              termwiz::escape::csi::Mode::SetDecPrivateMode(
+                termwiz::escape::csi::DecPrivateMode::Code(
+                  termwiz::escape::csi::DecPrivateModeCode::ShowCursor,
+                ),
+              ),
+            ));
+            write!(stdout(), "{}", action)?;
           }
           SrvToClt::HideCursor => {
-            execute!(stdout(), crossterm::cursor::Hide)?;
+            let action = Action::CSI(CSI::Mode(
+              termwiz::escape::csi::Mode::ResetDecPrivateMode(
+                termwiz::escape::csi::DecPrivateMode::Code(
+                  termwiz::escape::csi::DecPrivateModeCode::ShowCursor,
+                ),
+              ),
+            ));
+            write!(stdout(), "{}", action)?;
           }
           SrvToClt::CursorShape(cursor_style) => {
             let cursor_style = match cursor_style {
-              CursorStyle::Default => SetCursorStyle::DefaultUserShape,
-              CursorStyle::BlinkingBlock => SetCursorStyle::BlinkingBlock,
-              CursorStyle::SteadyBlock => SetCursorStyle::SteadyBlock,
-              CursorStyle::BlinkingUnderline => {
-                SetCursorStyle::BlinkingUnderScore
+              CursorStyle::Default => {
+                termwiz::escape::csi::CursorStyle::Default
               }
-              CursorStyle::SteadyUnderline => SetCursorStyle::SteadyUnderScore,
-              CursorStyle::BlinkingBar => SetCursorStyle::BlinkingBar,
-              CursorStyle::SteadyBar => SetCursorStyle::SteadyBar,
+              CursorStyle::BlinkingBlock => {
+                termwiz::escape::csi::CursorStyle::BlinkingBlock
+              }
+              CursorStyle::SteadyBlock => {
+                termwiz::escape::csi::CursorStyle::SteadyBlock
+              }
+              CursorStyle::BlinkingUnderline => {
+                termwiz::escape::csi::CursorStyle::BlinkingUnderline
+              }
+              CursorStyle::SteadyUnderline => {
+                termwiz::escape::csi::CursorStyle::SteadyUnderline
+              }
+              CursorStyle::BlinkingBar => {
+                termwiz::escape::csi::CursorStyle::BlinkingBar
+              }
+              CursorStyle::SteadyBar => {
+                termwiz::escape::csi::CursorStyle::SteadyBar
+              }
             };
-            execute!(std::io::stdout(), cursor_style)?;
+            let action = Action::CSI(CSI::Cursor(
+              termwiz::escape::csi::Cursor::CursorStyle(cursor_style),
+            ));
+            write!(stdout(), "{}", action)?;
           }
           SrvToClt::Clear => {
-            execute!(stdout(), crossterm::terminal::Clear(ClearType::All))?;
+            let action = Action::CSI(CSI::Edit(
+              termwiz::escape::csi::Edit::EraseInDisplay(
+                termwiz::escape::csi::EraseInDisplay::EraseDisplay,
+              ),
+            ));
+            write!(stdout(), "{}", action)?;
           }
           SrvToClt::Flush => {
             stdout().flush()?;
