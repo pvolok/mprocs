@@ -1,60 +1,30 @@
-mod app;
-mod client;
-mod clipboard;
-mod config;
-mod config_lua;
-mod ctl;
-mod encode_term;
-mod error;
-mod event;
-mod host;
-mod just;
-mod kernel;
-mod key;
-mod keymap;
-mod modal;
-mod mouse;
-mod package_json;
-mod proc;
-mod protocol;
-mod server;
-mod settings;
-mod state;
-mod term;
-mod theme;
-mod ui_keymap;
-mod ui_procs;
-mod ui_term;
-mod ui_zoom_tip;
-mod vt100;
-mod widgets;
-mod yaml_val;
-
 use std::{io::Read, path::Path};
 
-use anyhow::{bail, Result};
-use app::{client_loop, create_app_proc, ClientId};
-use clap::{arg, command, ArgMatches};
-use client::client_main;
-use config::{CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig};
-use config_lua::load_lua_config;
-use ctl::run_ctl;
-use flexi_logger::{FileSpec, LoggerHandle};
-use host::{
+use crate::app::{client_loop, create_app_proc, ClientId};
+use crate::client::client_main;
+use crate::config::{
+  CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig,
+};
+use crate::config_lua::load_lua_config;
+use crate::ctl::run_ctl;
+use crate::host::{
   receiver::MsgReceiver, sender::MsgSender, socket::bind_server_socket,
 };
-use just::load_just_procs;
-use kernel::{
+use crate::just::load_just_procs;
+use crate::kernel::{
   kernel::Kernel,
   kernel_message::KernelCommand,
   proc::{ProcInit, ProcStatus},
 };
-use keymap::Keymap;
-use package_json::load_npm_procs;
-use proc::StopSignal;
+use crate::keymap::Keymap;
+use crate::package_json::load_npm_procs;
+use crate::proc::StopSignal;
+use crate::settings::Settings;
+use crate::yaml_val::Val;
+use anyhow::{bail, Result};
+use clap::{arg, command, ArgMatches};
+use flexi_logger::{FileSpec, LoggerHandle};
 use serde_yaml::Value;
-use settings::Settings;
-use yaml_val::Val;
 
 enum LogTarget {
   File,
@@ -83,8 +53,7 @@ fn setup_logger(target: LogTarget) -> LoggerHandle {
   logger.use_utc().start().unwrap()
 }
 
-#[tokio::main]
-async fn main() -> Result<(), std::io::Error> {
+pub async fn mprocs_main() -> anyhow::Result<()> {
   match run_app().await {
     Ok(()) => Ok(()),
     Err(err) => {
