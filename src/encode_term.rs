@@ -582,20 +582,11 @@ pub fn encode_mouse_event(mev: MouseEvent) -> String {
       MouseButton::Right => buf.push_str("33"),
       MouseButton::Middle => buf.push_str("34"),
     },
-    MouseEventKind::Moved => {
-      // TODO
-      return "".to_string();
-    }
-    MouseEventKind::ScrollDown => buf.push_str("65"),
+    MouseEventKind::Moved => buf.push_str("35"),
     MouseEventKind::ScrollUp => buf.push_str("64"),
-    MouseEventKind::ScrollLeft => {
-      // TODO
-      return "".to_string();
-    }
-    MouseEventKind::ScrollRight => {
-      // TODO
-      return "".to_string();
-    }
+    MouseEventKind::ScrollDown => buf.push_str("65"),
+    MouseEventKind::ScrollLeft => buf.push_str("66"),
+    MouseEventKind::ScrollRight => buf.push_str("67"),
   }
   buf.push(';');
   buf.push_str((mev.x + 1).to_string().as_str());
@@ -606,11 +597,11 @@ pub fn encode_mouse_event(mev: MouseEvent) -> String {
     MouseEventKind::Down(_) => 'M',
     MouseEventKind::Up(_) => 'm',
     MouseEventKind::Drag(_) => 'M',
-    MouseEventKind::Moved => todo!(),
+    MouseEventKind::Moved => 'M',
     MouseEventKind::ScrollDown => 'M',
     MouseEventKind::ScrollUp => 'M',
-    MouseEventKind::ScrollLeft => todo!(),
-    MouseEventKind::ScrollRight => todo!(),
+    MouseEventKind::ScrollLeft => 'M',
+    MouseEventKind::ScrollRight => 'M',
   });
 
   buf

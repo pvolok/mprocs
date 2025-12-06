@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::io::Write;
 
 use assert_matches::assert_matches;
+use crossterm::event::MouseEventKind;
 use portable_pty::CommandBuilder;
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -354,16 +355,38 @@ impl Proc {
   pub fn handle_mouse(&mut self, event: MouseEvent) {
     if let ProcState::Some(inst) = &mut self.inst {
       let mouse_mode = inst.vt.read().unwrap().screen().mouse_protocol_mode();
-      match mouse_mode {
-        vt100::MouseProtocolMode::None => (),
-        vt100::MouseProtocolMode::Press
-        | vt100::MouseProtocolMode::PressRelease
-        | vt100::MouseProtocolMode::ButtonMotion
-        | vt100::MouseProtocolMode::AnyMotion => {
-          let seq = encode_mouse_event(event);
-          let _r = inst.writer.write_all(seq.as_bytes());
-        }
-      }
+      let seq = match mouse_mode {
+        vt100::MouseProtocolMode::None => String::new(),
+        vt100::MouseProtocolMode::Press => match event.kind {
+          MouseEventKind::Down(_)
+          | MouseEventKind::ScrollDown
+          | MouseEventKind::ScrollUp
+          | MouseEventKind::ScrollLeft
+          | MouseEventKind::ScrollRight => encode_mouse_event(event),
+          _ => String::new(),
+        },
+        vt100::MouseProtocolMode::PressRelease => match event.kind {
+          MouseEventKind::Down(_)
+          | MouseEventKind::Up(_)
+          | MouseEventKind::ScrollDown
+          | MouseEventKind::ScrollUp
+          | MouseEventKind::ScrollLeft
+          | MouseEventKind::ScrollRight => encode_mouse_event(event),
+          MouseEventKind::Drag(_) | MouseEventKind::Moved => String::new(),
+        },
+        vt100::MouseProtocolMode::ButtonMotion => match event.kind {
+          MouseEventKind::Down(_)
+          | MouseEventKind::Up(_)
+          | MouseEventKind::ScrollDown
+          | MouseEventKind::Drag(_)
+          | MouseEventKind::ScrollUp
+          | MouseEventKind::ScrollLeft
+          | MouseEventKind::ScrollRight => encode_mouse_event(event),
+          MouseEventKind::Moved => String::new(),
+        },
+        vt100::MouseProtocolMode::AnyMotion => encode_mouse_event(event),
+      };
+      let _r = inst.writer.write_all(seq.as_bytes());
     }
   }
 }

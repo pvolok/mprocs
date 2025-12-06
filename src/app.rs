@@ -346,10 +346,6 @@ impl App {
         ..
       }) => (),
       Event::Mouse(mev) => {
-        if mev.kind == MouseEventKind::Moved {
-          return;
-        }
-
         let mouse_event = MouseEvent::from_crossterm(mev);
 
         let layout = self.get_layout();

@@ -35,21 +35,27 @@ pub enum MouseProtocolMode {
 
   /// Mouse button events should be reported on button press. Also known as
   /// X10 mouse mode.
+  /// On/off: `CSI ? 9 h` / `CSI ? 9 l`
   Press,
 
   /// Mouse button events should be reported on button press and release.
   /// Also known as VT200 mouse mode.
+  /// On/off: `CSI ? 1000 h` / `CSI ? 1000 l`
   PressRelease,
 
+  /// On/off: `CSI ? 1001 h` / `CSI ? 1001 l`
   // Highlight,
+  //
   /// Mouse button events should be reported on button press and release, as
   /// well as when the mouse moves between cells while a button is held
   /// down.
+  /// On/off: `CSI ? 1002 h` / `CSI ? 1002 l`
   ButtonMotion,
 
   /// Mouse button events should be reported on button press and release,
   /// and mouse motion events should be reported when the mouse moves
   /// between cells regardless of whether a button is held down or not.
+  /// On/off: `CSI ? 1003 h` / `CSI ? 1003 l`
   AnyMotion,
   // DecLocator,
 }
