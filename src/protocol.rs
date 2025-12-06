@@ -476,9 +476,9 @@ fn tui_color_to_termwiz_color_attr(
     }
     tui::style::Color::Rgb(r, g, b) => {
       termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(SrgbaTuple(
-        255.0 / r as f32,
-        255.0 / g as f32,
-        255.0 / b as f32,
+        r as f32 / 255.0,
+        g as f32 / 255.0,
+        b as f32 / 255.0,
         1.0,
       ))
     }
