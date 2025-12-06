@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::vt100::{attrs::Attrs, TermReplySender};
-use compact_str::ToCompactString;
+use compact_str::{CompactString, ToCompactString};
 use termwiz::escape::{
   csi::{
     CsiParam, Cursor, CursorStyle, DecPrivateMode, DecPrivateModeCode, Edit,
@@ -1236,8 +1236,8 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
         termwiz::escape::csi::Mode::RestoreDecPrivateMode(_) => {
           skip!("RestoreDecPrivateMode")
         }
-        termwiz::escape::csi::Mode::QueryDecPrivateMode(_) => {
-          skip!("QueryDecPrivateMode")
+        termwiz::escape::csi::Mode::QueryDecPrivateMode(mode) => {
+          skip!("QueryDecPrivateMode {:?}", mode)
         }
         termwiz::escape::csi::Mode::SetMode(mode) => match mode {
           TerminalMode::Code(code) => match code {
@@ -1259,7 +1259,11 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
             }
           },
           TerminalMode::Unspecified(n) => {
-            skip!("SetMode -> TerminalMode::Unspecified({})", n)
+            if n == 34 {
+              // DECRLM - Cursor direction, right to left
+            } else {
+              skip!("SetMode -> TerminalMode::Unspecified({})", n);
+            }
           }
         },
         termwiz::escape::csi::Mode::ResetMode(mode) => match mode {
@@ -1293,7 +1297,49 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
           skip!("XtermKeyMode")
         }
       },
-      CSI::Device(device) => skip!("Device: {:?}", device),
+      CSI::Device(device) => match &*device {
+        termwiz::escape::csi::Device::DeviceAttributes(device_attributes) => {
+          skip!("DeviceAttributes: {:?}", device_attributes);
+        }
+        termwiz::escape::csi::Device::SoftReset => {
+          skip!("SoftReset");
+        }
+        termwiz::escape::csi::Device::RequestPrimaryDeviceAttributes => {
+          // https://vt100.net/docs/vt510-rm/DA1.html
+
+          let mut reply = CompactString::new("\x1b[?65"); // Vt500
+
+          // ident.push_str(";4"); // Sixel graphics
+
+          reply.push_str(";6"); // Selective erase
+
+          // ident.push_str(";18"); // windowing extensions
+
+          reply.push_str(";22"); // ANSI color, vt525
+          reply.push_str(";52"); // Clipboard access
+          reply.push('c');
+
+          self.reply_sender.reply(reply);
+        }
+        termwiz::escape::csi::Device::RequestSecondaryDeviceAttributes => {
+          skip!("RequestSecondaryDeviceAttributes");
+        }
+        termwiz::escape::csi::Device::RequestTertiaryDeviceAttributes => {
+          skip!("RequestTertiaryDeviceAttributes");
+        }
+        termwiz::escape::csi::Device::StatusReport => {
+          skip!("StatusReport");
+        }
+        termwiz::escape::csi::Device::RequestTerminalNameAndVersion => {
+          skip!("RequestTerminalNameAndVersion");
+        }
+        termwiz::escape::csi::Device::RequestTerminalParameters(x) => {
+          skip!("RequestTerminalParameters: {:?}", x);
+        }
+        termwiz::escape::csi::Device::XtSmGraphics(xt_sm_graphics) => {
+          skip!("XtSmGraphics: {:?}", xt_sm_graphics);
+        }
+      },
       CSI::Mouse(mouse) => skip!("Mouse: {:?}", mouse),
       CSI::Window(win) => match *win {
         Window::DeIconify => skip!("DeIconify"),
