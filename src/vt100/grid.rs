@@ -370,12 +370,13 @@ impl Grid {
     }
   }
 
-  pub fn delete_lines(&mut self, count: u16) {
+  pub fn delete_lines(&mut self, count: u16, blank_attrs: Attrs) {
     let row0 = self.row0();
     for _ in 0..(count.min(self.size.rows - self.pos.row)) {
+      let row = Row::new_with_attrs(self.size.cols, blank_attrs);
       self
         .rows
-        .insert(row0 + usize::from(self.scroll_bottom) + 1, self.new_row());
+        .insert(row0 + usize::from(self.scroll_bottom) + 1, row);
       self.rows.remove(row0 + usize::from(self.pos.row));
     }
   }

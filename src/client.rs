@@ -123,6 +123,10 @@ async fn client_main_loop(
             };
             write!(std::io::stdout(), "{}", action)?;
           }
+          SrvToClt::ResetAttrs => {
+            let action = Action::CSI(CSI::Sgr(Sgr::Reset));
+            write!(std::io::stdout(), "{}", action)?;
+          }
           SrvToClt::SetCursor { x, y } => {
             let action = Action::CSI(CSI::Cursor(
               termwiz::escape::csi::Cursor::Position {

@@ -4,7 +4,7 @@ use crossterm::event::Event;
 use serde::{Deserialize, Serialize};
 use termwiz::{
   cell::{AttributeChange, Blink, Intensity, Underline},
-  color::{ColorAttribute, SrgbaTuple},
+  color::SrgbaTuple,
 };
 use tui::{backend::Backend, style::Modifier};
 
@@ -14,6 +14,7 @@ use crate::{error::ResultLogger, host::sender::MsgSender};
 pub enum SrvToClt {
   Print(String),
   SetAttr(AttributeChange),
+  ResetAttrs,
   SetCursor { x: u16, y: u16 },
   ShowCursor,
   HideCursor,
@@ -357,12 +358,7 @@ impl Backend for ProxyBackend {
       self.send(SrvToClt::Print(cell.symbol().to_string()));
     }
 
-    self.send(SrvToClt::SetAttr(AttributeChange::Foreground(
-      ColorAttribute::Default,
-    )));
-    self.send(SrvToClt::SetAttr(AttributeChange::Background(
-      ColorAttribute::Default,
-    )));
+    self.send(SrvToClt::ResetAttrs);
 
     Ok(())
   }

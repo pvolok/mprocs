@@ -69,6 +69,10 @@ impl Cell {
     &self.attrs
   }
 
+  pub(crate) fn set_attrs(&mut self, attrs: crate::vt100::attrs::Attrs) {
+    self.attrs = attrs;
+  }
+
   /// Returns the foreground color of the cell.
   #[must_use]
   pub fn fgcolor(&self) -> crate::vt100::attrs::Color {

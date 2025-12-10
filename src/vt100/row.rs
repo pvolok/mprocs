@@ -18,6 +18,16 @@ impl Row {
     }
   }
 
+  pub fn new_with_attrs(cols: u16, attrs: crate::vt100::attrs::Attrs) -> Self {
+    let mut cell = crate::vt100::cell::Cell::default();
+    cell.set_attrs(attrs);
+    Self {
+      cells: vec![cell; usize::from(cols)],
+      size: 0,
+      wrapped: false,
+    }
+  }
+
   pub fn cols(&self) -> u16 {
     self
       .cells

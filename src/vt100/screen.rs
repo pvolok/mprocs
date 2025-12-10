@@ -915,7 +915,8 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
           self.grid_mut().delete_cells(count as u16);
         }
         Edit::DeleteLine(count) => {
-          self.grid_mut().delete_lines(count as u16);
+          let attrs = self.attrs.clone();
+          self.grid_mut().delete_lines(count as u16, attrs);
         }
         Edit::EraseCharacter(count) => {
           let attrs = self.attrs;
