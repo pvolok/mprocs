@@ -863,7 +863,12 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
         Cursor::LinePositionForward(_) => skip!("LinePositionForward"),
         Cursor::ForwardTabulation(_) => skip!("ForwardTabulation"),
         Cursor::NextLine(_) => skip!("NextLine"),
-        Cursor::PrecedingLine(_) => skip!("PrecedingLine"),
+        Cursor::PrecedingLine(n) => {
+          self
+            .grid_mut()
+            .row_dec_clamp(n.try_into().unwrap_or_default());
+          self.grid_mut().col_set(0);
+        }
         Cursor::ActivePositionReport { line: _, col: _ } => {
           skip!("ActivePositionReport")
         }
