@@ -227,7 +227,13 @@ impl TermDriver {
         }
         InternalTermEvent::ReplyKittyKeyboard(flags) => {
           self.keyboard = KeyboardMode::Kitty(flags);
-          self.stdout.write_all(b"\x1b[>1u")?;
+          // 0b1 (1) - Disambiguate escape codes
+          // 0b10 (2) - Report event types
+          // 0b100 (4) - Report alternate keys
+          // 0b1000 (8) - Report all keys as escape codes
+          // 0b10000 (16) - Report associated text
+          // 0b1111 = 15
+          self.stdout.write_all(b"\x1b[>15u")?;
         }
       };
     }

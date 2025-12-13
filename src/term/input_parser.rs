@@ -481,7 +481,13 @@ where
         let code_param = params.next();
         let code = if let Some(code_param) = code_param {
           let code = code_param.parse::<u8>()?;
-          KeyCode::Char(code.into())
+          match code {
+            8 | 0x7f => KeyCode::Backspace,
+            0x1b => KeyCode::Esc,
+            9 => KeyCode::Tab,
+            10 | 13 => KeyCode::Enter,
+            _ => KeyCode::Char(code as char),
+          }
         } else {
           bail!("Empty code in modifyOtherKeys")
         };
@@ -541,8 +547,7 @@ fn parse_csi_u(params: &[u8]) -> anyhow::Result<(u32, Option<u32>, u8, u8)> {
 
   let alt_code = code_param.next().map(|c| c.parse::<u32>()).transpose()?;
 
-  let mods_param =
-    params.next().ok_or_else(|| anyhow!("No modifiers param"))?;
+  let mods_param = params.next().unwrap_or("0");
   let mut mods_param = mods_param.split(':');
   let mods = mods_param
     .next()

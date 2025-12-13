@@ -19,6 +19,8 @@ static KEYS: phf::Map<&'static str, KeyCode> = phf::phf_map! {
   "nul" => KeyCode::Null,
   "esc" => KeyCode::Esc,
 
+  "space" => KeyCode::Char(' '),
+
   "lt" => KeyCode::Char('<'),
   "gt" => KeyCode::Char('>'),
   "minus" => KeyCode::Char('-'),
@@ -178,13 +180,13 @@ impl KeyParser<'_> {
     parser.expect("<")?;
     let mods = parser.take_mods()?;
     let code = {
-      let word = parser.take_word()?;
-      if let Some(code) = KEYS.get(word.to_ascii_lowercase().as_str()) {
+      let code = parser.take_key()?;
+      if let Some(code) = KEYS.get(code.to_ascii_lowercase().as_str()) {
         *code
-      } else if word.len() == 1 {
-        KeyCode::Char(word.chars().next().unwrap())
+      } else if code.len() == 1 {
+        KeyCode::Char(code.chars().next().unwrap())
       } else {
-        bail!("Wrong key code: \"{}\"", word);
+        bail!("Wrong key code: \"{}\"", code);
       }
     };
     parser.expect(">")?;
@@ -206,14 +208,19 @@ impl KeyParser<'_> {
     Ok(())
   }
 
-  fn take_word(&mut self) -> anyhow::Result<&str> {
+  fn take_key(&mut self) -> anyhow::Result<&str> {
     let mut next_pos = self.pos;
     let chars = self.text[self.pos..].chars();
     for ch in chars {
-      if ch.is_alphanumeric() {
-        next_pos += ch.len_utf8();
-      } else {
+      if ch == '>' || ch == ' ' {
         break;
+      } else if ch.is_control() {
+        bail!(
+          "Unexpected control characted in key code position: 0x{:X}.",
+          ch as usize
+        )
+      } else {
+        next_pos += ch.len_utf8();
       }
     }
     let start = self.pos;
