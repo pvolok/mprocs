@@ -462,24 +462,10 @@ where
       let params_str = str::from_utf8(params)?;
       let mut params = params_str.split(';');
 
-      let code = params
+      let first = params
         .next()
         .ok_or_else(|| anyhow!("No key param in CSI ~"))?
         .parse::<u8>()?;
-      let code = match code {
-        1 | 7 => KeyCode::Home,
-        2 => KeyCode::Insert,
-        3 => KeyCode::Delete,
-        4 | 8 => KeyCode::End,
-        5 => KeyCode::PageUp,
-        6 => KeyCode::PageDown,
-        v @ 11..=15 => KeyCode::F(v - 10),
-        v @ 17..=21 => KeyCode::F(v - 11),
-        v @ 23..=26 => KeyCode::F(v - 12),
-        v @ 28..=29 => KeyCode::F(v - 15),
-        v @ 31..=34 => KeyCode::F(v - 17),
-        _ => bail!("Wrong key param in CSI ~"),
-      };
 
       let mods_param = params.next();
       let (mods, state) = if let Some(mods_param) = mods_param {
@@ -489,12 +475,47 @@ where
         (KeyModifiers::NONE, KeyEventState::NONE)
       };
 
-      f(E::Key(KeyEvent::new_with_kind_and_state(
-        code,
-        mods,
-        KeyEventKind::Press,
-        state,
-      )));
+      if first == 27 {
+        // modifyOtherKeys
+
+        let code_param = params.next();
+        let code = if let Some(code_param) = code_param {
+          let code = code_param.parse::<u8>()?;
+          KeyCode::Char(code.into())
+        } else {
+          bail!("Empty code in modifyOtherKeys")
+        };
+
+        f(E::Key(KeyEvent::new_with_kind_and_state(
+          code,
+          mods,
+          KeyEventKind::Press,
+          state,
+        )));
+      } else {
+        let code = first;
+        let code = match code {
+          1 | 7 => KeyCode::Home,
+          2 => KeyCode::Insert,
+          3 => KeyCode::Delete,
+          4 | 8 => KeyCode::End,
+          5 => KeyCode::PageUp,
+          6 => KeyCode::PageDown,
+          v @ 11..=15 => KeyCode::F(v - 10),
+          v @ 17..=21 => KeyCode::F(v - 11),
+          v @ 23..=26 => KeyCode::F(v - 12),
+          v @ 28..=29 => KeyCode::F(v - 15),
+          v @ 31..=34 => KeyCode::F(v - 17),
+          v => bail!("Wrong key param ({}) in CSI ~", v),
+        };
+
+        f(E::Key(KeyEvent::new_with_kind_and_state(
+          code,
+          mods,
+          KeyEventKind::Press,
+          state,
+        )));
+      }
     }
     _ => {
       log::debug!(
