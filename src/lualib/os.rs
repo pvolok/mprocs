@@ -110,15 +110,9 @@ pub fn init_os_lib(lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
     "select",
     lua.create_async_function(async |lua, items: mlua::Table| {
       let mut tasks: Vec<mlua::AsyncThread<mlua::Value>> = Vec::new();
-      for pair in items.pairs::<mlua::Thread, mlua::Value>() {
-        let (k, v) = pair?;
-        let dbg = lua
-          .globals()
-          .get::<mlua::Table>("std")?
-          .get::<mlua::Table>("dbg")?;
-        dbg.call::<mlua::Value>(&k)?;
-        dbg.call::<mlua::Value>(&v)?;
-        tasks.push(k.into_async(())?);
+      for thread in items.sequence_values::<mlua::Thread>() {
+        let thread = thread?;
+        tasks.push(thread.into_async(())?);
       }
       let (result, index, tasks) = futures::future::select_all(tasks).await;
       result
