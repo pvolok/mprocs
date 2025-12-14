@@ -1,16 +1,7 @@
-use std::{
-  io::{Read, Write},
-  os::{
-    fd::{AsFd, AsRawFd},
-    unix::net::UnixStream,
-  },
-  time::Duration,
-};
-
-use anyhow::bail;
 use crossterm::event::Event;
-use rustix::termios::isatty;
-use signal_hook::consts::SIGWINCH;
+#[cfg(unix)]
+use std::os::fd::{AsFd, AsRawFd};
+use std::{io::Write, time::Duration};
 use termwiz::escape::{csi::Sgr, Action, OneBased, CSI};
 use tui::style::Modifier;
 
@@ -24,10 +15,17 @@ use crate::{
 };
 
 pub struct TermDriver {
+  #[cfg(unix)]
   stdin: rustix::fd::BorrowedFd<'static>,
-  stdout: std::io::Stdout,
+  #[cfg(unix)]
   orig_termios: rustix::termios::Termios,
-  exit_write: UnixStream,
+  #[cfg(unix)]
+  exit_write: std::os::unix::net::UnixStream,
+
+  #[cfg(windows)]
+  win_vt: super::windows::WinVt,
+
+  stdout: std::io::Stdout,
 
   events: tokio::sync::mpsc::UnboundedReceiver<InternalTermEvent>,
 
@@ -35,26 +33,38 @@ pub struct TermDriver {
   keyboard: KeyboardMode,
 }
 
+#[cfg(unix)]
 const WAKE_BYTE_QUIT: u8 = b'q';
 
 impl TermDriver {
   pub fn create() -> anyhow::Result<Self> {
+    #[cfg(unix)]
     let stdin = rustix::stdio::stdin();
-    let mut stdout = std::io::stdout();
-    if !isatty(stdin) {
-      bail!("Stdin is not a tty.");
+    #[cfg(unix)]
+    if !rustix::termios::isatty(stdin) {
+      anyhow::bail!("Stdin is not a tty.");
     }
+
+    #[cfg(windows)]
+    let win_vt = super::windows::WinVt::enable()?;
+
+    let mut stdout = std::io::stdout();
 
     let (sender, events) = tokio::sync::mpsc::unbounded_channel();
 
+    #[cfg(unix)]
     let orig_termios = rustix::termios::tcgetattr(stdin)?;
+    #[cfg(unix)]
     let mut termios = orig_termios.clone();
+    #[cfg(unix)]
     termios.make_raw();
+    #[cfg(unix)]
     rustix::termios::tcsetattr(
       stdin,
       rustix::termios::OptionalActions::Now,
       &termios,
     )?;
+
     // Enter alternate screen.
     stdout.write_all(b"\x1B[?1049h")?;
     // Clear all.
@@ -86,66 +96,112 @@ impl TermDriver {
       })
     };
 
-    let (exit_read, exit_write) = UnixStream::pair().unwrap();
-    exit_read.set_nonblocking(true).unwrap();
-    exit_write.set_nonblocking(true).unwrap();
-    std::thread::spawn(move || {
-      let (mut sig_read, sig_write) = UnixStream::pair().unwrap();
-      sig_read.set_nonblocking(true).unwrap();
-      sig_write.set_nonblocking(true).unwrap();
-      signal_hook::low_level::pipe::register(SIGWINCH, sig_write).unwrap();
+    #[cfg(unix)]
+    let (exit_read, exit_write) =
+      std::os::unix::net::UnixStream::pair().unwrap();
+    #[cfg(unix)]
+    {
+      exit_read.set_nonblocking(true).unwrap();
+      exit_write.set_nonblocking(true).unwrap();
+      std::thread::spawn(move || {
+        let (mut sig_read, sig_write) =
+          std::os::unix::net::UnixStream::pair().unwrap();
+        sig_read.set_nonblocking(true).unwrap();
+        sig_write.set_nonblocking(true).unwrap();
+        signal_hook::low_level::pipe::register(
+          signal_hook::consts::SIGWINCH,
+          sig_write,
+        )
+        .unwrap();
 
-      let mut read_buf = unsafe { Box::new_uninit_slice(1024).assume_init() };
-      let mut input_parser = InputParser::new();
+        let mut read_buf = unsafe { Box::new_uninit_slice(1024).assume_init() };
+        let mut input_parser = InputParser::new();
 
-      'thread: loop {
-        let fds = [
-          stdin.as_raw_fd(),
-          sig_read.as_raw_fd(),
-          exit_read.as_raw_fd(),
-        ];
-        let nfds = fds.iter().copied().max().unwrap_or(0) + 1;
-        let mut fdset = vec![
-          rustix::event::FdSetElement::default();
-          rustix::event::fd_set_num_elements(fds.len(), nfds)
-        ];
+        'thread: loop {
+          let fds = [
+            stdin.as_raw_fd(),
+            sig_read.as_raw_fd(),
+            exit_read.as_raw_fd(),
+          ];
+          let nfds = fds.iter().copied().max().unwrap_or(0) + 1;
+          let mut fdset =
+            vec![
+              rustix::event::FdSetElement::default();
+              rustix::event::fd_set_num_elements(fds.len(), nfds)
+            ];
 
-        for fd in fds {
-          rustix::event::fd_set_insert(&mut fdset, fd);
-        }
-        unsafe {
-          rustix::event::select(nfds, Some(&mut fdset), None, None, None)
-            .unwrap()
-        };
+          for fd in fds {
+            rustix::event::fd_set_insert(&mut fdset, fd);
+          }
+          unsafe {
+            rustix::event::select(nfds, Some(&mut fdset), None, None, None)
+              .unwrap()
+          };
 
-        for fd in rustix::event::FdSetIter::new(&fdset) {
-          if fd == stdin.as_raw_fd() {
-            match rustix::io::read(stdin, Box::as_mut(&mut read_buf)) {
-              Ok(read_count) => {
-                let slice = &read_buf[..read_count];
-                input_parser
-                  .parse_input(slice, true, |e| sender.send(e).log_ignore());
+          for fd in rustix::event::FdSetIter::new(&fdset) {
+            if fd == stdin.as_raw_fd() {
+              match rustix::io::read(stdin, Box::as_mut(&mut read_buf)) {
+                Ok(read_count) => {
+                  let slice = &read_buf[..read_count];
+                  input_parser
+                    .parse_input(slice, true, |e| sender.send(e).log_ignore());
+                }
+                Err(err) => log::error!("stdin(err): {:?}", err),
               }
-              Err(err) => log::error!("stdin(err): {:?}", err),
+            } else if fd == sig_read.as_raw_fd() {
+              sig_read.read_exact(&mut [0]).unwrap();
+              let winsize = rustix::termios::tcgetwinsize(stdin).unwrap();
+              sender
+                .send(InternalTermEvent::Resize(winsize.ws_col, winsize.ws_row))
+                .log_ignore();
+            } else if fd == exit_read.as_raw_fd() {
+              break 'thread;
             }
-          } else if fd == sig_read.as_raw_fd() {
-            sig_read.read_exact(&mut [0]).unwrap();
-            let winsize = rustix::termios::tcgetwinsize(stdin).unwrap();
-            sender
-              .send(InternalTermEvent::Resize(winsize.ws_col, winsize.ws_row))
-              .log_ignore();
-          } else if fd == exit_read.as_raw_fd() {
-            break 'thread;
           }
         }
-      }
-    });
+      });
+    }
+
+    #[cfg(windows)]
+    unsafe {
+      std::thread::spawn(move || {
+        let stdin = winapi::um::processenv::GetStdHandle(
+          winapi::um::winbase::STD_INPUT_HANDLE,
+        );
+        let mut input_parser = InputParser::new();
+        let mut buf = [winapi::um::wincon::INPUT_RECORD::default(); 128];
+        loop {
+          let mut count = 0;
+          winapi::um::consoleapi::ReadConsoleInputA(
+            stdin,
+            buf.as_mut_ptr(),
+            buf.len() as u32,
+            &mut count,
+          );
+
+          super::windows::decode_input_records(
+            &mut input_parser,
+            &buf[..count as usize],
+            &mut |event| {
+              let _ = sender.send(event);
+            },
+          );
+        }
+      });
+    };
 
     Ok(Self {
+      #[cfg(unix)]
       stdin,
-      stdout,
+      #[cfg(unix)]
       orig_termios,
+      #[cfg(unix)]
       exit_write,
+
+      #[cfg(windows)]
+      win_vt,
+
+      stdout,
 
       events,
 
@@ -163,6 +219,9 @@ impl TermDriver {
       KeyboardMode::Kitty(_) => {
         self.stdout.write_all(b"\x1b[<1u")?;
       }
+      KeyboardMode::Win32 => {
+        self.stdout.write_all(b"\x1b[?9001l")?;
+      }
     }
 
     // Mouse
@@ -176,13 +235,18 @@ impl TermDriver {
     // Leave alternate screen.
     self.stdout.write_all(b"\x1B[?1049l")?;
 
+    #[cfg(unix)]
     rustix::termios::tcsetattr(
       self.stdin,
       rustix::termios::OptionalActions::Now,
       &self.orig_termios,
     )?;
 
+    #[cfg(unix)]
     self.exit_write.write_all(&[WAKE_BYTE_QUIT])?;
+
+    #[cfg(windows)]
+    self.win_vt.disable();
 
     Ok(())
   }
@@ -199,7 +263,7 @@ impl TermDriver {
           return Ok(Some(Event::Key(key_event)));
         }
         InternalTermEvent::Mouse(mouse_event) => {
-          return Ok(Some(Event::Mouse(mouse_event)))
+          return Ok(Some(Event::Mouse(mouse_event)));
         }
         InternalTermEvent::Resize(cols, rows) => {
           return Ok(Some(Event::Resize(cols, rows)))
@@ -213,16 +277,32 @@ impl TermDriver {
           }
           self.init_timeout = None;
           if matches!(self.keyboard, KeyboardMode::Unknown) {
-            self.keyboard = KeyboardMode::ModifyOtherKeys;
-            self.stdout.write_all(b"\x1b[>4;2m")?;
+            #[cfg(unix)]
+            {
+              self.keyboard = KeyboardMode::ModifyOtherKeys;
+              self.stdout.write_all(b"\x1b[>4;2m")?;
+            }
+            #[cfg(windows)]
+            {
+              self.keyboard = KeyboardMode::Win32;
+              self.stdout.write_all(b"\x1b[?9001h")?;
+            }
           }
         }
 
         InternalTermEvent::InitTimeout => {
           self.init_timeout = None;
           if matches!(self.keyboard, KeyboardMode::Unknown) {
-            self.keyboard = KeyboardMode::ModifyOtherKeys;
-            self.stdout.write_all(b"\x1b[>4;2m")?;
+            #[cfg(unix)]
+            {
+              self.keyboard = KeyboardMode::ModifyOtherKeys;
+              self.stdout.write_all(b"\x1b[>4;2m")?;
+            }
+            #[cfg(windows)]
+            {
+              self.keyboard = KeyboardMode::Win32;
+              self.stdout.write_all(b"\x1b[?9001h")?;
+            }
           }
         }
         InternalTermEvent::ReplyKittyKeyboard(flags) => {
@@ -434,6 +514,7 @@ impl tui::backend::Backend for TermDriver {
     Ok(())
   }
 
+  #[cfg(unix)]
   fn size(&self) -> std::io::Result<tui::prelude::Size> {
     let size = rustix::termios::tcgetwinsize(self.stdin.as_fd())?;
     Ok(tui::layout::Size {
@@ -442,6 +523,27 @@ impl tui::backend::Backend for TermDriver {
     })
   }
 
+  #[cfg(windows)]
+  fn size(&self) -> std::io::Result<tui::prelude::Size> {
+    use std::os::windows::io::AsRawHandle;
+
+    let mut info: winapi::um::wincon::CONSOLE_SCREEN_BUFFER_INFO =
+      unsafe { std::mem::zeroed() };
+    unsafe {
+      winapi::um::wincon::GetConsoleScreenBufferInfo(
+        self.stdout.as_raw_handle(),
+        &mut info,
+      )
+    };
+    let x = info.srWindow.Right - info.srWindow.Left + 1;
+    let y = info.srWindow.Bottom - info.srWindow.Top + 1;
+    Ok(tui::layout::Size {
+      width: x as u16,
+      height: y as u16,
+    })
+  }
+
+  #[cfg(unix)]
   fn window_size(&mut self) -> std::io::Result<tui::backend::WindowSize> {
     let size = rustix::termios::tcgetwinsize(self.stdin.as_fd())?;
     Ok(tui::backend::WindowSize {
@@ -452,6 +554,32 @@ impl tui::backend::Backend for TermDriver {
       pixels: tui::layout::Size {
         width: size.ws_xpixel,
         height: size.ws_ypixel,
+      },
+    })
+  }
+
+  #[cfg(windows)]
+  fn window_size(&mut self) -> std::io::Result<tui::backend::WindowSize> {
+    use std::os::windows::io::AsRawHandle;
+
+    let mut info: winapi::um::wincon::CONSOLE_SCREEN_BUFFER_INFO =
+      unsafe { std::mem::zeroed() };
+    unsafe {
+      winapi::um::wincon::GetConsoleScreenBufferInfo(
+        self.stdout.as_raw_handle(),
+        &mut info,
+      )
+    };
+    let x = info.srWindow.Right - info.srWindow.Left + 1;
+    let y = info.srWindow.Bottom - info.srWindow.Top + 1;
+    Ok(tui::backend::WindowSize {
+      columns_rows: tui::layout::Size {
+        width: x as u16,
+        height: y as u16,
+      },
+      pixels: tui::layout::Size {
+        width: 0,
+        height: 0,
       },
     })
   }

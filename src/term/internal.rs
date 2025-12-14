@@ -1,6 +1,6 @@
 use crossterm::event::{KeyEvent, MouseEvent};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum InternalTermEvent {
   Key(KeyEvent),
   Mouse(MouseEvent),
@@ -19,4 +19,5 @@ pub enum KeyboardMode {
   Unknown,
   ModifyOtherKeys,
   Kitty(u8),
+  Win32,
 }

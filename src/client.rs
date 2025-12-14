@@ -7,7 +7,6 @@ use termwiz::{
   escape::{csi::Sgr, Action, OneBased, OperatingSystemCommand, CSI},
 };
 
-#[cfg(unix)]
 use crate::term::term_driver::TermDriver;
 use crate::{
   host::{receiver::MsgReceiver, sender::MsgSender},

@@ -8,11 +8,17 @@ use crate::term::internal::InternalTermEvent as E;
 
 pub struct InputParser {
   buf: Vec<u8>,
+  #[cfg(windows)]
+  pub windows_mouse_buttons: u32,
 }
 
 impl InputParser {
   pub fn new() -> Self {
-    Self { buf: Vec::new() }
+    Self {
+      buf: Vec::new(),
+      #[cfg(windows)]
+      windows_mouse_buttons: 0,
+    }
   }
 
   pub fn parse_input<F>(&mut self, input: &[u8], is_raw_mode: bool, mut f: F)

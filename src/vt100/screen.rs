@@ -1052,7 +1052,7 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
             DecPrivateModeCode::SixelScrollsRight => {
               skip!("SixelScrollsRight")
             }
-            DecPrivateModeCode::Win32InputMode => skip!("Win32InputMode"),
+            DecPrivateModeCode::Win32InputMode => skip!("Set Win32InputMode"),
           },
           DecPrivateMode::Unspecified(9) => {
             self.set_mouse_mode(MouseProtocolMode::Press)
@@ -1148,7 +1148,7 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
               skip!("SixelScrollsRight")
             }
             DecPrivateModeCode::Win32InputMode => {
-              skip!("Win32InputMode")
+              skip!("Reset Win32InputMode")
             }
           },
           DecPrivateMode::Unspecified(9) => {
@@ -1234,7 +1234,7 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
               skip!("SixelScrollsRight")
             }
             DecPrivateModeCode::Win32InputMode => {
-              skip!("Win32InputMode")
+              skip!("Save Win32InputMode")
             }
           },
           termwiz::escape::csi::DecPrivateMode::Unspecified(_) => todo!(),
