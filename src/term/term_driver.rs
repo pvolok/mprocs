@@ -149,7 +149,7 @@ impl TermDriver {
                 Err(err) => log::error!("stdin(err): {:?}", err),
               }
             } else if fd == sig_read.as_raw_fd() {
-              sig_read.read_exact(&mut [0]).unwrap();
+              std::io::Read::read_exact(&mut sig_read, &mut [0]).unwrap();
               let winsize = rustix::termios::tcgetwinsize(stdin).unwrap();
               sender
                 .send(InternalTermEvent::Resize(winsize.ws_col, winsize.ws_row))
