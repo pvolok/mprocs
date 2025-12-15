@@ -34,7 +34,7 @@ use crate::{
   proc::{
     msg::{ProcCmd, ProcUpdate},
     proc::launch_proc,
-    view::RESTART_THRESHOLD_SECONDS,
+    view::{TargetState, RESTART_THRESHOLD_SECONDS},
     CopyMode, Pos, StopSignal,
   },
   protocol::{CltToSrv, ProxyBackend, SrvToClt},
@@ -561,6 +561,7 @@ impl App {
       AppEvent::Quit => {
         self.state.quitting = true;
         for proc_handle in self.state.procs.iter_mut() {
+          proc_handle.target_state = TargetState::Stopped;
           if proc_handle.is_up() {
             pc.send(KernelCommand::ProcCmd(proc_handle.id(), ProcCmd::Stop));
           }
@@ -569,6 +570,7 @@ impl App {
       }
       AppEvent::ForceQuit => {
         for proc_handle in self.state.procs.iter_mut() {
+          proc_handle.target_state = TargetState::Stopped;
           if proc_handle.is_up() {
             pc.send(KernelCommand::ProcCmd(proc_handle.id(), ProcCmd::Kill));
           }
@@ -627,23 +629,26 @@ impl App {
 
       AppEvent::StartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.target_state = TargetState::Started;
           pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
         }
       }
       AppEvent::TermProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.target_state = TargetState::Stopped;
           pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Stop));
         }
       }
       AppEvent::KillProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.target_state = TargetState::Stopped;
           pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Kill));
         }
       }
       AppEvent::RestartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.target_state = TargetState::Started;
           if proc.is_up() {
-            proc.to_restart = true;
             pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Stop));
           } else {
             pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
@@ -652,8 +657,8 @@ impl App {
       }
       AppEvent::ForceRestartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.target_state = TargetState::Started;
           if proc.is_up() {
-            proc.to_restart = true;
             pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Kill));
           } else {
             pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
@@ -930,23 +935,38 @@ impl App {
             proc.is_up = false;
             proc.exit_code = Some(exit_code);
 
-            if proc.cfg.autorestart && !proc.to_restart && exit_code != 0 {
-              match proc.last_start {
-                Some(last_start) => {
-                  let elapsed_time = Instant::now().duration_since(last_start);
-                  if elapsed_time.as_secs_f64() > RESTART_THRESHOLD_SECONDS {
-                    proc.to_restart = true;
+            let restart = match proc.target_state {
+              TargetState::None if proc.cfg.autorestart && exit_code != 0 => {
+                match proc.last_start {
+                  Some(last_start) => {
+                    let elapsed_time =
+                      Instant::now().duration_since(last_start);
+                    elapsed_time.as_secs_f64() > RESTART_THRESHOLD_SECONDS
                   }
+                  None => true,
                 }
-                None => proc.to_restart = true,
               }
-            }
-            if proc.to_restart {
-              proc.to_restart = false;
+              TargetState::None => false,
+              TargetState::Started => true,
+              TargetState::Stopped => {
+                proc.target_state = TargetState::None;
+                false
+              }
+            };
+            if restart {
               self
                 .pc
                 .send(KernelCommand::ProcCmd(proc_id, ProcCmd::Start));
             }
+
+            match proc.target_state {
+              TargetState::None => (),
+              TargetState::Started => (),
+              TargetState::Stopped => {
+                proc.target_state = TargetState::None;
+              }
+            }
+
             loop_action.render();
           }
         }

@@ -10,6 +10,13 @@ use std::time::Instant;
 /// Amount of time a process has to stay up for autorestart to trigger
 pub const RESTART_THRESHOLD_SECONDS: f64 = 1.0;
 
+#[derive(Clone, Copy)]
+pub enum TargetState {
+  None,
+  Started,
+  Stopped,
+}
+
 pub struct ProcView {
   pub id: ProcId,
   pub cfg: ProcConfig,
@@ -20,7 +27,7 @@ pub struct ProcView {
   pub vt: Option<SharedVt>,
   pub copy_mode: CopyMode,
 
-  pub to_restart: bool,
+  pub target_state: TargetState,
   pub last_start: Option<Instant>,
   pub changed: bool,
 }
@@ -37,7 +44,7 @@ impl ProcView {
       vt: None,
       copy_mode: CopyMode::None(None),
 
-      to_restart: false,
+      target_state: TargetState::None,
       last_start: None,
       changed: false,
     }
