@@ -18,7 +18,7 @@ impl Theme {
     }
   }
 
-  pub fn pane(&self, active: bool) -> Block {
+  pub fn pane(&'_ self, active: bool) -> Block<'_> {
     let type_ = match active {
       true => BorderType::Thick,
       false => BorderType::Plain,

@@ -120,7 +120,45 @@ async fn client_main_loop(
                 ))
               }
             };
-            write!(std::io::stdout(), "{}", action)?;
+            // WezTerm on Windows doesn't support colors in form
+            // `CSI 38:2::0:0:0m`, use ';' instead.
+            match action {
+              Action::CSI(CSI::Sgr(Sgr::Foreground(fg))) => match fg {
+                ColorSpec::Default => write!(std::io::stdout(), "\x1b[39m")?,
+                ColorSpec::PaletteIndex(idx @ 0..=7) => {
+                  write!(std::io::stdout(), "\x1b[{}m", 30 + idx)?;
+                }
+                ColorSpec::PaletteIndex(idx @ 8..=15) => {
+                  write!(std::io::stdout(), "\x1b[{}m", 90 - 8 + idx)?;
+                }
+                ColorSpec::PaletteIndex(idx) => {
+                  write!(std::io::stdout(), "\x1b[38;5;{}m", idx)?;
+                }
+                ColorSpec::TrueColor(srgba_tuple) => {
+                  let (r, g, b, _a) = srgba_tuple.as_rgba_u8();
+                  write!(std::io::stdout(), "\x1b[38;2;{};{};{}m", r, g, b)?;
+                }
+              },
+              Action::CSI(CSI::Sgr(Sgr::Background(bg))) => match bg {
+                ColorSpec::Default => write!(std::io::stdout(), "\x1b[49m")?,
+                ColorSpec::PaletteIndex(idx @ 0..=7) => {
+                  write!(std::io::stdout(), "\x1b[{}m", 40 + idx)?;
+                }
+                ColorSpec::PaletteIndex(idx @ 8..=15) => {
+                  write!(std::io::stdout(), "\x1b[{}m", 100 + idx)?;
+                }
+                ColorSpec::PaletteIndex(idx) => {
+                  write!(std::io::stdout(), "\x1b[48;5;{}m", idx)?;
+                }
+                ColorSpec::TrueColor(srgba_tuple) => {
+                  let (r, g, b, _a) = srgba_tuple.as_rgba_u8();
+                  write!(std::io::stdout(), "\x1b[48;2;{};{};{}m", r, g, b)?;
+                }
+              },
+              _ => {
+                write!(std::io::stdout(), "{}", action)?;
+              }
+            }
           }
           SrvToClt::ResetAttrs => {
             let action = Action::CSI(CSI::Sgr(Sgr::Reset));
