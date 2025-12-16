@@ -655,8 +655,28 @@ impl App {
           }
         }
       }
+      AppEvent::RestartAll => {
+        for proc in &mut self.state.procs {
+          proc.target_state = TargetState::Started;
+          if proc.is_up() {
+            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Stop));
+          } else {
+            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
+          }
+        }
+      }
       AppEvent::ForceRestartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.target_state = TargetState::Started;
+          if proc.is_up() {
+            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Kill));
+          } else {
+            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
+          }
+        }
+      }
+      AppEvent::ForceRestartAll => {
+        for proc in &mut self.state.procs {
           proc.target_state = TargetState::Started;
           if proc.is_up() {
             pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Kill));

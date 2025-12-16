@@ -91,5 +91,6 @@ daemonize = "0.5.0"
 winapi = { version = "0.3", features = ["consoleapi", "winuser"] }
 
 [lints.clippy]
-while_let_loop = "allow"
 collapsible_else_if = "allow"
+collapsible_if = "allow"
+while_let_loop = "allow"

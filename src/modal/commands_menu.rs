@@ -207,7 +207,7 @@ impl Modal for CommandsMenuModal {
       &mut cursor,
     );
 
-    frame.set_cursor(cursor.0, cursor.1);
+    frame.set_cursor_position((cursor.0, cursor.1));
   }
 }
 
@@ -228,8 +228,10 @@ fn get_commands(search: &str) -> Vec<CommandInfo> {
     ("term-proc", AppEvent::TermProc),
     ("kill-proc", AppEvent::KillProc),
     ("restart-proc", AppEvent::RestartProc),
+    ("restart-all", AppEvent::RestartAll),
     ("duplicate-proc", AppEvent::DuplicateProc),
     ("force-restart-proc", AppEvent::ForceRestartProc),
+    ("force-restart-all", AppEvent::ForceRestartAll),
     ("show-add-proc", AppEvent::ShowAddProc),
     ("show-rename-proc", AppEvent::ShowRenameProc),
     ("show-remove-proc", AppEvent::ShowRemoveProc),
