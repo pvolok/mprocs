@@ -90,23 +90,20 @@ impl WinVt {
 }
 
 fn decode_key_record<F: FnMut(InternalTermEvent)>(
-  input_parser: &mut InputParser,
   record: &KEY_EVENT_RECORD,
   f: &mut F,
 ) {
   use winapi::um::winuser::*;
+
+  let uchar = unsafe { *record.uChar.UnicodeChar() };
 
   let modifiers = modifiers_from_ctrl_key_state(record.dwControlKeyState);
   let virtual_key_code = record.wVirtualKeyCode as i32;
 
   // We normally ignore all key release events, but we will make an exception for an Alt key
   // release if it carries a u_char value, as this indicates an Alt code.
-  let is_alt_code = virtual_key_code == VK_MENU
-    && record.bKeyDown == 0
-    && *unsafe { record.uChar.UnicodeChar() } != 0;
-  if is_alt_code {
-    let utf16 = *unsafe { record.uChar.UnicodeChar() };
-    match utf16 {
+  if is_alt_code(record) {
+    match uchar {
       surrogate @ 0xD800..=0xDFFF => {
         log::error!("Unhandled surrogate key record.");
         return;
@@ -157,8 +154,7 @@ fn decode_key_record<F: FnMut(InternalTermEvent)>(
     VK_TAB if modifiers.contains(KeyModifiers::SHIFT) => Some(KeyCode::BackTab),
     VK_TAB => Some(KeyCode::Tab),
     _ => {
-      let utf16 = *unsafe { record.uChar.UnicodeChar() };
-      match utf16 {
+      match uchar {
         0x00..=0x1f => {
           // Some key combinations generate either no u_char value or generate control
           // codes. To deliver back a KeyCode::Char(...) event we want to know which
@@ -191,6 +187,12 @@ fn decode_key_record<F: FnMut(InternalTermEvent)>(
     let key_event = KeyEvent::new_with_kind(key_code, modifiers, kind);
     f(InternalTermEvent::Key(key_event));
   }
+}
+
+fn is_alt_code(record: &KEY_EVENT_RECORD) -> bool {
+  record.wVirtualKeyCode as i32 == winapi::um::winuser::VK_MENU
+    && record.bKeyDown == 0
+    && unsafe { *record.uChar.UnicodeChar() } != 0
 }
 
 enum CharCase {
@@ -398,7 +400,30 @@ pub fn decode_input_records<F: FnMut(InternalTermEvent)>(
   for record in records {
     match record.EventType {
       KEY_EVENT => {
-        decode_key_record(input_parser, unsafe { record.Event.KeyEvent() }, f)
+        let record = unsafe { record.Event.KeyEvent() };
+        let uchar = unsafe { *record.uChar.UnicodeChar() };
+
+        if record.bKeyDown == 0 && !is_alt_code(record) {
+          // Ignore release events.
+          //
+          // If we want to support release key events on Windows we need to
+          // handle:
+          // - if the key is part of escape sequence: consume both press+release
+          //   events
+          // - otherwise emit both press and release
+        } else if (1..=0x7f).contains(&uchar)
+          && record.dwControlKeyState == 0
+          && record.bKeyDown == 1
+        {
+          let ch = uchar as u8 as char;
+          let mut buf = [0u8; 4];
+          let bytes = ch.encode_utf8(&mut buf).as_bytes();
+          for _ in 0..record.wRepeatCount {
+            input_parser.parse_input(bytes, true, true, &mut *f);
+          }
+        } else {
+          decode_key_record(record, f);
+        }
       }
       MOUSE_EVENT => decode_mouse_record(
         input_parser,
@@ -411,6 +436,9 @@ pub fn decode_input_records<F: FnMut(InternalTermEvent)>(
       _ => {}
     }
   }
+
+  // Process pending ESC character.
+  input_parser.parse_input(b"", true, false, f);
 }
 
 fn modifiers_from_ctrl_key_state(state: u32) -> KeyModifiers {

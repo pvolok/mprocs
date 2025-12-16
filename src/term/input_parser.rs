@@ -21,11 +21,15 @@ impl InputParser {
     }
   }
 
-  pub fn parse_input<F>(&mut self, input: &[u8], is_raw_mode: bool, mut f: F)
-  where
+  pub fn parse_input<F>(
+    &mut self,
+    input: &[u8],
+    is_raw_mode: bool,
+    more: bool,
+    mut f: F,
+  ) where
     F: FnMut(E),
   {
-    let more = false;
     let mut i = 0;
     let mut consumed = 0;
 
@@ -123,7 +127,14 @@ impl InputParser {
                 }
               } else {
                 // Most of CSI
-                let len = parse_csi(&buf[i..], is_raw_mode, &mut f);
+                let len = if let Some(len) =
+                  parse_csi(&buf[i..], is_raw_mode, &mut f)
+                {
+                  len
+                } else {
+                  // Not enough input to complete CSI sequence.
+                  break;
+                };
                 i += len;
                 consumed = i;
               }
@@ -216,7 +227,8 @@ fn parse_char_key(
   Ok((i, Some(key)))
 }
 
-fn parse_csi<F>(buf: &[u8], is_raw_mode: bool, f: F) -> usize
+/// Returns `None` is there is not enough input.
+fn parse_csi<F>(buf: &[u8], is_raw_mode: bool, f: F) -> Option<usize>
 where
   F: FnMut(E),
 {
@@ -236,11 +248,11 @@ where
       buf[i - 1]
     } else {
       log::error!("TODO: CSI is incomplete.");
-      return i;
+      return Some(i);
     }
   } else {
-    log::error!("CSI sequence has wrong final.");
-    return i;
+    // Not enough input to complete CSI sequence.
+    return None;
   };
 
   match parse_csi_impl(buf, params, intermediates, final_, is_raw_mode, f) {
@@ -248,7 +260,7 @@ where
     Err(err) => log::error!("CSI error: {}", err),
   }
 
-  i
+  Some(i)
 }
 
 fn parse_csi_impl<F>(

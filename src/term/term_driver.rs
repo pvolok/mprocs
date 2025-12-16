@@ -143,8 +143,9 @@ impl TermDriver {
               match rustix::io::read(stdin, Box::as_mut(&mut read_buf)) {
                 Ok(read_count) => {
                   let slice = &read_buf[..read_count];
-                  input_parser
-                    .parse_input(slice, true, |e| sender.send(e).log_ignore());
+                  input_parser.parse_input(slice, true, false, |e| {
+                    sender.send(e).log_ignore()
+                  });
                 }
                 Err(err) => log::error!("stdin(err): {:?}", err),
               }
