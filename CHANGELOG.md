@@ -1,6 +1,10 @@
 ## Unreleased
 
+- Rewrite terminal input handling. This should fix all known bugs related to key
+  handling.
+- Add restart-all and force-restart-all commands
 - Use pwsh.exe for shell commands (instead of cmd.exe)
+- Fix missing resize event when toggling zoom mode
 - Properly handles lines wrappings during screen resize
 
 ## 0.7.3 - 2025-05-21

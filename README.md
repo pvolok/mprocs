@@ -321,8 +321,10 @@ Commands are encoded as yaml. Available commands:
 - `{c: start-proc}`
 - `{c: term-proc}`
 - `{c: kill-proc}`
-- `{c: restart-proc}`
-- `{c: force-restart-proc}`
+- `{c: restart-proc}` - Restart selected process
+- `{c: restart-all}` - Restart all processes
+- `{c: force-restart-proc}` - Restart selected process by sending SIGKILL
+- `{c: force-restart-all}`
 - `{c: show-add-proc}`
 - `{c: add-proc, cmd: "<SHELL COMMAND>", name: "<PROC NAME>"}` - Add proccess. `name` field is optional.
 - `{c: duplicate-proc}`
