@@ -13,7 +13,6 @@ use tui::layout::Rect;
 
 use crate::kernel::proc::ProcId;
 use crate::key::Key;
-use crate::mouse::MouseEvent;
 use crate::vt100::TermReplySender;
 use crate::yaml_val::Val;
 
@@ -50,13 +49,6 @@ impl StopSignal {
       _ => (),
     }
     bail!("Unexpected 'stop' value: {:?}.", val.raw());
-  }
-}
-
-fn translate_mouse_pos(event: &MouseEvent, scrollback: usize) -> Pos {
-  Pos {
-    y: event.y - scrollback as i32,
-    x: event.x,
   }
 }
 
@@ -97,12 +89,11 @@ pub struct Pos {
 
 impl Pos {
   pub fn to_low_high<'a>(a: &'a Self, b: &'a Self) -> (&'a Self, &'a Self) {
-    if a.y > b.y {
-      return (b, a);
-    } else if a.y == b.y && a.x > b.x {
-      return (b, a);
+    if a.y < b.y || a.y == b.y && a.x < b.x {
+      (a, b)
+    } else {
+      (b, a)
     }
-    (a, b)
   }
 
   pub fn within(start: &Self, end: &Self, target: &Self) -> bool {
@@ -111,13 +102,7 @@ impl Pos {
     let (low, high) = Pos::to_low_high(start, end);
 
     if y > low.y {
-      if y < high.y {
-        true
-      } else if y == high.y && x <= high.x {
-        true
-      } else {
-        false
-      }
+      y < high.y || y == high.y && x <= high.x
     } else if y == low.y {
       if y < high.y {
         x >= low.x

@@ -3,10 +3,7 @@ use std::{any::Any, fmt::Debug};
 use compact_str::CompactString;
 
 use crate::{
-  kernel::{
-    kernel_message::SharedVt,
-    proc::{ProcId, ProcStatus},
-  },
+  kernel::{kernel_message::SharedVt, proc::ProcId},
   key::Key,
   mouse::MouseEvent,
 };

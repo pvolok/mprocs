@@ -62,7 +62,7 @@ impl ProcView {
     self.exit_code
   }
 
-  pub fn lock_view(&self) -> ProcViewFrame {
+  pub fn lock_view(&'_ self) -> ProcViewFrame<'_> {
     match &self.vt {
       None => ProcViewFrame::Empty,
       Some(vt) => vt

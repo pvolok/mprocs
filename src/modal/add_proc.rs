@@ -64,7 +64,7 @@ impl Modal for AddProcModal {
       _ => (),
     }
 
-    let req = tui_input::backend::crossterm::to_input_request(&event);
+    let req = tui_input::backend::crossterm::to_input_request(event);
     if let Some(req) = req {
       self.input.handle(req);
       loop_action.render();
@@ -107,6 +107,6 @@ impl Modal for AddProcModal {
       &mut cursor,
     );
 
-    frame.set_cursor(cursor.0, cursor.1);
+    frame.set_cursor_position((cursor.0, cursor.1));
   }
 }

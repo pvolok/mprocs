@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 use serde_yaml::Value;
 
 #[derive(Clone)]
-struct Trace(Option<Rc<Box<(String, Trace)>>>);
+struct Trace(Option<Rc<(String, Trace)>>);
 
 impl Trace {
   pub fn empty() -> Self {
@@ -13,9 +13,10 @@ impl Trace {
   }
 
   pub fn add<T: ToString>(&self, seg: T) -> Self {
-    Trace(Some(Rc::new(Box::new((seg.to_string(), self.clone())))))
+    Trace(Some(Rc::new((seg.to_string(), self.clone()))))
   }
 
+  #[allow(clippy::inherent_to_string)]
   pub fn to_string(&self) -> String {
     let mut str = String::new();
     fn add(buf: &mut String, trace: &Trace) {
@@ -44,11 +45,7 @@ impl<'a> Val<'a> {
   fn create(value: &'a Value, trace: Trace) -> anyhow::Result<Self> {
     match value {
       Value::Mapping(map) => {
-        if map
-          .into_iter()
-          .next()
-          .map_or(false, |(k, _)| k.eq("$select"))
-        {
+        if map.into_iter().next().is_some_and(|(k, _)| k.eq("$select")) {
           let (v, t) = Self::select(map, trace.clone())?;
           return Self::create(v, t);
         }
@@ -66,12 +63,12 @@ impl<'a> Val<'a> {
     map: &'a serde_yaml::Mapping,
     trace: Trace,
   ) -> anyhow::Result<(&'a Value, Trace)> {
-    if map.get(&Value::from("$select")).unwrap() == "os" {
-      if let Some(v) = map.get(&Value::from(OS)) {
+    if map.get(Value::from("$select")).unwrap() == "os" {
+      if let Some(v) = map.get(Value::from(OS)) {
         return Ok((v, trace.add(OS)));
       }
 
-      if let Some(v) = map.get(&Value::from("$else")) {
+      if let Some(v) = map.get(Value::from("$else")) {
         return Ok((v, trace.add("$else")));
       }
 
@@ -110,7 +107,7 @@ impl<'a> Val<'a> {
     })
   }
 
-  pub fn as_array(&self) -> anyhow::Result<Vec<Val>> {
+  pub fn as_array(&'_ self) -> anyhow::Result<Vec<Val<'_>>> {
     self
       .0
       .as_sequence()
@@ -123,7 +120,7 @@ impl<'a> Val<'a> {
       .collect::<anyhow::Result<Vec<_>>>()
   }
 
-  pub fn as_object(&self) -> anyhow::Result<IndexMap<Value, Val>> {
+  pub fn as_object(&'_ self) -> anyhow::Result<IndexMap<Value, Val<'_>>> {
     self
       .0
       .as_mapping()
@@ -138,7 +135,7 @@ impl<'a> Val<'a> {
           item: &'a Value,
           trace: &'a Trace,
         ) -> anyhow::Result<Val<'a>> {
-          Ok(Val::create(item, trace.add(value_to_string(k)?))?)
+          Val::create(item, trace.add(value_to_string(k)?))
         }
         Ok((k.to_owned(), mk_val(k, item, &self.1)?))
       })

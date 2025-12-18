@@ -93,4 +93,8 @@ winapi = { version = "0.3", features = ["consoleapi", "winuser"] }
 [lints.clippy]
 collapsible_else_if = "allow"
 collapsible_if = "allow"
+module_inception = "allow"
+redundant_closure = "allow"
+single_match = "allow"
+upper_case_acronyms = "allow"
 while_let_loop = "allow"
