@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.8.0 - 2025-12-18
+
 - Rewrite terminal input handling. This should fix all known bugs related to key
   handling.
 - Add restart-all and force-restart-all commands

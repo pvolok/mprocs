@@ -247,7 +247,7 @@ where
       i += 1;
       buf[i - 1]
     } else {
-      log::error!("TODO: CSI is incomplete.");
+      log::error!("CSI is incomplete. Ignoring.");
       return Some(i);
     }
   } else {
