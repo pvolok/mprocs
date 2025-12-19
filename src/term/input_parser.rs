@@ -294,13 +294,19 @@ where
 
       params.next();
 
-      let mods = if let Some(mods) = params.next() {
-        parse_modifiers(mods.parse::<u8>()?)
+      let (mods, kind) = if let Some(mods_param) = params.next() {
+        let mut mods_param = mods_param.split(':');
+        let mods =
+          parse_modifiers(mods_param.next().unwrap_or_default().parse::<u8>()?);
+        let kind = parse_key_event_kind(
+          mods_param.next().unwrap_or("").parse().unwrap_or_default(),
+        );
+        (mods, kind)
       } else {
-        KeyModifiers::NONE
+        (KeyModifiers::NONE, KeyEventKind::Press)
       };
 
-      f(E::Key(KeyEvent::new(code, mods)));
+      f(E::Key(KeyEvent::new_with_kind(code, mods, kind)));
     }
     b'c' if params.starts_with(b"?") => {
       f(E::PrimaryDeviceAttributes);
