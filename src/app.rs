@@ -947,6 +947,15 @@ impl App {
           if let Some(proc) = self.state.get_proc_mut(proc_id) {
             proc.is_up = true;
             proc.last_start = Some(Instant::now());
+            match proc.target_state {
+              TargetState::None => (),
+              TargetState::Started => {
+                proc.target_state = TargetState::None;
+              }
+              TargetState::Stopped => {
+                self.pc.send(KernelCommand::ProcCmd(proc_id, ProcCmd::Stop));
+              }
+            }
             loop_action.render();
           }
         }
