@@ -1,5 +1,10 @@
 ## Unreleased
 
+## 0.8.1 - 2025-12-20
+
+- Fix #183
+- Fix #184
+
 ## 0.8.0 - 2025-12-18
 
 - Rewrite terminal input handling. This should fix all known bugs related to key
