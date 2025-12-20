@@ -40,6 +40,8 @@ static KEYS: phf::Map<&'static str, KeyCode> = phf::phf_map! {
 };
 
 static SPECIAL_CHARS: phf::Map<char, &str> = phf::phf_map! {
+  ' ' => "Space",
+
   '<' => "LT",
   '>' => "GT",
   '-' => "Minus",
