@@ -191,13 +191,13 @@ impl App {
         }
       }
 
+      if self.state.quitting && self.state.all_procs_down() {
+        break;
+      }
+
       let mut loop_action = LoopAction::default();
       if let Some(command) = self.pr.recv().await {
         self.handle_proc_command(&mut loop_action, command);
-      }
-
-      if self.state.quitting && self.state.all_procs_down() {
-        break;
       }
 
       match loop_action {
@@ -1053,7 +1053,13 @@ impl App {
   fn check_finish(&mut self, loop_action: &mut LoopAction) {
     if self.state.all_procs_down() {
       if self.config.quit_on_finish {
-        loop_action.force_quit();
+        self.state.quitting = true;
+        loop_action.render();
+        return;
+      }
+
+      if self.state.quitting {
+        return;
       }
 
       if self.config.notify_on_finish && !self.state.finish_notified {
