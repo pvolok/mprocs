@@ -996,6 +996,13 @@ impl App {
               }
             }
 
+            if self.config.quit_on_finish
+              && !restart
+              && self.state.all_procs_down()
+            {
+              loop_action.force_quit();
+            }
+
             loop_action.render();
           }
         }

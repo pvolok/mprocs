@@ -22,6 +22,7 @@ pub struct Settings {
   pub scrollback_len: usize,
   pub proc_list_width: usize,
   pub proc_list_title: String,
+  pub quit_on_finish: bool,
 }
 
 impl Default for Settings {
@@ -35,6 +36,7 @@ impl Default for Settings {
       scrollback_len: 1000,
       proc_list_width: 30,
       proc_list_title: "Processes".to_string(),
+      quit_on_finish: false,
     };
     settings.add_defaults();
     settings
@@ -146,6 +148,10 @@ impl Settings {
 
     if let Some(proc_list_width) = obj.get(&Value::from("proc_list_width")) {
       self.proc_list_width = proc_list_width.as_usize()?;
+    }
+
+    if let Some(quit_on_finish) = obj.get(&Value::from("quit_on_finish")) {
+      self.quit_on_finish = quit_on_finish.as_bool()?;
     }
 
     Ok(())

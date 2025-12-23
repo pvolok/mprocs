@@ -24,6 +24,7 @@ pub struct Config {
   pub scrollback_len: usize,
   pub proc_list_width: usize,
   pub proc_list_title: String,
+  pub quit_on_finish: bool,
 }
 
 impl Config {
@@ -70,6 +71,14 @@ impl Config {
         settings.proc_list_title.clone()
       };
 
+    let quit_on_finish =
+      if let Some(quit_on_finish) = config.get(&Value::from("quit_on_finish"))
+      {
+        quit_on_finish.as_bool()?
+      } else {
+        settings.quit_on_finish
+      };
+
     let config = Config {
       procs,
       server,
@@ -78,6 +87,7 @@ impl Config {
       scrollback_len: settings.scrollback_len,
       proc_list_width: settings.proc_list_width,
       proc_list_title,
+      quit_on_finish,
     };
 
     Ok(config)
@@ -92,6 +102,7 @@ impl Config {
       scrollback_len: settings.scrollback_len,
       proc_list_width: settings.proc_list_width,
       proc_list_title: settings.proc_list_title.clone(),
+      quit_on_finish: settings.quit_on_finish,
     }
   }
 }

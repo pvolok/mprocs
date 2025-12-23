@@ -75,7 +75,7 @@ impl State {
   }
 
   pub fn all_procs_down(&self) -> bool {
-    self.procs.iter().all(|p| !p.is_up())
+    self.procs.iter().all(|p| !p.is_up() && !p.is_waiting)
   }
 
   pub fn toggle_keymap_window(&mut self) {
