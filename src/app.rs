@@ -26,9 +26,9 @@ use crate::{
   key::Key,
   keymap::Keymap,
   modal::{
-    add_proc::AddProcModal, commands_menu::CommandsMenuModal, modal::Modal,
-    quit::QuitModal, remove_proc::RemoveProcModal,
-    rename_proc::RenameProcModal,
+    add_proc::AddProcModal, commands_menu::CommandsMenuModal,
+    finish::FinishModal, modal::Modal, quit::QuitModal,
+    remove_proc::RemoveProcModal, rename_proc::RenameProcModal,
   },
   mouse::MouseEvent,
   proc::{
@@ -628,6 +628,7 @@ impl App {
       }
 
       AppEvent::StartProc => {
+        self.state.finish_notified = false;
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.target_state = TargetState::Started;
           pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
@@ -646,6 +647,7 @@ impl App {
         }
       }
       AppEvent::RestartProc => {
+        self.state.finish_notified = false;
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.target_state = TargetState::Started;
           if proc.is_up() {
@@ -656,6 +658,7 @@ impl App {
         }
       }
       AppEvent::RestartAll => {
+        self.state.finish_notified = false;
         for proc in &mut self.state.procs {
           proc.target_state = TargetState::Started;
           if proc.is_up() {
@@ -666,6 +669,7 @@ impl App {
         }
       }
       AppEvent::ForceRestartProc => {
+        self.state.finish_notified = false;
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.target_state = TargetState::Started;
           if proc.is_up() {
@@ -676,6 +680,7 @@ impl App {
         }
       }
       AppEvent::ForceRestartAll => {
+        self.state.finish_notified = false;
         for proc in &mut self.state.procs {
           proc.target_state = TargetState::Started;
           if proc.is_up() {
@@ -741,6 +746,7 @@ impl App {
         loop_action.render();
       }
       AppEvent::AddProc { cmd, name } => {
+        self.state.finish_notified = false;
         let name = match name {
           Some(s) => s,
           None => cmd,
@@ -771,6 +777,7 @@ impl App {
         loop_action.render();
       }
       AppEvent::DuplicateProc => {
+        self.state.finish_notified = false;
         let cfg = match self.state.get_current_proc_mut() {
           Some(proc_handle) => Some(proc_handle.cfg.clone()),
           None => None,
@@ -796,6 +803,7 @@ impl App {
       }
       AppEvent::RemoveProc { id } => {
         self.state.procs.retain(|p| p.is_up() || p.id() != *id);
+        self.check_finish(loop_action);
         loop_action.render();
       }
 
@@ -996,11 +1004,8 @@ impl App {
               }
             }
 
-            if self.config.quit_on_finish
-              && !restart
-              && self.state.all_procs_down()
-            {
-              loop_action.force_quit();
+            if !restart {
+              self.check_finish(loop_action);
             }
 
             loop_action.render();
@@ -1043,6 +1048,20 @@ impl App {
       self.state.hide_keymap_window,
       &self.config,
     )
+  }
+
+  fn check_finish(&mut self, loop_action: &mut LoopAction) {
+    if self.state.all_procs_down() {
+      if self.config.quit_on_finish {
+        loop_action.force_quit();
+      }
+
+      if self.config.notify_on_finish && !self.state.finish_notified {
+        self.state.finish_notified = true;
+        self.modal = Some(FinishModal::new(self.pc.clone()).boxed());
+        loop_action.render();
+      }
+    }
   }
 }
 
@@ -1316,6 +1335,7 @@ pub async fn server_main(
     hide_keymap_window: config.hide_keymap_window,
 
     quitting: false,
+    finish_notified: false,
   };
 
   let app = App {

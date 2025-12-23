@@ -25,6 +25,7 @@ pub struct Config {
   pub proc_list_width: usize,
   pub proc_list_title: String,
   pub quit_on_finish: bool,
+  pub notify_on_finish: bool,
 }
 
 impl Config {
@@ -79,6 +80,14 @@ impl Config {
         settings.quit_on_finish
       };
 
+    let notify_on_finish = if let Some(notify_on_finish) =
+      config.get(&Value::from("notify_on_finish"))
+    {
+      notify_on_finish.as_bool()?
+    } else {
+      settings.notify_on_finish
+    };
+
     let config = Config {
       procs,
       server,
@@ -88,6 +97,7 @@ impl Config {
       proc_list_width: settings.proc_list_width,
       proc_list_title,
       quit_on_finish,
+      notify_on_finish,
     };
 
     Ok(config)
@@ -103,6 +113,7 @@ impl Config {
       proc_list_width: settings.proc_list_width,
       proc_list_title: settings.proc_list_title.clone(),
       quit_on_finish: settings.quit_on_finish,
+      notify_on_finish: settings.notify_on_finish,
     }
   }
 }

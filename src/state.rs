@@ -39,6 +39,7 @@ pub struct State {
   pub hide_keymap_window: bool,
 
   pub quitting: bool,
+  pub finish_notified: bool,
 }
 
 impl State {
