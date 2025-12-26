@@ -27,10 +27,6 @@ impl RemoveProcModal {
 }
 
 impl Modal for RemoveProcModal {
-  fn boxed(self) -> Box<dyn Modal> {
-    Box::new(self)
-  }
-
   fn handle_input(
     &mut self,
     _state: &mut State,

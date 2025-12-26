@@ -24,10 +24,6 @@ impl QuitModal {
 }
 
 impl Modal for QuitModal {
-  fn boxed(self) -> Box<dyn Modal> {
-    Box::new(self)
-  }
-
   fn handle_input(
     &mut self,
     state: &mut State,

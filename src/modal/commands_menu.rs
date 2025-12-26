@@ -34,10 +34,6 @@ impl CommandsMenuModal {
 }
 
 impl Modal for CommandsMenuModal {
-  fn boxed(self) -> Box<dyn Modal> {
-    Box::new(self)
-  }
-
   fn handle_input(
     &mut self,
     _state: &mut State,

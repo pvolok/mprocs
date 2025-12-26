@@ -4,7 +4,12 @@ use tui::{prelude::Rect, Frame};
 use crate::{app::LoopAction, state::State};
 
 pub trait Modal: Send {
-  fn boxed(self) -> Box<dyn Modal>;
+  fn boxed(self) -> Box<dyn Modal>
+  where
+    Self: std::marker::Sized + 'static,
+  {
+    Box::new(self)
+  }
 
   fn handle_input(
     &mut self,
