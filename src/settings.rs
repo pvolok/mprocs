@@ -22,8 +22,7 @@ pub struct Settings {
   pub scrollback_len: usize,
   pub proc_list_width: usize,
   pub proc_list_title: String,
-  pub quit_on_finish: bool,
-  pub notify_on_finish: bool,
+  pub on_all_finished: Option<AppEvent>,
 }
 
 impl Default for Settings {
@@ -37,8 +36,7 @@ impl Default for Settings {
       scrollback_len: 1000,
       proc_list_width: 30,
       proc_list_title: "Processes".to_string(),
-      quit_on_finish: false,
-      notify_on_finish: false,
+      on_all_finished: None,
     };
     settings.add_defaults();
     settings
@@ -152,12 +150,9 @@ impl Settings {
       self.proc_list_width = proc_list_width.as_usize()?;
     }
 
-    if let Some(quit_on_finish) = obj.get(&Value::from("quit_on_finish")) {
-      self.quit_on_finish = quit_on_finish.as_bool()?;
-    }
-
-    if let Some(notify_on_finish) = obj.get(&Value::from("notify_on_finish")) {
-      self.notify_on_finish = notify_on_finish.as_bool()?;
+    if let Some(on_all_finished) = obj.get(&Value::from("on_all_finished")) {
+      self.on_all_finished =
+        Some(serde_yaml::from_value(on_all_finished.raw().clone())?);
     }
 
     Ok(())

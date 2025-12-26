@@ -27,7 +27,7 @@ use crate::{
   keymap::Keymap,
   modal::{
     add_proc::AddProcModal, commands_menu::CommandsMenuModal,
-    finish::FinishModal, modal::Modal, quit::QuitModal,
+    modal::Modal, quit::QuitModal,
     remove_proc::RemoveProcModal, rename_proc::RenameProcModal,
   },
   mouse::MouseEvent,
@@ -1052,20 +1052,11 @@ impl App {
 
   fn check_finish(&mut self, loop_action: &mut LoopAction) {
     if self.state.all_procs_down() {
-      if self.config.quit_on_finish {
-        self.state.quitting = true;
-        loop_action.render();
-        return;
-      }
-
-      if self.state.quitting {
-        return;
-      }
-
-      if self.config.notify_on_finish && !self.state.finish_notified {
-        self.state.finish_notified = true;
-        self.modal = Some(FinishModal::new(self.pc.clone()).boxed());
-        loop_action.render();
+      if let Some(event) = self.config.on_all_finished.clone() {
+        if !self.state.finish_notified {
+          self.state.finish_notified = true;
+          self.handle_event(loop_action, &event);
+        }
       }
     }
   }

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 
 use crate::{
+  event::AppEvent,
   proc::StopSignal,
   settings::Settings,
   yaml_val::{value_to_string, Val},
@@ -24,8 +25,7 @@ pub struct Config {
   pub scrollback_len: usize,
   pub proc_list_width: usize,
   pub proc_list_title: String,
-  pub quit_on_finish: bool,
-  pub notify_on_finish: bool,
+  pub on_all_finished: Option<AppEvent>,
 }
 
 impl Config {
@@ -72,21 +72,12 @@ impl Config {
         settings.proc_list_title.clone()
       };
 
-    let quit_on_finish =
-      if let Some(quit_on_finish) = config.get(&Value::from("quit_on_finish"))
-      {
-        quit_on_finish.as_bool()?
+    let on_all_finished =
+      if let Some(val) = config.get(&Value::from("on_all_finished")) {
+        Some(serde_yaml::from_value(val.raw().clone())?)
       } else {
-        settings.quit_on_finish
+        settings.on_all_finished.clone()
       };
-
-    let notify_on_finish = if let Some(notify_on_finish) =
-      config.get(&Value::from("notify_on_finish"))
-    {
-      notify_on_finish.as_bool()?
-    } else {
-      settings.notify_on_finish
-    };
 
     let config = Config {
       procs,
@@ -96,8 +87,7 @@ impl Config {
       scrollback_len: settings.scrollback_len,
       proc_list_width: settings.proc_list_width,
       proc_list_title,
-      quit_on_finish,
-      notify_on_finish,
+      on_all_finished,
     };
 
     Ok(config)
@@ -112,8 +102,7 @@ impl Config {
       scrollback_len: settings.scrollback_len,
       proc_list_width: settings.proc_list_width,
       proc_list_title: settings.proc_list_title.clone(),
-      quit_on_finish: settings.quit_on_finish,
-      notify_on_finish: settings.notify_on_finish,
+      on_all_finished: settings.on_all_finished.clone(),
     }
   }
 }

@@ -72,8 +72,7 @@ async fn run_app() -> anyhow::Result<()> {
     .arg(arg!(--names [NAMES] "Names for processes provided by cli arguments. Separated by comma."))
     .arg(arg!(--npm "Run scripts from package.json. Scripts are not started by default."))
     .arg(arg!(--just "Run recipes from justfile. Recipes are not started by default. Requires just to be installed."))
-    .arg(arg!(--"quit-on-finish" "Exit mprocs when all processes are finished"))
-    .arg(arg!(--"notify-on-finish" "Show a dialog when all processes are finished"))
+    .arg(arg!(--"on-all-finished" [YAML] "Event to trigger when all processes are finished"))
     .arg(arg!([COMMANDS]... "Commands to run (if omitted, commands from config will be run)"))
     // .subcommand(Command::new("server"))
     // .subcommand(Command::new("attach"))
@@ -117,12 +116,9 @@ async fn run_app() -> anyhow::Result<()> {
       config.proc_list_title = title.to_string();
     }
 
-    if matches.get_flag("quit-on-finish") {
-      config.quit_on_finish = true;
-    }
-
-    if matches.get_flag("notify-on-finish") {
-      config.notify_on_finish = true;
+    if let Some(on_all_finished) = matches.get_one::<String>("on-all-finished")
+    {
+      config.on_all_finished = Some(serde_yaml::from_str(on_all_finished)?);
     }
 
     if let Some(cmds) = matches.get_many::<String>("COMMANDS") {
