@@ -22,6 +22,7 @@ pub struct Settings {
   pub scrollback_len: usize,
   pub proc_list_width: usize,
   pub proc_list_title: String,
+  pub on_all_finished: Option<AppEvent>,
 }
 
 impl Default for Settings {
@@ -35,6 +36,7 @@ impl Default for Settings {
       scrollback_len: 1000,
       proc_list_width: 30,
       proc_list_title: "Processes".to_string(),
+      on_all_finished: None,
     };
     settings.add_defaults();
     settings
@@ -146,6 +148,11 @@ impl Settings {
 
     if let Some(proc_list_width) = obj.get(&Value::from("proc_list_width")) {
       self.proc_list_width = proc_list_width.as_usize()?;
+    }
+
+    if let Some(on_all_finished) = obj.get(&Value::from("on_all_finished")) {
+      self.on_all_finished =
+        Some(serde_yaml::from_value(on_all_finished.raw().clone())?);
     }
 
     Ok(())

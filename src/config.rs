@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 
 use crate::{
+  event::AppEvent,
   proc::StopSignal,
   settings::Settings,
   yaml_val::{value_to_string, Val},
@@ -24,6 +25,7 @@ pub struct Config {
   pub scrollback_len: usize,
   pub proc_list_width: usize,
   pub proc_list_title: String,
+  pub on_all_finished: Option<AppEvent>,
 }
 
 impl Config {
@@ -70,6 +72,13 @@ impl Config {
         settings.proc_list_title.clone()
       };
 
+    let on_all_finished =
+      if let Some(val) = config.get(&Value::from("on_all_finished")) {
+        Some(serde_yaml::from_value(val.raw().clone())?)
+      } else {
+        settings.on_all_finished.clone()
+      };
+
     let config = Config {
       procs,
       server,
@@ -78,6 +87,7 @@ impl Config {
       scrollback_len: settings.scrollback_len,
       proc_list_width: settings.proc_list_width,
       proc_list_title,
+      on_all_finished,
     };
 
     Ok(config)
@@ -92,6 +102,7 @@ impl Config {
       scrollback_len: settings.scrollback_len,
       proc_list_width: settings.proc_list_width,
       proc_list_title: settings.proc_list_title.clone(),
+      on_all_finished: settings.on_all_finished.clone(),
     }
   }
 }

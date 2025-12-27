@@ -26,9 +26,9 @@ use crate::{
   key::Key,
   keymap::Keymap,
   modal::{
-    add_proc::AddProcModal, commands_menu::CommandsMenuModal, modal::Modal,
-    quit::QuitModal, remove_proc::RemoveProcModal,
-    rename_proc::RenameProcModal,
+    add_proc::AddProcModal, commands_menu::CommandsMenuModal,
+    modal::Modal, quit::QuitModal,
+    remove_proc::RemoveProcModal, rename_proc::RenameProcModal,
   },
   mouse::MouseEvent,
   proc::{
@@ -993,6 +993,14 @@ impl App {
               TargetState::Started => (),
               TargetState::Stopped => {
                 proc.target_state = TargetState::None;
+              }
+            }
+
+            if !restart {
+              if self.state.all_procs_down() {
+                if let Some(event) = self.config.on_all_finished.clone() {
+                  self.handle_event(loop_action, &event);
+                }
               }
             }
 
