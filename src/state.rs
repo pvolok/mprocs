@@ -39,7 +39,6 @@ pub struct State {
   pub hide_keymap_window: bool,
 
   pub quitting: bool,
-  pub finish_notified: bool,
 }
 
 impl State {
@@ -76,7 +75,7 @@ impl State {
   }
 
   pub fn all_procs_down(&self) -> bool {
-    self.procs.iter().all(|p| !p.is_up() && !p.is_waiting)
+    self.procs.iter().all(|p| !p.is_up())
   }
 
   pub fn toggle_keymap_window(&mut self) {

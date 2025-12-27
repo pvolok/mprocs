@@ -191,13 +191,13 @@ impl App {
         }
       }
 
-      if self.state.quitting && self.state.all_procs_down() {
-        break;
-      }
-
       let mut loop_action = LoopAction::default();
       if let Some(command) = self.pr.recv().await {
         self.handle_proc_command(&mut loop_action, command);
+      }
+
+      if self.state.quitting && self.state.all_procs_down() {
+        break;
       }
 
       match loop_action {
@@ -628,7 +628,6 @@ impl App {
       }
 
       AppEvent::StartProc => {
-        self.state.finish_notified = false;
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.target_state = TargetState::Started;
           pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
@@ -647,7 +646,6 @@ impl App {
         }
       }
       AppEvent::RestartProc => {
-        self.state.finish_notified = false;
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.target_state = TargetState::Started;
           if proc.is_up() {
@@ -658,7 +656,6 @@ impl App {
         }
       }
       AppEvent::RestartAll => {
-        self.state.finish_notified = false;
         for proc in &mut self.state.procs {
           proc.target_state = TargetState::Started;
           if proc.is_up() {
@@ -669,7 +666,6 @@ impl App {
         }
       }
       AppEvent::ForceRestartProc => {
-        self.state.finish_notified = false;
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.target_state = TargetState::Started;
           if proc.is_up() {
@@ -680,7 +676,6 @@ impl App {
         }
       }
       AppEvent::ForceRestartAll => {
-        self.state.finish_notified = false;
         for proc in &mut self.state.procs {
           proc.target_state = TargetState::Started;
           if proc.is_up() {
@@ -746,7 +741,6 @@ impl App {
         loop_action.render();
       }
       AppEvent::AddProc { cmd, name } => {
-        self.state.finish_notified = false;
         let name = match name {
           Some(s) => s,
           None => cmd,
@@ -777,7 +771,6 @@ impl App {
         loop_action.render();
       }
       AppEvent::DuplicateProc => {
-        self.state.finish_notified = false;
         let cfg = match self.state.get_current_proc_mut() {
           Some(proc_handle) => Some(proc_handle.cfg.clone()),
           None => None,
@@ -803,7 +796,6 @@ impl App {
       }
       AppEvent::RemoveProc { id } => {
         self.state.procs.retain(|p| p.is_up() || p.id() != *id);
-        self.check_finish(loop_action);
         loop_action.render();
       }
 
@@ -1005,7 +997,11 @@ impl App {
             }
 
             if !restart {
-              self.check_finish(loop_action);
+              if self.state.all_procs_down() {
+                if let Some(event) = self.config.on_all_finished.clone() {
+                  self.handle_event(loop_action, &event);
+                }
+              }
             }
 
             loop_action.render();
@@ -1048,17 +1044,6 @@ impl App {
       self.state.hide_keymap_window,
       &self.config,
     )
-  }
-
-  fn check_finish(&mut self, loop_action: &mut LoopAction) {
-    if self.state.all_procs_down() {
-      if let Some(event) = self.config.on_all_finished.clone() {
-        if !self.state.finish_notified {
-          self.state.finish_notified = true;
-          self.handle_event(loop_action, &event);
-        }
-      }
-    }
   }
 }
 
@@ -1332,7 +1317,6 @@ pub async fn server_main(
     hide_keymap_window: config.hide_keymap_window,
 
     quitting: false,
-    finish_notified: false,
   };
 
   let app = App {
