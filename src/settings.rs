@@ -48,7 +48,7 @@ impl Default for Settings {
 impl Settings {
   pub fn merge_from_xdg(&mut self) -> Result<()> {
     if let Some(path) = self.get_xdg_config_path() {
-      match File::open(path) {
+      match File::open(&path) {
         Ok(file) => {
           let reader = BufReader::new(file);
           let settings_value: Value = serde_yaml::from_reader(reader)?;
