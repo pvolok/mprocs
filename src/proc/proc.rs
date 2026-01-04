@@ -24,6 +24,27 @@ use super::view::ProcView;
 use super::StopSignal;
 use super::{ReplySender, Size};
 
+fn sanitize_log_filename(name: &str) -> String {
+  let mut out = String::new();
+  for ch in name.chars() {
+    let is_safe = ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.');
+    if is_safe {
+      out.push(ch);
+    } else if ch == ' ' {
+      out.push('_');
+    } else {
+      out.push('_');
+    }
+  }
+
+  let trimmed = out.trim_matches(|c| c == '.' || c == ' ').to_string();
+  if trimmed.is_empty() {
+    "process".to_string()
+  } else {
+    trimmed
+  }
+}
+
 pub struct Proc {
   pub id: ProcId,
   pub cmd: CommandBuilder,
@@ -176,7 +197,10 @@ impl Proc {
     let log_file = self
       .log_dir
       .as_ref()
-      .map(|dir| dir.join(format!("{}.log", self.name)));
+      .map(|dir| {
+        let filename = sanitize_log_filename(&self.name);
+        dir.join(format!("{}.log", filename))
+      });
 
     let spawned = Inst::spawn(
       self.id,
