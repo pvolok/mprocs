@@ -165,12 +165,18 @@ settings in the _global_ config.
   - **stop**: _"SIGINT"|"SIGTERM"|"SIGKILL"|{send-keys:
     array<key>}|"hard-kill"_ -
     A way to stop a process (using `x` key or when quitting mprocs).
+  - **log_dir**: _string|null_ - Directory for process log files. Each process
+    logs to `<log_dir>/<name>.log`. Prefix `<CONFIG_DIR>` will be replaced with
+    the path of the directory where the config is located.
 - **hide_keymap_window**: _bool_ - Hide the pane at the bottom of the screen
   showing key bindings.
 - **mouse_scroll_speed**: _integer_ - Number of lines to scrollper one mouse
   scroll.
 - **scrollback**: _integer_ - Scrollback size. Default: _1000_.
 - **proc_list_width**: _integer_ - Process list window width.
+- **log_dir**: _string|null_ - Default directory for process log files. Each
+  process logs to `<log_dir>/<name>.log`. Prefix `<CONFIG_DIR>` will be replaced
+  with the path of the directory where the config is located.
 - **keymap_procs**: _object_ - Key bindings for process list. See
   [Keymap](#keymap).
 - **keymap_term**: _object_ - Key bindings for terminal window. See

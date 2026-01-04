@@ -17,6 +17,20 @@ pub struct ConfigContext {
   pub path: PathBuf,
 }
 
+fn resolve_config_path(path: &str, ctx: &ConfigContext) -> Result<PathBuf> {
+  let mut buf = PathBuf::new();
+  if let Some(rest) = path.strip_prefix("<CONFIG_DIR>") {
+    if let Some(parent) = dunce::canonicalize(&ctx.path)?.parent() {
+      buf.push(parent);
+    }
+    buf.push(rest);
+  } else {
+    buf.push(path);
+  }
+
+  Ok(buf)
+}
+
 pub struct Config {
   pub procs: Vec<ProcConfig>,
   pub server: Option<ServerConfig>,
@@ -80,6 +94,15 @@ impl Config {
         settings.on_all_finished.clone()
       };
 
+    let log_dir = match config.get(&Value::from("log_dir")) {
+      Some(val) => match val.raw() {
+        Value::Null => None,
+        Value::String(_) => Some(resolve_config_path(val.as_str()?, ctx)?),
+        _ => return Err(val.error_at("Expected string or null").into()),
+      },
+      None => settings.log_dir.clone(),
+    };
+
     let config = Config {
       procs,
       server,
@@ -89,7 +112,7 @@ impl Config {
       proc_list_width: settings.proc_list_width,
       proc_list_title,
       on_all_finished,
-      log_dir: None,
+      log_dir,
     };
 
     Ok(config)
@@ -105,7 +128,7 @@ impl Config {
       proc_list_width: settings.proc_list_width,
       proc_list_title: settings.proc_list_title.clone(),
       on_all_finished: settings.on_all_finished.clone(),
-      log_dir: None,
+      log_dir: settings.log_dir.clone(),
     }
   }
 }
@@ -217,6 +240,15 @@ impl ProcConfig {
           None => None,
         };
 
+        let log_dir = match map.get(&Value::from("log_dir")) {
+          Some(val) => match val.raw() {
+            Value::Null => None,
+            Value::String(_) => Some(resolve_config_path(val.as_str()?, ctx)?),
+            _ => return Err(val.error_at("Expected string or null").into()),
+          },
+          None => None,
+        };
+
         let env = match map.get(&Value::from("env")) {
           Some(env) => {
             let env = env.as_object()?;
@@ -312,7 +344,7 @@ impl ProcConfig {
           deps,
           mouse_scroll_speed,
           scrollback_len,
-          log_dir: None,
+          log_dir,
         }))
       }
       Value::Tagged(_) => anyhow::bail!("Yaml tags are not supported"),

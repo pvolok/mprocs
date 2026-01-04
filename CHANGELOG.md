@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add log_dir configuration in mprocs.yaml
+
 ## 0.8.2 - 2025-12-22
 
 - Fix --cmd send-key when sending Space

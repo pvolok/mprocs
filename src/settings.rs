@@ -1,6 +1,6 @@
 use std::{fs::File, io::BufReader, path::PathBuf};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use crossterm::event::{KeyCode, KeyModifiers};
 use indexmap::IndexMap;
 use serde_yaml::Value;
@@ -23,6 +23,7 @@ pub struct Settings {
   pub proc_list_width: usize,
   pub proc_list_title: String,
   pub on_all_finished: Option<AppEvent>,
+  pub log_dir: Option<PathBuf>,
 }
 
 impl Default for Settings {
@@ -37,6 +38,7 @@ impl Default for Settings {
       proc_list_width: 30,
       proc_list_title: "Processes".to_string(),
       on_all_finished: None,
+      log_dir: None,
     };
     settings.add_defaults();
     settings
@@ -52,6 +54,26 @@ impl Settings {
           let settings_value: Value = serde_yaml::from_reader(reader)?;
           let settings_val = Val::new(&settings_value)?;
           self.merge_value(settings_val)?;
+          if let serde_yaml::Value::Mapping(map) = &settings_value {
+            if let Some(log_dir) = map.get(&Value::from("log_dir")) {
+              self.log_dir = match log_dir {
+                Value::Null => None,
+                Value::String(s) => {
+                  let mut buf = PathBuf::new();
+                  if let Some(rest) = s.strip_prefix("<CONFIG_DIR>") {
+                    if let Some(parent) = path.parent() {
+                      buf.push(parent);
+                    }
+                    buf.push(rest);
+                  } else {
+                    buf.push(s);
+                  }
+                  Some(buf)
+                }
+                _ => bail!("log_dir must be a string or null"),
+              };
+            }
+          }
         }
         Err(err) => match err.kind() {
           std::io::ErrorKind::NotFound => (),
@@ -153,6 +175,16 @@ impl Settings {
     if let Some(on_all_finished) = obj.get(&Value::from("on_all_finished")) {
       self.on_all_finished =
         Some(serde_yaml::from_value(on_all_finished.raw().clone())?);
+    }
+
+    if let Some(log_dir) = obj.get(&Value::from("log_dir")) {
+      self.log_dir = match log_dir.raw() {
+        Value::Null => None,
+        Value::String(_) => Some(PathBuf::from(log_dir.as_str()?)),
+        _ => {
+          return Err(log_dir.error_at("Expected string or null").into());
+        }
+      };
     }
 
     Ok(())
