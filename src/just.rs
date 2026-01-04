@@ -48,6 +48,7 @@ pub fn load_just_procs(settings: &Settings) -> Result<Vec<ProcConfig>> {
       deps: Vec::new(),
       mouse_scroll_speed: settings.mouse_scroll_speed,
       scrollback_len: settings.scrollback_len,
+      log_dir: None,
     });
   Ok(procs.collect())
 }

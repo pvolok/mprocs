@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::io::Write;
+use std::path::PathBuf;
 
 use assert_matches::assert_matches;
 use crossterm::event::MouseEventKind;
@@ -28,8 +29,10 @@ pub struct Proc {
   pub cmd: CommandBuilder,
   size: Size,
 
+  name: String,
   stop_signal: StopSignal,
   scrollback_len: usize,
+  log_dir: Option<PathBuf>,
 
   pub tx: UnboundedSender<ProcEvent>,
 
@@ -150,8 +153,10 @@ impl Proc {
       cmd: cfg.into(),
       size,
 
+      name: cfg.name.clone(),
       stop_signal: cfg.stop.clone(),
       scrollback_len: cfg.scrollback_len,
+      log_dir: cfg.log_dir.clone(),
 
       tx,
 
@@ -168,12 +173,18 @@ impl Proc {
   fn spawn_new_inst(&mut self) {
     assert_matches!(self.inst, ProcState::None);
 
+    let log_file = self
+      .log_dir
+      .as_ref()
+      .map(|dir| dir.join(format!("{}.log", self.name)));
+
     let spawned = Inst::spawn(
       self.id,
       self.cmd.clone(),
       self.tx.clone(),
       &self.size,
       self.scrollback_len,
+      log_file,
     );
     let inst = match spawned {
       Ok(inst) => ProcState::Some(inst),

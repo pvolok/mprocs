@@ -1,5 +1,7 @@
 use std::fmt::Debug;
-use std::io::Write;
+use std::fs::OpenOptions;
+use std::io::{BufWriter, Write};
+use std::path::PathBuf;
 use std::thread::spawn;
 
 use portable_pty::MasterPty;
@@ -43,6 +45,7 @@ impl Inst {
     tx: UnboundedSender<ProcEvent>,
     size: &Size,
     scrollback_len: usize,
+    log_file: Option<PathBuf>,
   ) -> anyhow::Result<Self> {
     let vt = crate::vt100::Parser::new(
       size.height,
@@ -78,6 +81,23 @@ impl Inst {
       let tx = tx.clone();
       let vt = vt.clone();
       spawn_blocking(move || {
+        // Open log file if configured (truncate on process start)
+        let mut log_writer: Option<BufWriter<std::fs::File>> =
+          log_file.and_then(|path| {
+            // Create parent directories if needed
+            if let Some(parent) = path.parent() {
+              let _ = std::fs::create_dir_all(parent);
+            }
+            OpenOptions::new()
+              .create(true)
+              .write(true)
+              .truncate(true)
+              .open(&path)
+              .map(BufWriter::new)
+              .map_err(|e| log::warn!("Failed to open log file {:?}: {}", path, e))
+              .ok()
+          });
+
         let mut buf = vec![0; 32 * 1024];
         loop {
           match reader.read(&mut buf[..]) {
@@ -85,6 +105,13 @@ impl Inst {
               if count == 0 {
                 break;
               }
+
+              // Write to log file if configured
+              if let Some(ref mut writer) = log_writer {
+                let _ = writer.write_all(&buf[..count]);
+                let _ = writer.flush();
+              }
+
               if let Ok(mut vt) = vt.write() {
                 vt.process(&buf[..count]);
                 match tx.send(ProcEvent::Render) {

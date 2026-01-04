@@ -26,6 +26,7 @@ pub struct Config {
   pub proc_list_width: usize,
   pub proc_list_title: String,
   pub on_all_finished: Option<AppEvent>,
+  pub log_dir: Option<PathBuf>,
 }
 
 impl Config {
@@ -88,6 +89,7 @@ impl Config {
       proc_list_width: settings.proc_list_width,
       proc_list_title,
       on_all_finished,
+      log_dir: None,
     };
 
     Ok(config)
@@ -103,6 +105,7 @@ impl Config {
       proc_list_width: settings.proc_list_width,
       proc_list_title: settings.proc_list_title.clone(),
       on_all_finished: settings.on_all_finished.clone(),
+      log_dir: None,
     }
   }
 }
@@ -122,6 +125,7 @@ pub struct ProcConfig {
 
   pub mouse_scroll_speed: usize,
   pub scrollback_len: usize,
+  pub log_dir: Option<PathBuf>,
 }
 
 impl ProcConfig {
@@ -150,6 +154,7 @@ impl ProcConfig {
 
         mouse_scroll_speed,
         scrollback_len,
+        log_dir: None,
       })),
       Value::Sequence(_) => {
         let cmd = val.as_array()?;
@@ -169,6 +174,7 @@ impl ProcConfig {
           deps: Vec::new(),
           mouse_scroll_speed,
           scrollback_len,
+          log_dir: None,
         }))
       }
       Value::Mapping(_) => {
@@ -306,6 +312,7 @@ impl ProcConfig {
           deps,
           mouse_scroll_speed,
           scrollback_len,
+          log_dir: None,
         }))
       }
       Value::Tagged(_) => anyhow::bail!("Yaml tags are not supported"),
