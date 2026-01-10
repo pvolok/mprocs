@@ -186,6 +186,8 @@ async fn run_app() -> anyhow::Result<()> {
     Some(("server", _args)) => {
       let logger = setup_logger(LogTarget::Stderr);
 
+      #[cfg(unix)]
+      crate::process::unix_processes_waiter::UnixProcessesWaiter::init()?;
       let mut kernel = Kernel::new();
       kernel.spawn_proc(|pc| {
         let app_proc_id = create_app_proc(config, keymap, &pc);
@@ -235,6 +237,8 @@ async fn run_app() -> anyhow::Result<()> {
       });
 
       kernel.run().await;
+      #[cfg(unix)]
+      crate::process::unix_processes_waiter::UnixProcessesWaiter::uninit()?;
 
       drop(logger);
       Ok(())
@@ -258,6 +262,8 @@ async fn run_app() -> anyhow::Result<()> {
         (sender, receiver)
       };
 
+      #[cfg(unix)]
+      crate::process::unix_processes_waiter::UnixProcessesWaiter::init()?;
       let mut kernel = Kernel::new();
       kernel.spawn_proc(|pc| {
         let app_proc_id = create_app_proc(config, keymap, &pc);
@@ -280,7 +286,11 @@ async fn run_app() -> anyhow::Result<()> {
           deps: Vec::new(),
         }
       });
-      tokio::spawn(async { kernel.run().await });
+      tokio::spawn(async {
+        kernel.run().await;
+        #[cfg(unix)]
+        crate::process::unix_processes_waiter::UnixProcessesWaiter::uninit();
+      });
 
       let ret = client_main(clt_to_srv_sender, srv_to_clt_receiver).await;
       drop(logger);

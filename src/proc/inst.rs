@@ -1,29 +1,25 @@
 use std::fmt::Debug;
-use std::fs::OpenOptions;
-use std::io::{BufWriter, Write};
 use std::path::PathBuf;
-use std::thread::spawn;
 
-use portable_pty::MasterPty;
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::task::spawn_blocking;
 
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::SharedVt;
 use crate::kernel::proc::ProcId;
+use crate::process::process::Process as _;
+use crate::process::process_spec::ProcessSpec;
+use crate::process::NativeProcess;
+use crate::term_types::winsize::Winsize;
 
 use super::msg::ProcEvent;
 use super::{ReplySender, Size};
 
 pub struct Inst {
   pub vt: SharedVt,
+  pub log_writer: Option<tokio::fs::File>,
 
   pub pid: u32,
-  pub master: Option<Box<dyn MasterPty + Send>>,
-  pub writer: Box<dyn Write + Send>,
-  pub killer: Box<dyn ChildKiller + Send + Sync>,
-
+  pub process: NativeProcess,
   pub exit_code: Option<u32>,
   pub stdout_eof: bool,
 }
@@ -39,9 +35,9 @@ impl Debug for Inst {
 }
 
 impl Inst {
-  pub fn spawn(
+  pub async fn spawn(
     id: ProcId,
-    cmd: CommandBuilder,
+    spec: &ProcessSpec,
     tx: UnboundedSender<ProcEvent>,
     size: &Size,
     scrollback_len: usize,
@@ -60,116 +56,73 @@ impl Inst {
 
     tx.send(ProcEvent::SetVt(Some(vt.clone()))).log_ignore();
 
-    let pty_system = native_pty_system();
-    let pair = pty_system.openpty(PtySize {
-      rows: size.height,
-      cols: size.width,
-      pixel_width: 0,
-      pixel_height: 0,
-    })?;
+    #[cfg(unix)]
+    let process = {
+      crate::process::unix_process::UnixProcess::spawn(
+        spec,
+        crate::term_types::winsize::Winsize {
+          x: size.width,
+          y: size.height,
+          x_px: 0,
+          y_px: 0,
+        },
+        {
+          let tx = tx.clone();
+          Box::new(move |wait_status| {
+            let exit_code = wait_status.exit_status().unwrap_or(212);
+            let _result = tx.send(ProcEvent::Exited(exit_code as u32));
+          })
+        },
+      )?
+    };
 
-    let mut child = pair.slave.spawn_command(cmd)?;
-    let pid = child.process_id().unwrap_or(0);
-    let killer = child.clone_killer();
+    let pid: i32 = process.pid.as_raw_nonzero().into();
 
-    let _r = tx.send(ProcEvent::Started);
-
-    let mut reader = pair.master.try_clone_reader().unwrap();
-    let writer = pair.master.take_writer().unwrap();
-
-    {
-      let tx = tx.clone();
-      let vt = vt.clone();
-      spawn_blocking(move || {
-        // Open log file if configured (truncate on process start)
-        let mut log_writer: Option<BufWriter<std::fs::File>> =
-          log_file.and_then(|path| {
-            // Create parent directories if needed
-            if let Some(parent) = path.parent() {
-              let _ = std::fs::create_dir_all(parent);
-            }
-            OpenOptions::new()
-              .create(true)
-              .write(true)
-              .truncate(true)
-              .open(&path)
-              .map(BufWriter::new)
-              .map_err(|e| log::warn!("Failed to open log file {:?}: {}", path, e))
-              .ok()
-          });
-
-        let mut buf = vec![0; 32 * 1024];
-        loop {
-          match reader.read(&mut buf[..]) {
-            Ok(count) => {
-              if count == 0 {
-                break;
-              }
-
-              // Write to log file if configured
-              if let Some(ref mut writer) = log_writer {
-                let _ = writer.write_all(&buf[..count]);
-                let _ = writer.flush();
-              }
-
-              if let Ok(mut vt) = vt.write() {
-                vt.process(&buf[..count]);
-                match tx.send(ProcEvent::Render) {
-                  Ok(_) => (),
-                  Err(err) => {
-                    log::debug!("Proc read error: ({:?})", err);
-                    break;
-                  }
-                }
-              }
-            }
-            _ => break,
-          }
+    let log_writer = match log_file {
+      Some(path) => {
+        // Create parent directories if needed
+        if let Some(parent) = path.parent() {
+          std::fs::create_dir_all(parent).log_ignore();
         }
-        let _ = tx.send(ProcEvent::StdoutEOF);
-      });
-    }
+        tokio::fs::OpenOptions::new()
+          .create(true)
+          .write(true)
+          .truncate(true)
+          .open(&path)
+          .await
+          .map_err(|e| log::warn!("Failed to open log file {:?}: {}", path, e))
+          .ok()
+      }
+      None => None,
+    };
 
-    {
-      let tx = tx.clone();
-      spawn(move || {
-        // Block until program exits
-        let exit_code = match child.wait() {
-          Ok(status) => status.exit_code(),
-          Err(_e) => 211,
-        };
-        let _result = tx.send(ProcEvent::Exited(exit_code));
-      });
-    }
+    tx.send(ProcEvent::Started).log_ignore();
 
     let inst = Inst {
       vt,
+      log_writer,
 
-      pid,
-      master: Some(pair.master),
-      writer,
-      killer,
-
+      process,
+      pid: pid as u32,
       exit_code: None,
       stdout_eof: false,
     };
     Ok(inst)
   }
 
-  pub fn resize(&self, size: &Size) {
+  pub fn resize(&mut self, size: &Size) {
     let rows = size.height;
     let cols = size.width;
 
-    if let Some(master) = &self.master {
-      master
-        .resize(PtySize {
-          rows,
-          cols,
-          pixel_width: 0,
-          pixel_height: 0,
-        })
-        .log_ignore();
-    }
+    self
+      .process
+      .resize(Winsize {
+        x: size.width,
+        y: size.height,
+        x_px: 0,
+        y_px: 0,
+      })
+      .log_ignore();
 
     if let Ok(mut vt) = self.vt.write() {
       vt.set_size(rows, cols);

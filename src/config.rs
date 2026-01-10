@@ -2,13 +2,13 @@ use std::{ffi::OsString, path::PathBuf, str::FromStr};
 
 use anyhow::{bail, Result};
 use indexmap::IndexMap;
-use portable_pty::CommandBuilder;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 
 use crate::{
   event::AppEvent,
   proc::StopSignal,
+  process::process_spec::ProcessSpec,
   settings::Settings,
   yaml_val::{value_to_string, Val},
 };
@@ -57,17 +57,17 @@ impl Config {
         .as_object()?
         .into_iter()
         .map(|(name, proc)| {
-          Ok(ProcConfig::from_val(
+          ProcConfig::from_val(
             value_to_string(&name)?,
             settings.mouse_scroll_speed,
             settings.scrollback_len,
             proc,
             ctx,
-          )?)
+          )
         })
         .collect::<Result<Vec<_>>>()?
         .into_iter()
-        .filter_map(|x| x)
+        .flatten()
         .collect::<Vec<_>>();
       procs
     } else {
@@ -372,12 +372,10 @@ pub enum CmdConfig {
   Shell { shell: String },
 }
 
-impl From<&ProcConfig> for CommandBuilder {
+impl From<&ProcConfig> for ProcessSpec {
   fn from(cfg: &ProcConfig) -> Self {
     let mut cmd = match &cfg.cmd {
-      CmdConfig::Cmd { cmd } => CommandBuilder::from_argv(
-        cmd.iter().map(|s| OsString::from(s)).collect(),
-      ),
+      CmdConfig::Cmd { cmd } => ProcessSpec::from_argv(cmd.clone()),
       CmdConfig::Shell { shell } => cmd_from_shell(shell),
     };
 
@@ -392,9 +390,9 @@ impl From<&ProcConfig> for CommandBuilder {
     }
 
     if let Some(cwd) = &cfg.cwd {
-      cmd.cwd(cwd);
+      cmd.cwd(cwd.to_string_lossy());
     } else if let Ok(cwd) = std::env::current_dir() {
-      cmd.cwd(cwd);
+      cmd.cwd(cwd.to_string_lossy());
     }
 
     cmd
@@ -402,8 +400,8 @@ impl From<&ProcConfig> for CommandBuilder {
 }
 
 #[cfg(windows)]
-pub fn cmd_from_shell(shell: &str) -> CommandBuilder {
-  CommandBuilder::from_argv(vec![
+pub fn cmd_from_shell(shell: &str) -> ProcessSpec {
+  ProcessSpec::from_argv(vec![
     "pwsh.exe".into(),
     "-Command".into(),
     shell.into(),
@@ -411,6 +409,6 @@ pub fn cmd_from_shell(shell: &str) -> CommandBuilder {
 }
 
 #[cfg(not(windows))]
-pub fn cmd_from_shell(shell: &str) -> CommandBuilder {
-  CommandBuilder::from_argv(vec!["/bin/sh".into(), "-c".into(), shell.into()])
+pub fn cmd_from_shell(shell: &str) -> ProcessSpec {
+  ProcessSpec::from_argv(vec!["/bin/sh".into(), "-c".into(), shell.into()])
 }

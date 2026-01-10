@@ -1,10 +1,10 @@
 use std::fmt::Debug;
-use std::io::Write;
+use std::future::pending;
 use std::path::PathBuf;
 
 use assert_matches::assert_matches;
 use crossterm::event::MouseEventKind;
-use portable_pty::CommandBuilder;
+use tokio::io::AsyncWriteExt;
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tui::layout::Rect;
@@ -16,6 +16,8 @@ use crate::kernel::kernel_message::{KernelCommand, ProcContext};
 use crate::kernel::proc::{ProcId, ProcInit, ProcStatus};
 use crate::key::Key;
 use crate::mouse::MouseEvent;
+use crate::process::process::Process as _;
+use crate::process::process_spec::ProcessSpec;
 use crate::vt100::{self};
 
 use super::inst::Inst;
@@ -47,7 +49,7 @@ fn sanitize_log_filename(name: &str) -> String {
 
 pub struct Proc {
   pub id: ProcId,
-  pub cmd: CommandBuilder,
+  pub spec: ProcessSpec,
   size: Size,
 
   name: String,
@@ -107,39 +109,33 @@ async fn proc_main_loop(
 ) -> ProcView {
   let (internal_sender, mut internal_receiver) =
     tokio::sync::mpsc::unbounded_channel();
-  let mut proc = Proc::new(proc_id, cfg, internal_sender, size);
+  let mut proc = Proc::new(proc_id, cfg, internal_sender, size).await;
   loop {
     enum NextValue {
       Cmd(Option<ProcCmd>),
       Internal(Option<ProcEvent>),
+      Read(std::io::Result<usize>),
     }
+    let mut read_buf = [0u8; 128];
     let value = select! {
       cmd = cmd_receiver.recv() => NextValue::Cmd(cmd),
       event = internal_receiver.recv() => NextValue::Internal(event),
+      count = proc.read(&mut read_buf) => NextValue::Read(count),
     };
     match value {
       NextValue::Cmd(Some(cmd)) => {
         let mut rendered = false;
-        proc.handle_cmd(cmd, &mut rendered);
+        proc.handle_cmd(cmd, &mut rendered).await;
         if rendered {
           ks.send(KernelCommand::ProcRendered);
         }
       }
       NextValue::Cmd(None) => (),
       NextValue::Internal(Some(proc_event)) => match proc_event {
-        ProcEvent::Render => ks.send(KernelCommand::ProcRendered),
         ProcEvent::Exited(exit_code) => {
           proc.handle_exited(exit_code);
           if !proc.is_up() {
             ks.send(KernelCommand::ProcStopped(exit_code));
-          }
-        }
-        ProcEvent::StdoutEOF => {
-          proc.handle_stdout_eof();
-          if !proc.is_up() {
-            ks.send(KernelCommand::ProcStopped(
-              proc.exit_code().unwrap_or(199),
-            ));
           }
         }
         ProcEvent::Started => {
@@ -148,7 +144,7 @@ async fn proc_main_loop(
         ProcEvent::TermReply(s) => match &mut proc.inst {
           ProcState::None => (),
           ProcState::Some(inst) => {
-            let _ = inst.writer.write_all(s.as_bytes());
+            inst.process.write_all(s.as_bytes()).await.log_ignore();
           }
           ProcState::Error(_) => (),
         },
@@ -157,12 +153,45 @@ async fn proc_main_loop(
         }
       },
       NextValue::Internal(None) => (),
+      NextValue::Read(Ok(count)) => {
+        let inst = match &mut proc.inst {
+          ProcState::Some(inst) => inst,
+          ProcState::None | ProcState::Error(_) => {
+            log::error!("Expected proc.inst to be Some after a read.");
+            continue;
+          }
+        };
+        if count == 0 {
+          inst.stdout_eof = true;
+          if !proc.is_up() {
+            ks.send(KernelCommand::ProcStopped(
+              proc.exit_code().unwrap_or(199),
+            ));
+          }
+        } else {
+          let bytes = &read_buf[..count];
+
+          // Write to log file if configured
+          if let Some(ref mut writer) = inst.log_writer {
+            writer.write_all(bytes).await.log_ignore();
+            writer.flush().await.log_ignore();
+          }
+
+          if let Ok(mut vt) = inst.vt.write() {
+            vt.process(bytes);
+            ks.send(KernelCommand::ProcRendered);
+          }
+        }
+      }
+      NextValue::Read(Err(e)) => {
+        log::error!("Process read() error: {}", e);
+      }
     }
   }
 }
 
 impl Proc {
-  pub fn new(
+  pub async fn new(
     id: ProcId,
     cfg: &ProcConfig,
     tx: UnboundedSender<ProcEvent>,
@@ -171,7 +200,7 @@ impl Proc {
     let size = Size::new(size);
     let mut proc = Proc {
       id,
-      cmd: cfg.into(),
+      spec: cfg.into(),
       size,
 
       name: cfg.name.clone(),
@@ -185,13 +214,13 @@ impl Proc {
     };
 
     if cfg.autostart {
-      proc.spawn_new_inst();
+      proc.spawn_new_inst().await;
     }
 
     proc
   }
 
-  fn spawn_new_inst(&mut self) {
+  async fn spawn_new_inst(&mut self) {
     assert_matches!(self.inst, ProcState::None);
 
     let log_file = self.log_dir.as_ref().map(|dir| {
@@ -201,12 +230,13 @@ impl Proc {
 
     let spawned = Inst::spawn(
       self.id,
-      self.cmd.clone(),
+      &self.spec,
       self.tx.clone(),
       &self.size,
       self.scrollback_len,
       log_file,
-    );
+    )
+    .await;
     let inst = match spawned {
       Ok(inst) => ProcState::Some(inst),
       Err(err) => ProcState::Error(err.to_string()),
@@ -214,10 +244,10 @@ impl Proc {
     self.inst = inst;
   }
 
-  pub fn start(&mut self) {
+  pub async fn start(&mut self) {
     if !self.is_up() {
       self.inst = ProcState::None;
-      self.spawn_new_inst();
+      self.spawn_new_inst().await;
     }
   }
 
@@ -225,17 +255,8 @@ impl Proc {
     match &mut self.inst {
       ProcState::None => (),
       ProcState::Some(inst) => {
-        inst.master = None;
         inst.exit_code = Some(exit_code);
       }
-      ProcState::Error(_) => (),
-    }
-  }
-
-  pub fn handle_stdout_eof(&mut self) {
-    match &mut self.inst {
-      ProcState::None => (),
-      ProcState::Some(inst) => inst.stdout_eof = true,
       ProcState::Error(_) => (),
     }
   }
@@ -278,20 +299,20 @@ impl Proc {
   pub fn kill(&mut self) {
     if self.is_up() {
       if let ProcState::Some(inst) = &mut self.inst {
-        let _result = inst.killer.kill();
+        let _result = inst.process.kill();
       }
     }
   }
 
   #[cfg(not(windows))]
-  pub fn stop(&mut self) {
+  pub async fn stop(&mut self) {
     match self.stop_signal.clone() {
       StopSignal::SIGINT => self.send_signal(libc::SIGINT),
       StopSignal::SIGTERM => self.send_signal(libc::SIGTERM),
       StopSignal::SIGKILL => self.send_signal(libc::SIGKILL),
       StopSignal::SendKeys(keys) => {
         for key in keys {
-          self.send_key(&key);
+          self.send_key(&key).await;
         }
       }
       StopSignal::HardKill => self.kill(),
@@ -321,13 +342,22 @@ impl Proc {
   }
 
   pub fn resize(&mut self, size: Size) {
-    if let ProcState::Some(inst) = &self.inst {
+    if let ProcState::Some(inst) = &mut self.inst {
       inst.resize(&size);
     }
     self.size = size;
   }
 
-  pub fn send_key(&mut self, key: &Key) {
+  pub async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+    if let ProcState::Some(inst) = &mut self.inst {
+      if !inst.stdout_eof {
+        return inst.process.read(buf).await;
+      }
+    }
+    pending().await
+  }
+
+  pub async fn send_key(&mut self, key: &Key) {
     if self.is_up() {
       let application_cursor_keys = self
         .lock_vt()
@@ -342,7 +372,7 @@ impl Proc {
       );
       match encoder {
         Ok(encoder) => {
-          self.write_all(encoder.as_bytes());
+          self.write_all(encoder.as_bytes()).await;
         }
         Err(_) => {
           log::warn!("Failed to encode key: {}", key.to_string());
@@ -351,7 +381,7 @@ impl Proc {
     }
   }
 
-  pub fn write_all(&mut self, bytes: &[u8]) {
+  pub async fn write_all(&mut self, bytes: &[u8]) {
     if self.is_up() {
       if let Some(mut vt) = self.lock_vt_mut() {
         if vt.screen().scrollback() > 0 {
@@ -359,7 +389,7 @@ impl Proc {
         }
       }
       if let ProcState::Some(inst) = &mut self.inst {
-        inst.writer.write_all(bytes).log_ignore();
+        inst.process.write_all(bytes).await.log_ignore();
       }
     }
   }
@@ -384,7 +414,7 @@ impl Proc {
     self.scroll_down_lines(self.size.height as usize / 2);
   }
 
-  pub fn handle_mouse(&mut self, event: MouseEvent) {
+  pub async fn handle_mouse(&mut self, event: MouseEvent) {
     if let ProcState::Some(inst) = &mut self.inst {
       let mouse_mode = inst.vt.read().unwrap().screen().mouse_protocol_mode();
       let seq = match mouse_mode {
@@ -418,23 +448,23 @@ impl Proc {
         },
         vt100::MouseProtocolMode::AnyMotion => encode_mouse_event(event),
       };
-      let _r = inst.writer.write_all(seq.as_bytes());
+      let _r = inst.process.write_all(seq.as_bytes()).await;
     }
   }
 }
 
 impl Proc {
-  pub fn handle_cmd(&mut self, cmd: ProcCmd, rendered: &mut bool) {
+  pub async fn handle_cmd(&mut self, cmd: ProcCmd, rendered: &mut bool) {
     match cmd {
       ProcCmd::Start => {
-        self.start();
+        self.start().await;
         *rendered = true;
       }
-      ProcCmd::Stop => self.stop(),
+      ProcCmd::Stop => self.stop().await,
       ProcCmd::Kill => self.kill(),
 
-      ProcCmd::SendKey(key) => self.send_key(&key),
-      ProcCmd::SendMouse(event) => self.handle_mouse(event),
+      ProcCmd::SendKey(key) => self.send_key(&key).await,
+      ProcCmd::SendMouse(event) => self.handle_mouse(event).await,
 
       ProcCmd::ScrollUp => {
         self.scroll_half_screen_up();

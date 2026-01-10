@@ -39,9 +39,7 @@ impl ProcCmd {
 
 #[derive(Debug)]
 pub enum ProcEvent {
-  Render,
   Exited(u32),
-  StdoutEOF,
   Started,
   SetVt(Option<SharedVt>),
   TermReply(CompactString),
