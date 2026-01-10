@@ -194,13 +194,10 @@ impl Proc {
   fn spawn_new_inst(&mut self) {
     assert_matches!(self.inst, ProcState::None);
 
-    let log_file = self
-      .log_dir
-      .as_ref()
-      .map(|dir| {
-        let filename = sanitize_log_filename(&self.name);
-        dir.join(format!("{}.log", filename))
-      });
+    let log_file = self.log_dir.as_ref().map(|dir| {
+      let filename = sanitize_log_filename(&self.name);
+      dir.join(format!("{}.log", filename))
+    });
 
     let spawned = Inst::spawn(
       self.id,

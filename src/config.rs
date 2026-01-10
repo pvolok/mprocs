@@ -23,7 +23,7 @@ fn resolve_config_path(path: &str, ctx: &ConfigContext) -> Result<PathBuf> {
     if let Some(parent) = dunce::canonicalize(&ctx.path)?.parent() {
       buf.push(parent);
     }
-    buf.push(rest);
+    buf.push(rest.trim_start_matches(['/', '\\']));
   } else {
     buf.push(path);
   }
@@ -97,10 +97,13 @@ impl Config {
     let log_dir = match config.get(&Value::from("log_dir")) {
       Some(val) => match val.raw() {
         Value::Null => None,
-        Value::String(_) => Some(resolve_config_path(val.as_str()?, ctx)?),
-        _ => return Err(val.error_at("Expected string or null").into()),
+        Value::String(log_dir) => Some(resolve_config_path(log_dir, ctx)?),
+        _ => return Err(val.error_at("Expected string or null")),
       },
-      None => settings.log_dir.clone(),
+      None => match &settings.log_dir {
+        Some(log_dir) => Some(resolve_config_path(log_dir, ctx)?),
+        None => None,
+      },
     };
 
     let config = Config {
@@ -118,8 +121,8 @@ impl Config {
     Ok(config)
   }
 
-  pub fn make_default(settings: &Settings) -> Self {
-    Self {
+  pub fn make_default(settings: &Settings) -> anyhow::Result<Self> {
+    Ok(Self {
       procs: Vec::new(),
       server: None,
       hide_keymap_window: settings.hide_keymap_window,
@@ -128,8 +131,8 @@ impl Config {
       proc_list_width: settings.proc_list_width,
       proc_list_title: settings.proc_list_title.clone(),
       on_all_finished: settings.on_all_finished.clone(),
-      log_dir: settings.log_dir.clone(),
-    }
+      log_dir: settings.log_dir.as_ref().map(PathBuf::from),
+    })
   }
 }
 
@@ -244,7 +247,7 @@ impl ProcConfig {
           Some(val) => match val.raw() {
             Value::Null => None,
             Value::String(_) => Some(resolve_config_path(val.as_str()?, ctx)?),
-            _ => return Err(val.error_at("Expected string or null").into()),
+            _ => return Err(val.error_at("Expected string or null")),
           },
           None => None,
         };
@@ -272,7 +275,7 @@ impl ProcConfig {
             let extra_paths = match add_path.raw() {
               Value::String(path) => vec![path.as_str()],
               Value::Sequence(paths) => paths
-                .into_iter()
+                .iter()
                 .filter_map(|path| path.as_str())
                 .collect::<Vec<_>>(),
               _ => {

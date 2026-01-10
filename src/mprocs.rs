@@ -1,4 +1,7 @@
-use std::{io::Read, path::{Path, PathBuf}};
+use std::{
+  io::Read,
+  path::{Path, PathBuf},
+};
 
 use crate::app::{client_loop, create_app_proc, ClientId};
 use crate::client::client_main;
@@ -102,7 +105,7 @@ async fn run_app() -> anyhow::Result<()> {
     let mut config = if let Some((v, ctx)) = config_value {
       Config::from_value(&v, &ctx, &settings)?
     } else {
-      Config::make_default(&settings)
+      Config::make_default(&settings)?
     };
 
     if let Some(server_addr) = matches.get_one::<String>("server") {

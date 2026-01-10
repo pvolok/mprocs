@@ -1,6 +1,6 @@
 use std::{fs::File, io::BufReader, path::PathBuf};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use crossterm::event::{KeyCode, KeyModifiers};
 use indexmap::IndexMap;
 use serde_yaml::Value;
@@ -23,7 +23,7 @@ pub struct Settings {
   pub proc_list_width: usize,
   pub proc_list_title: String,
   pub on_all_finished: Option<AppEvent>,
-  pub log_dir: Option<PathBuf>,
+  pub log_dir: Option<String>,
 }
 
 impl Default for Settings {
@@ -54,26 +54,6 @@ impl Settings {
           let settings_value: Value = serde_yaml::from_reader(reader)?;
           let settings_val = Val::new(&settings_value)?;
           self.merge_value(settings_val)?;
-          if let serde_yaml::Value::Mapping(map) = &settings_value {
-            if let Some(log_dir) = map.get(&Value::from("log_dir")) {
-              self.log_dir = match log_dir {
-                Value::Null => None,
-                Value::String(s) => {
-                  let mut buf = PathBuf::new();
-                  if let Some(rest) = s.strip_prefix("<CONFIG_DIR>") {
-                    if let Some(parent) = path.parent() {
-                      buf.push(parent);
-                    }
-                    buf.push(rest);
-                  } else {
-                    buf.push(s);
-                  }
-                  Some(buf)
-                }
-                _ => bail!("log_dir must be a string or null"),
-              };
-            }
-          }
         }
         Err(err) => match err.kind() {
           std::io::ErrorKind::NotFound => (),
@@ -116,9 +96,9 @@ impl Settings {
   pub fn merge_value(&mut self, val: Val) -> Result<()> {
     let obj = val.as_object()?;
 
-    fn add_keys<'a>(
+    fn add_keys(
       into: &mut IndexMap<Key, AppEvent>,
-      val: Option<&'a Val>,
+      val: Option<&Val>,
     ) -> Result<()> {
       if let Some(keymap) = val {
         let mut keymap = keymap.as_object()?;
@@ -165,7 +145,7 @@ impl Settings {
     }
 
     if let Some(proc_list_title) = obj.get(&Value::from("proc_list_title")) {
-      self.proc_list_title = proc_list_title.as_str()?.to_string().into();
+      self.proc_list_title = proc_list_title.as_str()?.to_string();
     }
 
     if let Some(proc_list_width) = obj.get(&Value::from("proc_list_width")) {
@@ -180,9 +160,9 @@ impl Settings {
     if let Some(log_dir) = obj.get(&Value::from("log_dir")) {
       self.log_dir = match log_dir.raw() {
         Value::Null => None,
-        Value::String(_) => Some(PathBuf::from(log_dir.as_str()?)),
+        Value::String(log_dir) => Some(log_dir.clone()),
         _ => {
-          return Err(log_dir.error_at("Expected string or null").into());
+          return Err(log_dir.error_at("Expected string or null"));
         }
       };
     }
@@ -357,13 +337,13 @@ impl Settings {
 
   pub fn add_to_keymap(&self, keymap: &mut Keymap) -> Result<()> {
     for (key, event) in &self.keymap_procs {
-      keymap.bind_p(key.clone(), event.clone());
+      keymap.bind_p(*key, event.clone());
     }
     for (key, event) in &self.keymap_term {
-      keymap.bind_t(key.clone(), event.clone());
+      keymap.bind_t(*key, event.clone());
     }
     for (key, event) in &self.keymap_copy {
-      keymap.bind_c(key.clone(), event.clone());
+      keymap.bind_c(*key, event.clone());
     }
 
     Ok(())
