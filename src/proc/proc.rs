@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::io::Write;
+use std::path::PathBuf;
 
 use assert_matches::assert_matches;
 use crossterm::event::MouseEventKind;
@@ -23,13 +24,36 @@ use super::view::ProcView;
 use super::StopSignal;
 use super::{ReplySender, Size};
 
+fn sanitize_log_filename(name: &str) -> String {
+  let mut out = String::new();
+  for ch in name.chars() {
+    let is_safe = ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.');
+    if is_safe {
+      out.push(ch);
+    } else if ch == ' ' {
+      out.push('_');
+    } else {
+      out.push('_');
+    }
+  }
+
+  let trimmed = out.trim_matches(|c| c == '.' || c == ' ').to_string();
+  if trimmed.is_empty() {
+    "process".to_string()
+  } else {
+    trimmed
+  }
+}
+
 pub struct Proc {
   pub id: ProcId,
   pub cmd: CommandBuilder,
   size: Size,
 
+  name: String,
   stop_signal: StopSignal,
   scrollback_len: usize,
+  log_dir: Option<PathBuf>,
 
   pub tx: UnboundedSender<ProcEvent>,
 
@@ -150,8 +174,10 @@ impl Proc {
       cmd: cfg.into(),
       size,
 
+      name: cfg.name.clone(),
       stop_signal: cfg.stop.clone(),
       scrollback_len: cfg.scrollback_len,
+      log_dir: cfg.log_dir.clone(),
 
       tx,
 
@@ -168,12 +194,18 @@ impl Proc {
   fn spawn_new_inst(&mut self) {
     assert_matches!(self.inst, ProcState::None);
 
+    let log_file = self.log_dir.as_ref().map(|dir| {
+      let filename = sanitize_log_filename(&self.name);
+      dir.join(format!("{}.log", filename))
+    });
+
     let spawned = Inst::spawn(
       self.id,
       self.cmd.clone(),
       self.tx.clone(),
       &self.size,
       self.scrollback_len,
+      log_file,
     );
     let inst = match spawned {
       Ok(inst) => ProcState::Some(inst),

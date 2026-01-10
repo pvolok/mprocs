@@ -23,6 +23,7 @@ pub struct Settings {
   pub proc_list_width: usize,
   pub proc_list_title: String,
   pub on_all_finished: Option<AppEvent>,
+  pub log_dir: Option<String>,
 }
 
 impl Default for Settings {
@@ -37,6 +38,7 @@ impl Default for Settings {
       proc_list_width: 30,
       proc_list_title: "Processes".to_string(),
       on_all_finished: None,
+      log_dir: None,
     };
     settings.add_defaults();
     settings
@@ -46,7 +48,7 @@ impl Default for Settings {
 impl Settings {
   pub fn merge_from_xdg(&mut self) -> Result<()> {
     if let Some(path) = self.get_xdg_config_path() {
-      match File::open(path) {
+      match File::open(&path) {
         Ok(file) => {
           let reader = BufReader::new(file);
           let settings_value: Value = serde_yaml::from_reader(reader)?;
@@ -94,9 +96,9 @@ impl Settings {
   pub fn merge_value(&mut self, val: Val) -> Result<()> {
     let obj = val.as_object()?;
 
-    fn add_keys<'a>(
+    fn add_keys(
       into: &mut IndexMap<Key, AppEvent>,
-      val: Option<&'a Val>,
+      val: Option<&Val>,
     ) -> Result<()> {
       if let Some(keymap) = val {
         let mut keymap = keymap.as_object()?;
@@ -143,7 +145,7 @@ impl Settings {
     }
 
     if let Some(proc_list_title) = obj.get(&Value::from("proc_list_title")) {
-      self.proc_list_title = proc_list_title.as_str()?.to_string().into();
+      self.proc_list_title = proc_list_title.as_str()?.to_string();
     }
 
     if let Some(proc_list_width) = obj.get(&Value::from("proc_list_width")) {
@@ -153,6 +155,16 @@ impl Settings {
     if let Some(on_all_finished) = obj.get(&Value::from("on_all_finished")) {
       self.on_all_finished =
         Some(serde_yaml::from_value(on_all_finished.raw().clone())?);
+    }
+
+    if let Some(log_dir) = obj.get(&Value::from("log_dir")) {
+      self.log_dir = match log_dir.raw() {
+        Value::Null => None,
+        Value::String(log_dir) => Some(log_dir.clone()),
+        _ => {
+          return Err(log_dir.error_at("Expected string or null"));
+        }
+      };
     }
 
     Ok(())
@@ -325,13 +337,13 @@ impl Settings {
 
   pub fn add_to_keymap(&self, keymap: &mut Keymap) -> Result<()> {
     for (key, event) in &self.keymap_procs {
-      keymap.bind_p(key.clone(), event.clone());
+      keymap.bind_p(*key, event.clone());
     }
     for (key, event) in &self.keymap_term {
-      keymap.bind_t(key.clone(), event.clone());
+      keymap.bind_t(*key, event.clone());
     }
     for (key, event) in &self.keymap_copy {
-      keymap.bind_c(key.clone(), event.clone());
+      keymap.bind_c(*key, event.clone());
     }
 
     Ok(())

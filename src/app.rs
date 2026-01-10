@@ -758,6 +758,7 @@ impl App {
           deps: Vec::new(),
           mouse_scroll_speed: self.config.mouse_scroll_speed,
           scrollback_len: self.config.scrollback_len,
+          log_dir: self.config.log_dir.clone(),
         };
         let proc_handle = launch_proc(
           &pc,

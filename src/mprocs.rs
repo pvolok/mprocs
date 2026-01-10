@@ -1,4 +1,7 @@
-use std::{io::Read, path::Path};
+use std::{
+  io::Read,
+  path::{Path, PathBuf},
+};
 
 use crate::app::{client_loop, create_app_proc, ClientId};
 use crate::client::client_main;
@@ -73,6 +76,7 @@ async fn run_app() -> anyhow::Result<()> {
     .arg(arg!(--npm "Run scripts from package.json. Scripts are not started by default."))
     .arg(arg!(--just "Run recipes from justfile. Recipes are not started by default. Requires just to be installed."))
     .arg(arg!(--"on-all-finished" [YAML] "Event to trigger when all processes are finished"))
+    .arg(arg!(--"log-dir" [DIR] "Directory for process log files. Each process logs to <DIR>/<name>.log"))
     .arg(arg!([COMMANDS]... "Commands to run (if omitted, commands from config will be run)"))
     // .subcommand(Command::new("server"))
     // .subcommand(Command::new("attach"))
@@ -101,7 +105,7 @@ async fn run_app() -> anyhow::Result<()> {
     let mut config = if let Some((v, ctx)) = config_value {
       Config::from_value(&v, &ctx, &settings)?
     } else {
-      Config::make_default(&settings)
+      Config::make_default(&settings)?
     };
 
     if let Some(server_addr) = matches.get_one::<String>("server") {
@@ -119,6 +123,10 @@ async fn run_app() -> anyhow::Result<()> {
     if let Some(on_all_finished) = matches.get_one::<String>("on-all-finished")
     {
       config.on_all_finished = Some(serde_yaml::from_str(on_all_finished)?);
+    }
+
+    if let Some(log_dir) = matches.get_one::<String>("log-dir") {
+      config.log_dir = Some(PathBuf::from(log_dir));
     }
 
     if let Some(cmds) = matches.get_many::<String>("COMMANDS") {
@@ -143,6 +151,7 @@ async fn run_app() -> anyhow::Result<()> {
           deps: Vec::new(),
           mouse_scroll_speed: settings.mouse_scroll_speed,
           scrollback_len: settings.scrollback_len,
+          log_dir: config.log_dir.clone(),
         })
         .collect::<Vec<_>>();
 
@@ -153,6 +162,15 @@ async fn run_app() -> anyhow::Result<()> {
     } else if matches.get_flag("just") {
       let procs = load_just_procs(&settings)?;
       config.procs = procs;
+    }
+
+    // Propagate log_dir to all procs (for yaml/npm/just loaded procs)
+    if config.log_dir.is_some() {
+      for proc in &mut config.procs {
+        if proc.log_dir.is_none() {
+          proc.log_dir = config.log_dir.clone();
+        }
+      }
     }
 
     config

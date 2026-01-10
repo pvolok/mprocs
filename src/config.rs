@@ -17,6 +17,20 @@ pub struct ConfigContext {
   pub path: PathBuf,
 }
 
+fn resolve_config_path(path: &str, ctx: &ConfigContext) -> Result<PathBuf> {
+  let mut buf = PathBuf::new();
+  if let Some(rest) = path.strip_prefix("<CONFIG_DIR>") {
+    if let Some(parent) = dunce::canonicalize(&ctx.path)?.parent() {
+      buf.push(parent);
+    }
+    buf.push(rest.trim_start_matches(['/', '\\']));
+  } else {
+    buf.push(path);
+  }
+
+  Ok(buf)
+}
+
 pub struct Config {
   pub procs: Vec<ProcConfig>,
   pub server: Option<ServerConfig>,
@@ -26,6 +40,7 @@ pub struct Config {
   pub proc_list_width: usize,
   pub proc_list_title: String,
   pub on_all_finished: Option<AppEvent>,
+  pub log_dir: Option<PathBuf>,
 }
 
 impl Config {
@@ -79,6 +94,18 @@ impl Config {
         settings.on_all_finished.clone()
       };
 
+    let log_dir = match config.get(&Value::from("log_dir")) {
+      Some(val) => match val.raw() {
+        Value::Null => None,
+        Value::String(log_dir) => Some(resolve_config_path(log_dir, ctx)?),
+        _ => return Err(val.error_at("Expected string or null")),
+      },
+      None => match &settings.log_dir {
+        Some(log_dir) => Some(resolve_config_path(log_dir, ctx)?),
+        None => None,
+      },
+    };
+
     let config = Config {
       procs,
       server,
@@ -88,13 +115,14 @@ impl Config {
       proc_list_width: settings.proc_list_width,
       proc_list_title,
       on_all_finished,
+      log_dir,
     };
 
     Ok(config)
   }
 
-  pub fn make_default(settings: &Settings) -> Self {
-    Self {
+  pub fn make_default(settings: &Settings) -> anyhow::Result<Self> {
+    Ok(Self {
       procs: Vec::new(),
       server: None,
       hide_keymap_window: settings.hide_keymap_window,
@@ -103,7 +131,8 @@ impl Config {
       proc_list_width: settings.proc_list_width,
       proc_list_title: settings.proc_list_title.clone(),
       on_all_finished: settings.on_all_finished.clone(),
-    }
+      log_dir: settings.log_dir.as_ref().map(PathBuf::from),
+    })
   }
 }
 
@@ -122,6 +151,7 @@ pub struct ProcConfig {
 
   pub mouse_scroll_speed: usize,
   pub scrollback_len: usize,
+  pub log_dir: Option<PathBuf>,
 }
 
 impl ProcConfig {
@@ -150,6 +180,7 @@ impl ProcConfig {
 
         mouse_scroll_speed,
         scrollback_len,
+        log_dir: None,
       })),
       Value::Sequence(_) => {
         let cmd = val.as_array()?;
@@ -169,6 +200,7 @@ impl ProcConfig {
           deps: Vec::new(),
           mouse_scroll_speed,
           scrollback_len,
+          log_dir: None,
         }))
       }
       Value::Mapping(_) => {
@@ -211,6 +243,15 @@ impl ProcConfig {
           None => None,
         };
 
+        let log_dir = match map.get(&Value::from("log_dir")) {
+          Some(val) => match val.raw() {
+            Value::Null => None,
+            Value::String(_) => Some(resolve_config_path(val.as_str()?, ctx)?),
+            _ => return Err(val.error_at("Expected string or null")),
+          },
+          None => None,
+        };
+
         let env = match map.get(&Value::from("env")) {
           Some(env) => {
             let env = env.as_object()?;
@@ -234,7 +275,7 @@ impl ProcConfig {
             let extra_paths = match add_path.raw() {
               Value::String(path) => vec![path.as_str()],
               Value::Sequence(paths) => paths
-                .into_iter()
+                .iter()
                 .filter_map(|path| path.as_str())
                 .collect::<Vec<_>>(),
               _ => {
@@ -306,6 +347,7 @@ impl ProcConfig {
           deps,
           mouse_scroll_speed,
           scrollback_len,
+          log_dir,
         }))
       }
       Value::Tagged(_) => anyhow::bail!("Yaml tags are not supported"),
