@@ -1,6 +1,10 @@
-use std::{ffi::CString, os::fd::OwnedFd, ptr::null};
+use std::{
+  ffi::CString,
+  os::fd::{BorrowedFd, FromRawFd, OwnedFd},
+  ptr::null,
+};
 
-use rustix::{fs::OFlags, process::WaitStatus, pty::OpenptFlags, termios::Pid};
+use rustix::{fs::OFlags, process::WaitStatus, termios::Pid};
 use tokio::io::unix::AsyncFd;
 
 use crate::{
@@ -22,22 +26,39 @@ impl UnixProcess {
     on_wait_returned: Box<dyn Fn(WaitStatus) + Send + Sync>,
   ) -> std::io::Result<Self> {
     unsafe {
+      /// `posix_openpt` supports `O_NONBLOCK` on:
+      /// - Linux
+      /// - Macos
+      const DELAY_SET_NONBLOCK: bool =
+        !cfg!(any(target_os = "linux", target_os = "macos"));
       let master = {
-        let mut flags = OpenptFlags::RDWR | OpenptFlags::NOCTTY;
-        // TODO: Only add on macos.
-        flags |= OpenptFlags::from_bits_retain(libc::O_NONBLOCK as u32);
-        rustix::pty::openpt(flags)?
+        let flags = if DELAY_SET_NONBLOCK {
+          libc::O_RDWR | libc::O_NOCTTY
+        } else {
+          libc::O_RDWR | libc::O_NOCTTY | libc::O_NONBLOCK
+        };
+        let fd = libc::posix_openpt(flags);
+        if fd < 0 {
+          return Err(std::io::Error::last_os_error());
+        }
+        fd
       };
 
-      rustix::pty::grantpt(&master)?;
-      rustix::pty::unlockpt(&master)?;
+      rustix::pty::grantpt(BorrowedFd::borrow_raw(master))?;
+      rustix::pty::unlockpt(BorrowedFd::borrow_raw(master))?;
 
-      // TODO: This is needed on linux/bsd.
-      // let mut flags = rustix::io::fcntl_getfd(&master)?;
-      // flags |= FdFlags::from_bits_retain(libc::O_NONBLOCK as u32);
-      // rustix::io::fcntl_setfd(&master, flags)?;
+      if DELAY_SET_NONBLOCK {
+        let flags = libc::fcntl(master, libc::F_GETFL, 0);
+        if flags < 0 {
+          return Err(std::io::Error::last_os_error());
+        }
+        if libc::fcntl(master, libc::F_SETFL, flags | libc::O_NONBLOCK) < 0 {
+          return Err(std::io::Error::last_os_error());
+        }
+      }
 
-      let slave_name = rustix::pty::ptsname(&master, Vec::new())?;
+      let slave_name =
+        rustix::pty::ptsname(BorrowedFd::borrow_raw(master), Vec::new())?;
 
       let (sync_r, sync_w) = rustix::pipe::pipe()?;
 
@@ -47,7 +68,8 @@ impl UnixProcess {
       }
 
       if pid == 0 {
-        drop(master);
+        libc::close(master);
+
         for signo in &[
           libc::SIGCHLD,
           libc::SIGHUP,
@@ -58,6 +80,9 @@ impl UnixProcess {
         ] {
           libc::signal(*signo, libc::SIG_DFL);
         }
+
+        rustix::process::setsid().unwrap();
+        libc::ioctl(0, libc::TIOCSCTTY as _, 0);
 
         let slave_fd = rustix::fs::open(
           slave_name,
@@ -83,9 +108,6 @@ impl UnixProcess {
           }
         }
 
-        rustix::process::setsid().unwrap();
-        libc::ioctl(0, libc::TIOCSCTTY as _, 0);
-
         rustix::io::write(&sync_w, b"1")?;
         drop(sync_r);
         drop(sync_w);
@@ -101,7 +123,9 @@ impl UnixProcess {
         libc::perror(null());
         libc::_exit(1);
       }
+
       let pid = Pid::from_raw_unchecked(pid);
+      let master = OwnedFd::from_raw_fd(master);
 
       drop(sync_w);
       rustix::io::read(&sync_r, &mut [0])?;
