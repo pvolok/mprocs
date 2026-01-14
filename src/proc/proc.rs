@@ -185,6 +185,17 @@ async fn proc_main_loop(
       }
       NextValue::Read(Err(e)) => {
         log::error!("Process read() error: {}", e);
+        match &mut proc.inst {
+          ProcState::Some(inst) => {
+            inst.stdout_eof = true;
+            if !proc.is_up() {
+              ks.send(KernelCommand::ProcStopped(
+                proc.exit_code().unwrap_or(198),
+              ));
+            }
+          }
+          ProcState::None | ProcState::Error(_) => {}
+        };
       }
     }
   }
