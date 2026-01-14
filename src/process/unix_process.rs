@@ -63,7 +63,8 @@ impl UnixProcess {
         for arg in &spec.args {
           argv.push(CString::new(arg.as_str()).unwrap_or_default());
         }
-        let argv_ptrs = argv.iter().map(|a| a.as_ptr()).collect::<Vec<_>>();
+        let mut argv_ptrs = argv.iter().map(|a| a.as_ptr()).collect::<Vec<_>>();
+        argv_ptrs.push(null());
         libc::execvp(prog.as_ptr(), argv_ptrs.as_ptr());
         libc::perror(null());
         libc::_exit(1);
