@@ -26,7 +26,14 @@ impl UnixProcess {
     on_wait_returned: Box<dyn Fn(WaitStatus) + Send + Sync>,
   ) -> std::io::Result<Self> {
     unsafe {
+      let mut set = std::mem::zeroed();
+      let mut old_set = std::mem::zeroed();
+      libc::sigfillset(&mut set);
+      libc::sigprocmask(libc::SIG_BLOCK, &set, &mut old_set);
+
       let mut master = -1;
+      // Some args are *mut on some BSD vaiants.
+      #[allow(clippy::unnecessary_mut_passed)]
       let pid =
         libc::forkpty(&mut master, null_mut(), null_mut(), &mut size.into());
       if pid < 0 {
@@ -44,6 +51,7 @@ impl UnixProcess {
         ] {
           libc::signal(*signo, libc::SIG_DFL);
         }
+        libc::sigprocmask(libc::SIG_SETMASK, &old_set, null_mut());
 
         if let Some(cwd) = spec.get_cwd() {
           rustix::process::chdir(cwd).unwrap();
@@ -69,6 +77,8 @@ impl UnixProcess {
         libc::perror(null());
         libc::_exit(1);
       }
+
+      libc::sigprocmask(libc::SIG_SETMASK, &old_set, null_mut());
 
       let flags = libc::fcntl(master, libc::F_GETFD, 0);
       if flags < 0 {
