@@ -75,8 +75,31 @@ impl Inst {
         },
       )?
     };
-
+    #[cfg(unix)]
     let pid: i32 = process.pid.as_raw_nonzero().into();
+
+    #[cfg(windows)]
+    let process = {
+      crate::process::win_process::WinProcess::spawn(
+        id,
+        spec,
+        crate::term_types::winsize::Winsize {
+          x: size.width,
+          y: size.height,
+          x_px: 0,
+          y_px: 0,
+        },
+        {
+          let tx = tx.clone();
+          Box::new(move |exit_code| {
+            let exit_code = exit_code.unwrap_or(213);
+            let _result = tx.send(ProcEvent::Exited(exit_code as u32));
+          })
+        },
+      )?
+    };
+    #[cfg(windows)]
+    let pid: i32 = process.pid;
 
     let log_writer = match log_file {
       Some(path) => {

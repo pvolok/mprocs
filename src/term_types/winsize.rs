@@ -6,6 +6,7 @@ pub struct Winsize {
   pub y_px: u16,
 }
 
+#[cfg(unix)]
 impl From<Winsize> for libc::winsize {
   fn from(value: Winsize) -> Self {
     libc::winsize {
@@ -17,6 +18,7 @@ impl From<Winsize> for libc::winsize {
   }
 }
 
+#[cfg(unix)]
 impl From<Winsize> for rustix::termios::Winsize {
   fn from(value: Winsize) -> Self {
     rustix::termios::Winsize {

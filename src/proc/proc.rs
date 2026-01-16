@@ -267,6 +267,7 @@ impl Proc {
       ProcState::None => (),
       ProcState::Some(inst) => {
         inst.exit_code = Some(exit_code);
+        inst.process.on_exited();
       }
       ProcState::Error(_) => (),
     }
@@ -331,14 +332,14 @@ impl Proc {
   }
 
   #[cfg(windows)]
-  pub fn stop(&mut self) {
+  pub async fn stop(&mut self) {
     match self.stop_signal.clone() {
       StopSignal::SIGINT => log::warn!("SIGINT signal is ignored on Windows"),
       StopSignal::SIGTERM => self.kill(),
       StopSignal::SIGKILL => self.kill(),
       StopSignal::SendKeys(keys) => {
         for key in keys {
-          self.send_key(&key);
+          self.send_key(&key).await;
         }
       }
       StopSignal::HardKill => self.kill(),
