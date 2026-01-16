@@ -10,6 +10,8 @@ use crate::config::{
 };
 use crate::config_lua::load_lua_config;
 use crate::ctl::run_ctl;
+#[cfg(unix)]
+use crate::error::ResultLogger;
 use crate::host::{
   receiver::MsgReceiver, sender::MsgSender, socket::bind_server_socket,
 };
@@ -289,7 +291,8 @@ async fn run_app() -> anyhow::Result<()> {
       tokio::spawn(async {
         kernel.run().await;
         #[cfg(unix)]
-        crate::process::unix_processes_waiter::UnixProcessesWaiter::uninit();
+        crate::process::unix_processes_waiter::UnixProcessesWaiter::uninit()
+          .log_ignore();
       });
 
       let ret = client_main(clt_to_srv_sender, srv_to_clt_receiver).await;

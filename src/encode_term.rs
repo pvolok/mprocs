@@ -17,6 +17,7 @@ pub struct KeyCodeEncodeModes {
   pub newline_mode: bool,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for KeyCodeEncodeModes {
   fn default() -> Self {
     KeyCodeEncodeModes {

@@ -141,7 +141,7 @@ pub fn procs_get_clicked_index(
     let scroll = (state.selected + 1).saturating_sub(inner.height as usize);
     let index = index as usize + scroll;
     if index < state.procs.len() {
-      return Some(index as usize);
+      return Some(index);
     }
   }
   None

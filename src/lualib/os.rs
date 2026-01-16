@@ -1,7 +1,7 @@
 use std::{process::Stdio, time::Duration};
 
 use futures::FutureExt;
-use mlua::{IntoLua, ObjectLike};
+use mlua::IntoLua;
 use serde::ser::Error;
 use tokio_util::time::FutureExt as _;
 
@@ -11,7 +11,7 @@ pub struct ChildProcess {
       tokio::sync::oneshot::Receiver<std::process::Output>,
     >,
   >,
-  exit_sender: tokio::sync::mpsc::UnboundedSender<()>,
+  // exit_sender: tokio::sync::mpsc::UnboundedSender<()>,
 }
 
 impl ChildProcess {
@@ -19,40 +19,40 @@ impl ChildProcess {
     let mut child = cmd.spawn()?;
     let (res_tx, res_rx) = tokio::sync::oneshot::channel();
     let res_rx = res_rx.shared();
-    let (f_tx, mut f_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+    let (_f_tx, mut f_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
     tokio::spawn(async move {
       loop {
         tokio::select! {
           _ = child.wait() => {
             match child.wait_with_output().await {
               Ok(output) => {
-                res_tx.send(output);
+                let _: Result<_, _> = res_tx.send(output);
                 break;
               }
-              Err(err) => {
+              Err(_err) => {
                 break;
               }
             }
           }
           _ = f_rx.recv() => {
-            child.start_kill();
+            let _ : Result<_, _> = child.start_kill();
           }
         }
       }
     });
     Ok(Self {
       result_receiver: Some(res_rx),
-      exit_sender: f_tx,
+      // exit_sender: f_tx,
     })
   }
 }
 
 impl mlua::UserData for ChildProcess {
-  fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {}
+  fn add_fields<F: mlua::UserDataFields<Self>>(_fields: &mut F) {}
 
   fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
     methods.add_async_function("wait", async |lua, this: mlua::AnyUserData| {
-      let mut this_ = this.clone().borrow_mut::<ChildProcess>()?;
+      let this_ = this.clone().borrow_mut::<ChildProcess>()?;
       if let Some(output) = this_.result_receiver.clone() {
         let output = output.clone().await.map_err(mlua::Error::external)?;
         let output_tbl = lua.create_table()?;
@@ -108,31 +108,31 @@ pub fn init_os_lib(lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
   )?;
   lib.set(
     "select",
-    lua.create_async_function(async |lua, items: mlua::Table| {
+    lua.create_async_function(async |_lua, items: mlua::Table| {
       let mut tasks: Vec<mlua::AsyncThread<mlua::Value>> = Vec::new();
       for thread in items.sequence_values::<mlua::Thread>() {
         let thread = thread?;
         tasks.push(thread.into_async(())?);
       }
-      let (result, index, tasks) = futures::future::select_all(tasks).await;
+      let (result, _index, _tasks) = futures::future::select_all(tasks).await;
       result
     })?,
   )?;
   lib.set(
     "both",
     lua.create_async_function(
-      async |lua, (a, b): (mlua::Function, mlua::Function)| {
+      async |_lua, (a, b): (mlua::Function, mlua::Function)| {
         let mut ls = tokio::task::JoinSet::new();
-        let a_ = ls.spawn(a.call_async::<()>(()));
-        let b_ = ls.spawn(b.call_async::<()>(()));
-        while let Some(_) = ls.join_next().await {}
+        let _a = ls.spawn(a.call_async::<()>(()));
+        let _b = ls.spawn(b.call_async::<()>(()));
+        while (ls.join_next().await).is_some() {}
         Ok(())
       },
     )?,
   )?;
   lib.set(
     "wait_echo",
-    lua.create_async_function(async |lua, a: mlua::String| {
+    lua.create_async_function(async |_lua, a: mlua::String| {
       tokio::time::sleep(Duration::from_secs(1)).await;
       println!("- {:?}", a);
       Ok(())

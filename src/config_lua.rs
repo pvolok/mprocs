@@ -1,15 +1,15 @@
 use anyhow::{bail, Result};
-use mlua::{Lua, Value};
+use mlua::Value;
 
 type V = serde_yaml::Value;
 
 pub fn load_lua_config(_path: &str, src: &str) -> Result<V> {
   let lua = mlua::Lua::new();
   let v: Value = lua.load(src).eval().unwrap();
-  conv_value(&lua, v)
+  conv_value(v)
 }
 
-fn conv_value(lua: &Lua, value: Value) -> Result<V> {
+fn conv_value(value: Value) -> Result<V> {
   let v = match value {
     Value::Nil => V::Null,
     Value::Boolean(x) => V::Bool(x),
@@ -21,7 +21,7 @@ fn conv_value(lua: &Lua, value: Value) -> Result<V> {
       let mut map = serde_yaml::Mapping::new();
       for entry in x.pairs::<Value, Value>() {
         let (k, v) = entry.unwrap();
-        map.insert(conv_value(lua, k)?, conv_value(lua, v)?);
+        map.insert(conv_value(k)?, conv_value(v)?);
       }
       V::Mapping(map)
     }

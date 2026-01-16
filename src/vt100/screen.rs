@@ -67,9 +67,10 @@ impl Default for MouseProtocolMode {
 }
 
 /// The encoding to use for the enabled `MouseProtocolMode`.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub enum MouseProtocolEncoding {
   /// Default single-printable-byte encoding.
+  #[default]
   Default,
 
   /// UTF-8-based encoding.
@@ -78,12 +79,6 @@ pub enum MouseProtocolEncoding {
   /// SGR-like encoding.
   Sgr,
   // Urxvt,
-}
-
-impl Default for MouseProtocolEncoding {
-  fn default() -> Self {
-    Self::Default
-  }
 }
 
 /// Represents the overall terminal state.
@@ -1543,5 +1538,33 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
 
   fn handle_xt_get_tcap(&mut self, _names: Vec<String>) {
     skip!("XtGetTcap");
+  }
+}
+
+struct VtParser {
+  buf: Vec<u8>,
+}
+
+enum VtSeq<'a> {
+  Print(&'a str),
+  CSI { params: &'a [u8], final_: u8 },
+}
+
+impl VtParser {
+  pub fn parse(&mut self, data: &[u8], f: &dyn Fn(VtSeq)) {
+    self.buf.extend_from_slice(data);
+
+    let mut pos = 0;
+    let mut used = pos;
+    while pos < self.buf.len() {
+      match self.buf[pos] {
+        b'\x1b' => {
+          //
+        }
+        c => {
+          //
+        }
+      }
+    }
   }
 }

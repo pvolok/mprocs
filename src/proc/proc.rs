@@ -32,8 +32,6 @@ fn sanitize_log_filename(name: &str) -> String {
     let is_safe = ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.');
     if is_safe {
       out.push(ch);
-    } else if ch == ' ' {
-      out.push('_');
     } else {
       out.push('_');
     }

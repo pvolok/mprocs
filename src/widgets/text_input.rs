@@ -28,8 +28,7 @@ impl<'a> StatefulWidget for TextInput<'a> {
       let start = unicode_segmentation::UnicodeSegmentation::grapheme_indices(
         value, true,
       )
-      .skip(left_trim)
-      .next()
+      .nth(left_trim)
       .map_or_else(|| value.len(), |(len, _)| len);
       (&value[start..], input.cursor() - left_trim)
     } else {

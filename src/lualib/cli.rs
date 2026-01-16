@@ -1,14 +1,7 @@
-use std::{
-  str::FromStr as _,
-  sync::{Arc, Mutex, OnceLock},
-};
+use std::{str::FromStr as _, sync::OnceLock};
 
 use mlua::LuaSerdeExt;
-use tui::{
-  layout::{Constraint, Rect},
-  style::Modifier,
-  text::Span,
-};
+use tui::{layout::Rect, style::Modifier, text::Span};
 
 use crate::term::term_driver::TermDriver;
 
@@ -50,7 +43,7 @@ pub fn init_cli_lib(lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
 
   lib.set(
     "enter",
-    lua.create_function(|lua, ()| {
+    lua.create_function(|_lua, ()| {
       let mut driver_holder = get_global_driver()
         .try_lock()
         .map_err(mlua::Error::external)?;
@@ -62,7 +55,7 @@ pub fn init_cli_lib(lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
   )?;
   lib.set(
     "exit",
-    lua.create_function(|lua, ()| {
+    lua.create_function(|_lua, ()| {
       let mut driver_holder = get_global_driver()
         .try_lock()
         .map_err(mlua::Error::external)?;
@@ -78,7 +71,7 @@ pub fn init_cli_lib(lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
 
   lib.set(
     "block",
-    lua.create_function(|lua, (opts, area): (mlua::Table, mlua::Value)| {
+    lua.create_function(|lua, (_opts, area): (mlua::Table, mlua::Value)| {
       let area = lua.from_value::<Rect>(area)?;
       let mut driver_holder = get_global_driver()
         .try_lock()
@@ -174,7 +167,7 @@ pub fn init_cli_lib(lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
 
   lib.set(
     "begin_frame",
-    lua.create_function(|lua, ()| {
+    lua.create_function(|_lua, ()| {
       let mut driver_holder = get_global_driver()
         .try_lock()
         .map_err(mlua::Error::external)?;
@@ -186,12 +179,12 @@ pub fn init_cli_lib(lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
 
   lib.set(
     "end_frame",
-    lua.create_function(|lua, ()| {
+    lua.create_function(|_lua, ()| {
       let mut driver_holder = get_global_driver()
         .try_lock()
         .map_err(mlua::Error::external)?;
       let term = driver_holder.as_mut().unwrap();
-      term.draw(|f| {});
+      let _: Result<_, _> = term.draw(|_f| {});
       Ok(())
     })?,
   )?;

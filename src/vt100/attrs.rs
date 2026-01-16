@@ -1,7 +1,5 @@
 use tui::style::Modifier;
 
-use crate::vt100::term::BufWrite as _;
-
 /// Represents a foreground or background color for cells.
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub enum Color {
@@ -103,48 +101,6 @@ impl Attrs {
     } else {
       self.mode &= !TEXT_MODE_INVERSE;
     }
-  }
-
-  pub fn write_escape_code_diff(&self, contents: &mut Vec<u8>, other: &Self) {
-    if self != other && self == &Self::default() {
-      crate::vt100::term::ClearAttrs::default().write_buf(contents);
-      return;
-    }
-
-    let attrs = crate::vt100::term::Attrs::default();
-
-    let attrs = if self.fgcolor == other.fgcolor {
-      attrs
-    } else {
-      attrs.fgcolor(self.fgcolor)
-    };
-    let attrs = if self.bgcolor == other.bgcolor {
-      attrs
-    } else {
-      attrs.bgcolor(self.bgcolor)
-    };
-    let attrs = if self.bold() == other.bold() {
-      attrs
-    } else {
-      attrs.bold(self.bold())
-    };
-    let attrs = if self.italic() == other.italic() {
-      attrs
-    } else {
-      attrs.italic(self.italic())
-    };
-    let attrs = if self.underline() == other.underline() {
-      attrs
-    } else {
-      attrs.underline(self.underline())
-    };
-    let attrs = if self.inverse() == other.inverse() {
-      attrs
-    } else {
-      attrs.inverse(self.inverse())
-    };
-
-    attrs.write_buf(contents);
   }
 }
 

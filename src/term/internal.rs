@@ -18,6 +18,6 @@ pub enum InternalTermEvent {
 pub enum KeyboardMode {
   Unknown,
   ModifyOtherKeys,
-  Kitty(u8),
+  Kitty,
   Win32,
 }

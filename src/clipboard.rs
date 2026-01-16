@@ -88,10 +88,12 @@ fn copy_impl(s: &str, provider: &Provider) -> Result<()> {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-      std::io::Write::write_all(
+      if let Err(e) = std::io::Write::write_all(
         &mut child.stdin.as_ref().unwrap(),
         s.as_bytes(),
-      )?;
+      ) {
+        log::error!("Failed to write into copy process: {:?}", e);
+      }
       child.wait()?;
     }
 
@@ -112,6 +114,6 @@ lazy_static::lazy_static! {
 pub fn copy(s: &str) {
   match copy_impl(s, &PROVIDER) {
     Ok(()) => (),
-    Err(err) => log::warn!("Copying error: {}", err.to_string()),
+    Err(err) => log::warn!("Copying error: {}", err),
   }
 }

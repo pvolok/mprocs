@@ -82,7 +82,7 @@ pub fn render_term(
 
         if active {
           if let Some(cursor) = cursor {
-            frame.set_cursor(cursor.0, cursor.1);
+            frame.set_cursor_position((cursor.0, cursor.1));
             *cursor_style = vt.screen().cursor_style();
           }
         }
@@ -122,7 +122,12 @@ impl Widget for UiTerm<'_> {
 
     for row in 0..area.height {
       for col in 0..area.width {
-        let to_cell = buf.get_mut(area.x + col, area.y + row);
+        let to_cell =
+          if let Some(cell) = buf.cell_mut((area.x + col, area.y + row)) {
+            cell
+          } else {
+            continue;
+          };
         if let Some(cell) = screen.cell(row, col) {
           *to_cell = cell.to_tui();
           if !cell.has_contents() {

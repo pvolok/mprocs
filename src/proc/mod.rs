@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 use tui::layout::Rect;
 
-use crate::kernel::proc::ProcId;
 use crate::key::Key;
 use crate::vt100::TermReplySender;
 use crate::yaml_val::Val;
@@ -119,7 +118,6 @@ impl Pos {
 
 #[derive(Clone)]
 pub struct ReplySender {
-  proc_id: ProcId,
   sender: UnboundedSender<ProcEvent>,
 }
 

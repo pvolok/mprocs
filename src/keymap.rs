@@ -36,7 +36,7 @@ impl Keymap {
       KeymapGroup::Term => (&mut self.term, &mut self.rev_term),
       KeymapGroup::Copy => (&mut self.copy, &mut self.rev_copy),
     };
-    map.insert(key.clone(), event.clone());
+    map.insert(key, event.clone());
     rev_map.insert(event, key);
   }
 

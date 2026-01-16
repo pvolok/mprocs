@@ -1,3 +1,5 @@
+#![allow(clippy::as_conversions, clippy::pedantic)]
+
 use std::collections::VecDeque;
 
 use super::{attrs::Attrs, row::Row, Cell};
@@ -62,7 +64,7 @@ impl Grid {
       let i = i as i32;
       let start = if i == 0 { low_x } else { 0 };
 
-      let width = row.cols() as i32;
+      let width: i32 = row.cols().into();
       let width = if i == lines_len - 1 {
         width.min(high_x + 1)
       } else {
@@ -469,11 +471,7 @@ impl Grid {
     let in_scroll_region = self.in_scroll_region();
     // need to account for clamping by both row_clamp_top and by
     // saturating_sub
-    let extra_lines = if count > self.pos.row {
-      count - self.pos.row
-    } else {
-      0
-    };
+    let extra_lines = count.saturating_sub(self.pos.row);
     self.pos.row = self.pos.row.saturating_sub(count);
     let lines = self.row_clamp_top(in_scroll_region);
     self.scroll_down(lines + extra_lines);
@@ -566,7 +564,7 @@ impl Grid {
     self
       .rows
       .get(self.row0() + pos.row as usize)
-      .map_or(false, |r| r.is_wide_continuation(pos.col))
+      .is_some_and(|r| r.is_wide_continuation(pos.col))
   }
 }
 

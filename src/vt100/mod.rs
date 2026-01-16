@@ -18,7 +18,6 @@ mod parser;
 mod row;
 mod screen;
 mod size;
-mod term;
 mod term_reply;
 
 pub use attrs::Color;

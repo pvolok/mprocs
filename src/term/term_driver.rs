@@ -217,7 +217,7 @@ impl TermDriver {
       KeyboardMode::ModifyOtherKeys => {
         self.stdout.write_all(b"\x1b[>4;0m")?;
       }
-      KeyboardMode::Kitty(_) => {
+      KeyboardMode::Kitty => {
         self.stdout.write_all(b"\x1b[<1u")?;
       }
       KeyboardMode::Win32 => {
@@ -306,8 +306,8 @@ impl TermDriver {
             }
           }
         }
-        InternalTermEvent::ReplyKittyKeyboard(flags) => {
-          self.keyboard = KeyboardMode::Kitty(flags);
+        InternalTermEvent::ReplyKittyKeyboard(_flags) => {
+          self.keyboard = KeyboardMode::Kitty;
           // 0b1 (1) - Disambiguate escape codes
           // 0b10 (2) - Report event types
           // 0b100 (4) - Report alternate keys

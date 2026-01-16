@@ -47,10 +47,7 @@ impl Inst {
       size.height,
       size.width,
       scrollback_len,
-      ReplySender {
-        proc_id: id,
-        sender: tx.clone(),
-      },
+      ReplySender { sender: tx.clone() },
     );
     let vt = SharedVt::new(vt);
 

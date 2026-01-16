@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 pub struct ProcessSpec {
   pub prog: String,
   pub args: Vec<String>,
-  pub pty: bool,
+  // pub pty: bool,
   pub cwd: Option<String>,
   pub env: BTreeMap<String, Option<String>>,
 }
@@ -19,7 +19,7 @@ impl ProcessSpec {
     ProcessSpec {
       prog,
       args: argv,
-      pty: true,
+      // pty: true,
       cwd: None,
       env: Default::default(),
     }

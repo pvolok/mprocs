@@ -8,7 +8,7 @@ pub fn init_dbg_lib(lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
   let mt = lua.create_table()?;
   mt.set(
     MetaMethod::Call.name(),
-    lua.create_function(|lua, (this, value): (mlua::Value, _)| {
+    lua.create_function(|_lua, (_this, value): (mlua::Value, _)| {
       println!("{}", inspect(value)?);
       Ok(())
     })?,
@@ -18,7 +18,7 @@ pub fn init_dbg_lib(lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
 
   lib.set(
     "inspect",
-    lua.create_function(|lua, value: mlua::Value| inspect(value))?,
+    lua.create_function(|_lua, value: mlua::Value| inspect(value))?,
   )?;
 
   Ok(lib)
