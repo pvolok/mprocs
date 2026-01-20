@@ -1,11 +1,8 @@
-use std::sync::{Arc, Mutex};
-
 use crate::vt100::TermReplySender;
 
 /// A parser for terminal output which produces an in-memory representation of
 /// the terminal contents.
 pub struct Parser<Reply: TermReplySender + Clone> {
-  parser: Arc<Mutex<termwiz::escape::parser::Parser>>,
   pub screen: crate::vt100::screen::Screen<Reply>,
 }
 
@@ -19,23 +16,13 @@ impl<Reply: TermReplySender + Clone> Parser<Reply> {
     scrollback_len: usize,
     reply_sender: Reply,
   ) -> Self {
-    let parser = Arc::new(Mutex::new(termwiz::escape::parser::Parser::new()));
     Self {
-      parser,
       screen: crate::vt100::screen::Screen::new(
         crate::vt100::grid::Size { rows, cols },
         scrollback_len,
         reply_sender,
       ),
     }
-  }
-
-  /// Processes the contents of the given byte string, and updates the
-  /// in-memory terminal state.
-  pub fn process(&mut self, bytes: &[u8]) {
-    self.parser.lock().unwrap().parse(bytes, |action| {
-      self.screen.handle_action(action);
-    });
   }
 
   /// Resizes the terminal.
@@ -63,16 +50,5 @@ impl<Reply: TermReplySender + Clone> Parser<Reply> {
   #[must_use]
   pub fn screen(&self) -> &crate::vt100::screen::Screen<Reply> {
     &self.screen
-  }
-}
-
-impl<Reply: TermReplySender + Clone> std::io::Write for Parser<Reply> {
-  fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-    self.process(buf);
-    Ok(buf.len())
-  }
-
-  fn flush(&mut self) -> std::io::Result<()> {
-    Ok(())
   }
 }

@@ -26,9 +26,9 @@ use crate::{
   key::Key,
   keymap::Keymap,
   modal::{
-    add_proc::AddProcModal, commands_menu::CommandsMenuModal,
-    modal::Modal, quit::QuitModal,
-    remove_proc::RemoveProcModal, rename_proc::RenameProcModal,
+    add_proc::AddProcModal, commands_menu::CommandsMenuModal, modal::Modal,
+    quit::QuitModal, remove_proc::RemoveProcModal,
+    rename_proc::RenameProcModal,
   },
   mouse::MouseEvent,
   proc::{

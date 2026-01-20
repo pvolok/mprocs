@@ -97,17 +97,3 @@ windows = { version = "0.62", features = [
   "Win32_System_Pipes",
   "Win32_System_Threading",
 ] }
-
-[lints.clippy]
-as_conversions = "allow"
-cast_sign_loss = "allow"
-collapsible_else_if = "allow"
-collapsible_if = "allow"
-let_and_return = "allow"
-match_like_matches_macro = "allow"
-module_inception = "allow"
-pedantic = "allow"
-redundant_closure = "allow"
-single_match = "allow"
-upper_case_acronyms = "allow"
-while_let_loop = "allow"

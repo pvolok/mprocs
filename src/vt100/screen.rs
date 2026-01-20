@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::vt100::{attrs::Attrs, TermReplySender};
+use crate::vt100::{attrs::Attrs, Color, TermReplySender};
 use compact_str::{CompactString, ToCompactString};
 use termwiz::escape::{
   csi::{
@@ -84,6 +84,8 @@ pub enum MouseProtocolEncoding {
 /// Represents the overall terminal state.
 #[derive(Clone, Debug)]
 pub struct Screen<Reply: TermReplySender> {
+  feed_buf: Vec<u8>,
+
   reply_sender: Reply,
 
   grid: crate::vt100::grid::Grid,
@@ -133,6 +135,8 @@ impl<Reply: TermReplySender> Screen<Reply> {
   ) -> Self {
     let grid = crate::vt100::grid::Grid::new(size, scrollback_len);
     Self {
+      feed_buf: Vec::new(),
+
       reply_sender,
       grid,
       alternate_grid: crate::vt100::grid::Grid::new(size, 0),
@@ -605,7 +609,7 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
       1 => self.grid_mut().erase_all_backward(attrs),
       2 => self.grid_mut().erase_all(attrs),
       n => {
-        log::debug!("unhandled ED mode: {n}");
+        log::warn!("Unhandled ED mode: {n}");
       }
     }
   }
@@ -1541,30 +1545,738 @@ impl<Reply: TermReplySender + Clone> Screen<Reply> {
   }
 }
 
-struct VtParser {
-  buf: Vec<u8>,
+#[derive(Clone, Debug)]
+pub enum VtEvent {
+  Bell,
+  Reply(CompactString),
 }
 
-enum VtSeq<'a> {
-  Print(&'a str),
-  CSI { params: &'a [u8], final_: u8 },
-}
-
-impl VtParser {
-  pub fn parse(&mut self, data: &[u8], f: &dyn Fn(VtSeq)) {
-    self.buf.extend_from_slice(data);
+impl<Reply: TermReplySender + Clone> Screen<Reply> {
+  /// <https://man7.org/linux/man-pages/man4/console_codes.4.html>
+  /// <https://en.wikipedia.org/wiki/ANSI_escape_code>
+  /// <https://terminalguide.namepad.de/seq>/
+  /// <https://vt100.net/docs/vt510-rm/contents.html>
+  /// <https://xtermjs.org/docs/api/vtfeatures/>
+  /// <https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences>
+  /// <https://bjh21.me.uk/all-escapes/all-escapes.txt>
+  pub fn process(&mut self, data: &[u8], events: &mut Vec<VtEvent>) {
+    self.feed_buf.extend_from_slice(data);
+    let buf = std::mem::take(&mut self.feed_buf);
 
     let mut pos = 0;
-    let mut used = pos;
-    while pos < self.buf.len() {
-      match self.buf[pos] {
-        b'\x1b' => {
-          //
+    let mut consumed = pos;
+    'process: while pos < buf.len() {
+      let seq_start = pos;
+      pos += 1;
+      match buf[seq_start] {
+        0x07 => {
+          // BELL
+          events.push(VtEvent::Bell);
         }
-        c => {
-          //
+        0x08 => {
+          // BS - Backspace
+          self.grid_mut().col_dec(1);
+        }
+        0x09 => {
+          // HT - Horizontal Tabulation
+          self.tab();
+        }
+        0x0A => {
+          // LF - Line Feed
+          self.grid_mut().row_inc_scroll(1);
+        }
+        0x0B => {
+          // VT - Vertical Tabulation
+          self.grid_mut().row_inc_scroll(1);
+        }
+        0x0C => {
+          // FF - Form Feed
+          self.grid_mut().row_inc_scroll(1);
+        }
+        0x0D => {
+          // CR - Carriage Return
+          self.grid_mut().col_set(0);
+        }
+        0x0E => {
+          // SO - Shift Out
+          self.shift_out = true;
+        }
+        0x0F => {
+          // SI - Shift In
+          self.shift_out = false;
+        }
+        0x1B => {
+          if pos >= buf.len() {
+            break;
+          }
+          pos += 1;
+          match buf[pos - 1] {
+            first @ 0x20..=0x2F => {
+              // nF sequences
+              // ESC [0x20-0x2F]+ [0x30-0x7E]
+              let start = pos;
+              'seq: loop {
+                if pos >= buf.len() {
+                  break 'process;
+                }
+                if buf[pos] >= 0x30 && buf[pos] <= 0x7E {
+                  pos += 1;
+                  break 'seq;
+                }
+                pos += 1;
+              }
+              let params = &buf[start..pos];
+              match first {
+                b'(' | b')' | b'*' | b'+' => {
+                  // ESC ( rest - Setup G0 charset with 94 characters
+                  // ESC ) rest - Setup G1 charset with 94 characters
+                  // ESC * rest - Setup G2 charset with 94 characters
+                  // ESC + rest - Setup G3 charset with 94 characters
+                  // https://terminalguide.namepad.de/seq/
+                  let charset = match params[0] {
+                    b'A' => {
+                      // UK
+                      Some(CharSet::Uk)
+                    }
+                    b'B' => {
+                      // ASCII
+                      Some(CharSet::Ascii)
+                    }
+                    b'0' => {
+                      // DEC Special Character and Line Drawing Set
+                      Some(CharSet::DecLineDrawing)
+                    }
+                    _ => None,
+                  };
+                  if let Some(charset) = charset {
+                    match first {
+                      b'(' => self.g0 = charset,
+                      b')' => self.g1 = charset,
+                      _ => (),
+                    }
+                  }
+                }
+                _ => {
+                  log::warn!(
+                    "Ignored nF: ESC {}",
+                    String::from_utf8_lossy(&buf[start - 1..pos]),
+                  );
+                }
+              }
+            }
+            b'7' => {
+              self.save_cursor();
+            }
+            b'8' => {
+              self.restore_cursor();
+            }
+            b'=' => {
+              // DECKPAM
+              self.set_mode(MODE_APPLICATION_KEYPAD);
+            }
+            b'>' => {
+              // DECKPNM
+              self.clear_mode(MODE_APPLICATION_KEYPAD);
+            }
+            b'@' => {
+              if pos >= buf.len() {
+                break;
+              }
+              // Consume one byte
+              pos += 1;
+            }
+            b'M' => {
+              // RI - Reverse Index
+              self.ri();
+            }
+            b'P' => {
+              // Device Control String
+              let start = pos;
+              'dcs: loop {
+                if pos + 2 > buf.len() {
+                  break 'process;
+                }
+                if &buf[pos..pos + 2] == b"\x1b\\" {
+                  let _dcs = &buf[start..pos];
+                  // TODO: Handle DCS
+                  pos += 2;
+                  break 'dcs;
+                }
+                pos += 1;
+              }
+            }
+            b'[' => {
+              let params_start = pos;
+              while pos < buf.len() && (0x30..=0x3F).contains(&buf[pos]) {
+                pos += 1;
+              }
+              let params = &buf[params_start..pos];
+
+              let intermediate_start = pos;
+              while pos < buf.len() && (0x20..=0x2F).contains(&buf[pos]) {
+                pos += 1;
+              }
+              let intermediate = &buf[intermediate_start..pos];
+
+              if pos >= buf.len() {
+                break;
+              }
+              let final_ = &buf[pos];
+              if (0x40..=0x7E).contains(final_) {
+                pos += 1;
+                let params = str::from_utf8(params).unwrap_or_default();
+                let intermediate =
+                  str::from_utf8(intermediate).unwrap_or_default();
+                self.process_csi(events, params, intermediate, *final_);
+              } else {
+                let seq1 = &buf[seq_start + 1..pos + 1];
+                log::error!(
+                  "Corrupt CSI sequence: ESC {}  - {:?}",
+                  String::from_utf8_lossy(seq1),
+                  seq1,
+                );
+                // Only consume the first '0x1B' byte.
+                pos = seq_start + 1;
+              }
+            }
+            b']' => {
+              // Operating System Command
+              let start = pos;
+              'osc: loop {
+                if pos >= buf.len() {
+                  break 'process;
+                }
+                let mut s = None;
+                if buf[pos] == 0x07 || buf[pos] == 0x9C {
+                  s = Some(&buf[start..pos]);
+                  pos += 1;
+                } else if buf.get(pos..pos + 2) == Some(b"\x1b\\") {
+                  s = Some(&buf[start..pos]);
+                  pos += 2;
+                }
+                if let Some(_s) = s {
+                  // TODO: Handle OSC
+                  break 'osc;
+                }
+
+                pos += 1;
+              }
+            }
+            b'X' | b'^' | b'_' => {
+              // ESC X - Start of String
+              // ESC ^ - Privacy Message
+              // ESC _ - Application Program Command
+              let start = pos;
+              'cmd: loop {
+                if pos + 2 > buf.len() {
+                  break 'process;
+                }
+                if &buf[pos..pos + 2] == b"\x1b\\" {
+                  let _cmd = &buf[start..pos];
+                  pos += 2;
+                  break 'cmd;
+                }
+                pos += 1;
+              }
+            }
+            c => {
+              log::warn!(
+                "Unhandled ESC {} ({:?})",
+                c,
+                char::from_u32(c.into())
+              );
+            }
+          }
+        }
+        0x8D => {
+          // RI
+          self.ri();
+        }
+        first_byte => {
+          let char_len = utf8_char_len(first_byte);
+          if char_len == 0 {
+            // Ignore invalid byte.
+          } else if seq_start + char_len <= buf.len() {
+            let char_bytes = &buf[seq_start..seq_start + char_len];
+            let char = str::from_utf8(char_bytes);
+            match char {
+              Ok(s) => {
+                pos = seq_start + char_len;
+                let char = s.chars().next().unwrap();
+                self.text(char);
+              }
+              Err(e) => {
+                log::error!("Invalid utf-8 char: {char_bytes:?} {e}");
+              }
+            }
+          } else {
+            break;
+          }
         }
       }
+
+      consumed = pos;
     }
+
+    self.feed_buf = buf;
+    self.feed_buf.drain(0..consumed);
+  }
+
+  fn process_csi(
+    &mut self,
+    events: &mut Vec<VtEvent>,
+    params: &str,
+    intermediate: &str,
+    final_: u8,
+  ) {
+    let full_params = params;
+    let (pref, bare_params) = if params.starts_with(['<', '=', '>', '?']) {
+      (&params[..1], &params[1..])
+    } else {
+      ("", params)
+    };
+    match (pref, bare_params, intermediate, final_) {
+      ("?", _, "", b'J') => {
+        // DECSED - Selective Erase Display
+        // https://terminalguide.namepad.de/seq/csi_cj__p/
+        let mode = params.parse().unwrap_or(0);
+        self.decsed(mode);
+      }
+      ("?", _, "", b'K') => {
+        // DECSEL - Selective Erase Line
+        // https://terminalguide.namepad.de/seq/csi_ck__p/
+        let mode = params.parse().unwrap_or(0);
+        self.decsel(mode);
+      }
+      ("", _, "", b'@') => {
+        // ICH - Insert Character
+        // https://terminalguide.namepad.de/seq/csi_x40_at/
+        let amount = params.parse().unwrap_or(1);
+        self.ich(amount);
+      }
+      ("", _, "", b'A') => {
+        // CUU - Cursor Up
+        // https://terminalguide.namepad.de/seq/csi_ca/
+        let count = params.parse().unwrap_or(1).max(1);
+        self.grid_mut().row_dec_clamp(count);
+      }
+      ("", _, "", b'B') => {
+        // CUD - Cursor Down
+        // https://terminalguide.namepad.de/seq/csi_cb/
+        let count = params.parse().unwrap_or(1).max(1);
+        self.grid_mut().row_inc_clamp(count);
+      }
+      ("", _, "", b'C') => {
+        // CUF - Cursor Right
+        // https://terminalguide.namepad.de/seq/csi_cc/
+        let count = params.parse().unwrap_or(1).max(1);
+        self.grid_mut().col_inc_clamp(count);
+      }
+      ("", _, "", b'D') => {
+        // CUB - Cursor Left
+        // https://terminalguide.namepad.de/seq/csi_cd/
+        let count = params.parse().unwrap_or(1).max(1);
+        self.grid_mut().col_dec(count);
+      }
+      ("", _, "", b'E') => {
+        // CNL - Cursor Next Line
+        // https://terminalguide.namepad.de/seq/csi_ce/
+        let count = params.parse().unwrap_or(1).max(1);
+        self.grid_mut().row_inc_clamp(count);
+        self.grid_mut().col_set(0);
+      }
+      ("", _, "", b'F') => {
+        // CPL - Cursor Previous Line
+        // https://terminalguide.namepad.de/seq/csi_cf/
+        let count = params.parse().unwrap_or(1).max(1);
+        self.grid_mut().row_dec_clamp(count);
+        self.grid_mut().col_set(0);
+      }
+      ("", _, "", b'G') => {
+        // CHA - Cursor Horizontal Absolute
+        // https://terminalguide.namepad.de/seq/csi_cg/
+        let column = params.parse().unwrap_or(1).max(1) - 1;
+        self.grid_mut().col_set(column);
+      }
+      ("", _, "", b'H') => {
+        // CUP - Cursor Position
+        // https://terminalguide.namepad.de/seq/csi_ch/
+        let mut params = params.split(';');
+        let row = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
+        let col = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
+        self
+          .grid_mut()
+          .set_pos(crate::vt100::grid::Pos { row, col });
+      }
+      ("", _, "", b'J') => {
+        // ED - Erase Display
+        // https://terminalguide.namepad.de/seq/csi_cj/
+        let mode = params.parse().unwrap_or(0);
+        self.ed(mode);
+      }
+      ("", _, "", b'K') => {
+        // EL - Erase Line
+        // https://terminalguide.namepad.de/seq/csi_ck/
+        let mode = params.parse().unwrap_or(0);
+        self.el(mode);
+      }
+      ("", _, "", b'L') => {
+        // IL - Insert Line
+        // https://terminalguide.namepad.de/seq/csi_cl/
+        let amount = params.parse().unwrap_or(1);
+        self.grid_mut().insert_lines(amount);
+      }
+      ("", _, "", b'M') => {
+        // DL - Delete Line
+        // https://terminalguide.namepad.de/seq/csi_cm/
+        let amount = params.parse().unwrap_or(1).max(1);
+        let attrs = self.attrs;
+        self.grid_mut().delete_lines(amount, attrs);
+      }
+      ("", _, "", b'P') => {
+        // DCH - Delete Character
+        // https://terminalguide.namepad.de/seq/csi_cp/
+        let amount = params.parse().unwrap_or(1).max(1);
+        self.grid_mut().delete_cells(amount);
+      }
+      ("", _, "", b'S') => {
+        // SU - Scroll Up
+        // https://terminalguide.namepad.de/seq/csi_cs/
+        let amount = params.parse().unwrap_or(1);
+        self.grid_mut().scroll_up(amount);
+      }
+      ("", _, "", b'T') => {
+        // SD - Scroll Down
+        // https://terminalguide.namepad.de/seq/csi_ct_1param/
+        //  or
+        // Track Mouse
+        // https://terminalguide.namepad.de/seq/csi_ct_5param/
+        if let Ok(amount) = params.parse() {
+          // It's SD if only one parameter
+          self.grid_mut().scroll_down(amount);
+        } else {
+          log::warn!("Ignored CSI {params} T");
+        }
+      }
+      ("", _, "", b'X') => {
+        // ECH - Erase Character
+        // https://terminalguide.namepad.de/seq/csi_cx/
+        let amount = params.parse().unwrap_or(1).max(1);
+        let attrs = self.attrs;
+        self.grid_mut().erase_cells(amount, attrs);
+      }
+      ("", _, "", b'c') => {
+        // DA1 - Primary Device Attributes
+        // https://terminalguide.namepad.de/seq/csi_sc/
+        // https://vt100.net/docs/vt510-rm/DA1.html
+        // let p1 = params.parse().unwrap_or(0);
+
+        // 4 - Sixel
+        // 6 - Selective erase
+        // 22 - ANSI color, vt525
+        // 52 - Clipboard access
+        events.push(VtEvent::Reply("\x1b[?65;6;22;52c".into()));
+      }
+      ("", _, "", b'd') => {
+        // VPA - Vertical Position Absolute
+        // https://terminalguide.namepad.de/seq/csi_sd/
+        let row = params.parse().unwrap_or(1).max(1) - 1;
+        self.grid_mut().row_set(row);
+      }
+      ("", _, "", b'f') => {
+        // HVP - Horizontal and Vertical Position
+        // https://terminalguide.namepad.de/seq/csi_sf/
+        let mut params = params.split(';');
+        let y = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
+        let x = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
+        self
+          .grid_mut()
+          .set_pos(crate::vt100::grid::Pos { row: y, col: x });
+      }
+      ("", _, "", b'`') => {
+        // HPA - Horizontal Position Absolute
+        // https://terminalguide.namepad.de/seq/csi_x60_backtick/
+        let column = params.parse().unwrap_or(1).max(1) - 1;
+        self.grid_mut().col_set(column);
+      }
+      ("", _, "", b'm') => {
+        let mut params = params.split(';');
+        match params.next().unwrap_or("0").parse().unwrap_or(0) {
+          0 => {
+            // Reset
+            self.attrs = Attrs::default();
+          }
+          1 => {
+            // Bold
+            self.attrs.set_bold(true);
+          }
+          2 => {
+            // Dim
+            self.attrs.set_bold(false);
+          }
+          3 => {
+            // Italic
+            self.attrs.set_italic(true);
+          }
+          4 => {
+            // Underline
+            self.attrs.set_underline(true);
+          }
+          5 => {
+            // Slow blink
+            // TODO
+          }
+          6 => {
+            // Rapid blink
+            // TODO
+          }
+          7 => {
+            // Invert
+            self.attrs.set_inverse(true);
+          }
+          9 => {
+            // Crossed-out
+            // TODO
+          }
+          21 => {
+            // Doubly underlined
+            self.attrs.set_underline(true);
+          }
+          22 => {
+            // Normal intensity
+            self.attrs.set_bold(false);
+          }
+          23 => {
+            // Not italic
+            self.attrs.set_italic(false);
+          }
+          24 => {
+            // Not underlined
+            self.attrs.set_underline(false);
+          }
+          25 => {
+            // Not blinking
+            // TODO
+          }
+          27 => {
+            // Not reversed
+            self.attrs.set_inverse(false);
+          }
+          29 => {
+            // Not crossed-out
+            // TODO
+          }
+          n @ 30..=37 => {
+            self.attrs.fgcolor = Color::Idx(n - 30);
+          }
+          38 => {
+            self.attrs.fgcolor = parse_sgr_color(params);
+          }
+          39 => {
+            self.attrs.fgcolor = Color::Default;
+          }
+          n @ 40..=47 => {
+            self.attrs.bgcolor = Color::Idx(n - 40);
+          }
+          48 => {
+            self.attrs.bgcolor = parse_sgr_color(params);
+          }
+          49 => {
+            self.attrs.bgcolor = Color::Default;
+          }
+          n @ 90..=97 => {
+            self.attrs.fgcolor = Color::Idx(n - 90 + 8);
+          }
+          n @ 100..=107 => {
+            self.attrs.bgcolor = Color::Idx(n - 100 + 8);
+          }
+          n => {
+            log::warn!("Ignored SGR: {}", n);
+          }
+        }
+      }
+      (_, _, "", b'h' | b'l') => {
+        let set = final_ == b'h';
+        // https://terminalguide.namepad.de/mode/
+        match params {
+          "?1" => {
+            // DECCKM
+            if set {
+              self.set_mode(MODE_APPLICATION_CURSOR);
+            } else {
+              self.clear_mode(MODE_APPLICATION_CURSOR);
+            }
+          }
+          "4" => {
+            self.insert = set;
+          }
+          "?6" => {
+            self.grid_mut().set_origin_mode(set);
+          }
+          "?9" => {
+            // Mouse Click-Only Tracking (X10_MOUSE)
+            if set {
+              self.set_mouse_mode(MouseProtocolMode::Press);
+            } else {
+              self.clear_mouse_mode(MouseProtocolMode::Press);
+            }
+          }
+          "?25" => {
+            // DECTCEM
+            if set {
+              self.clear_mode(MODE_HIDE_CURSOR);
+            } else {
+              self.set_mode(MODE_HIDE_CURSOR);
+            }
+          }
+          "34" => {
+            // DECRLM - Cursor direction, right to left
+            // https://vt100.net/docs/vt510-rm/DECRLM.html
+            // Not supported
+          }
+          "?47" => {
+            // Alternate Screen Buffer (ALTBUF)
+            if set {
+              self.enter_alternate_grid();
+            } else {
+              self.exit_alternate_grid();
+            }
+          }
+          "?1000" => {
+            if set {
+              self.set_mouse_mode(MouseProtocolMode::PressRelease);
+            } else {
+              self.clear_mouse_mode(MouseProtocolMode::PressRelease);
+            }
+          }
+          "?1002" => {
+            if set {
+              self.set_mouse_mode(MouseProtocolMode::ButtonMotion);
+            } else {
+              self.clear_mouse_mode(MouseProtocolMode::ButtonMotion);
+            }
+          }
+          "?1003" => {
+            if set {
+              self.set_mouse_mode(MouseProtocolMode::AnyMotion);
+            } else {
+              self.clear_mouse_mode(MouseProtocolMode::AnyMotion);
+            }
+          }
+          "?1005" => {
+            if set {
+              self.set_mouse_encoding(MouseProtocolEncoding::Utf8);
+            } else {
+              self.clear_mouse_encoding(MouseProtocolEncoding::Utf8);
+            }
+          }
+          "?1006" => {
+            if set {
+              self.set_mouse_encoding(MouseProtocolEncoding::Sgr);
+            } else {
+              self.clear_mouse_encoding(MouseProtocolEncoding::Sgr);
+            }
+          }
+          "?1049" => {
+            // Alternate Screen Buffer, With Cursor Save and Clear on Enter
+            if set {
+              self.decsc();
+              self.alternate_grid.clear();
+              self.enter_alternate_grid();
+            } else {
+              self.exit_alternate_grid();
+              self.decrc();
+            }
+          }
+          "?2004" => {
+            // Bracketed Paste Mode
+            if set {
+              self.set_mode(MODE_BRACKETED_PASTE);
+            } else {
+              self.clear_mode(MODE_BRACKETED_PASTE);
+            }
+          }
+          _ => csi_todo(full_params, intermediate, final_),
+        }
+      }
+      ("", _, "", b'n') => {
+        // DSR - Device Status Report
+        match params {
+          "6" => {
+            // CPR - Request Cursor Position Report
+            // https://terminalguide.namepad.de/seq/csi_sn-6/
+            let pos = self.grid().pos();
+            let s = compact_str::format_compact!(
+              "\x1b[{};{}R",
+              pos.row + 1,
+              pos.col + 1
+            );
+            events.push(VtEvent::Reply(s));
+          }
+          n => {
+            log::warn!("Ignored DSR: {}", n);
+          }
+        }
+      }
+      ("", _, " ", b'q') => {
+        // DECSCUSR - Select Cursor Style
+        // https://terminalguide.namepad.de/seq/csi_sq_t_space/
+        let cursor_style = match params {
+          "0" => CursorStyle::Default,
+          "1" => CursorStyle::BlinkingBlock,
+          "2" => CursorStyle::SteadyBlock,
+          "3" => CursorStyle::BlinkingUnderline,
+          "4" => CursorStyle::SteadyUnderline,
+          "5" => CursorStyle::BlinkingBar,
+          "6" => CursorStyle::SteadyBar,
+          _ => CursorStyle::Default,
+        };
+        self.cursor_style = cursor_style;
+      }
+      ("", _, "", b'r') => {
+        // DECSTBM - Set Top and Bottom Margins
+        // https://terminalguide.namepad.de/seq/csi_sr/
+        let top = params.parse().unwrap_or(1).max(1) - 1;
+        let bottom = params.parse().unwrap_or(1).max(1) - 1;
+        self.grid_mut().set_scroll_region(top, bottom);
+      }
+      _ => csi_todo(full_params, intermediate, final_),
+    }
+  }
+}
+
+fn csi_todo(params: &str, intermediate: &str, final_: u8) {
+  log::warn!(
+    "CSI not implemented: ESC [ {} {} {}",
+    params,
+    intermediate,
+    final_ as char
+  );
+}
+
+fn parse_sgr_color(mut params: std::str::Split<'_, char>) -> Color {
+  match params.next().unwrap_or("2") {
+    "2" => {
+      let r = params.next().unwrap_or("0").parse().unwrap_or(0);
+      let g = params.next().unwrap_or("0").parse().unwrap_or(0);
+      let b = params.next().unwrap_or("0").parse().unwrap_or(0);
+      Color::Rgb(r, g, b)
+    }
+    "5" => {
+      let n = params.next().unwrap_or("0").parse().unwrap_or(0);
+      Color::Idx(n)
+    }
+    _ => Color::Default,
+  }
+}
+
+fn utf8_char_len(first_byte: u8) -> usize {
+  match first_byte {
+    // https://en.wikipedia.org/wiki/UTF-8#Description
+    (0x00..=0x7F) => 1, // 0xxxxxxx
+    (0xC0..=0xDF) => 2, // 110xxxxx 10xxxxxx
+    (0xE0..=0xEF) => 3, // 1110xxxx 10xxxxxx 10xxxxxx
+    (0xF0..=0xF7) => 4, // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+    (0x80..=0xBF) | (0xF8..=0xFF) => 0,
   }
 }

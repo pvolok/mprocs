@@ -18,7 +18,7 @@ use crate::key::Key;
 use crate::mouse::MouseEvent;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
-use crate::vt100::{self};
+use crate::vt100::{self, VtEvent};
 
 use super::inst::Inst;
 use super::msg::{ProcCmd, ProcEvent};
@@ -108,6 +108,9 @@ async fn proc_main_loop(
   let (internal_sender, mut internal_receiver) =
     tokio::sync::mpsc::unbounded_channel();
   let mut proc = Proc::new(proc_id, cfg, internal_sender, size).await;
+
+  let mut vt_events_buf = Vec::new();
+
   loop {
     enum NextValue {
       Cmd(Option<ProcCmd>),
@@ -176,9 +179,20 @@ async fn proc_main_loop(
           }
 
           if let Ok(mut vt) = inst.vt.write() {
-            vt.process(bytes);
-            ks.send(KernelCommand::ProcRendered);
+            vt.screen.process(bytes, &mut vt_events_buf);
+            drop(vt);
           }
+          for vt_event in vt_events_buf.drain(..) {
+            match vt_event {
+              VtEvent::Bell => {
+                //
+              }
+              VtEvent::Reply(s) => {
+                inst.process.write_all(s.as_bytes()).await.log_ignore();
+              }
+            };
+          }
+          ks.send(KernelCommand::ProcRendered);
         }
       }
       NextValue::Read(Err(e)) => {
@@ -325,7 +339,7 @@ impl Proc {
           self.send_key(&key).await;
         }
       }
-      StopSignal::HardKill => self.kill(),
+      StopSignal::HardKill => self.kill().await,
     }
   }
 
