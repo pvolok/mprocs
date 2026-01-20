@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, Context};
 use crossterm::event::{
   KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MediaKeyCode,
   ModifierKeyCode, MouseButton, MouseEvent, MouseEventKind,
@@ -296,10 +296,11 @@ where
 
       let (mods, kind) = if let Some(mods_param) = params.next() {
         let mut mods_param = mods_param.split(':');
-        let mods =
-          parse_modifiers(mods_param.next().unwrap_or_default().parse::<u8>()?);
+        let mods = parse_modifiers(
+          mods_param.next().unwrap_or("0").parse::<u8>().unwrap_or(0),
+        );
         let kind = parse_key_event_kind(
-          mods_param.next().unwrap_or("").parse().unwrap_or_default(),
+          mods_param.next().unwrap_or("").parse().unwrap_or(0),
         );
         (mods, kind)
       } else {
@@ -330,7 +331,8 @@ where
       } else {
         // CSI unicode-key-code:alternate-key-codes ; modifiers:event-type ; text-as-codepoints u
 
-        let (code, alt_code, mods_param, kind) = parse_csi_u(params)?;
+        let (code, alt_code, mods_param, kind) =
+          parse_csi_u(params).context("parse_csi_u")?;
 
         let mut mods = parse_modifiers(mods_param);
         let kind = parse_key_event_kind(kind);
@@ -564,20 +566,18 @@ fn parse_csi_u(params: &[u8]) -> anyhow::Result<(u32, Option<u32>, u8, u8)> {
   let params = str::from_utf8(params)?;
   let mut params = params.split(';');
 
-  let code_param = params.next().ok_or_else(|| anyhow!("No code param"))?;
+  let code_param = params.next().unwrap_or("");
   let mut code_param = code_param.split(':');
-  let code = code_param.next().ok_or_else(|| anyhow!("No code param"))?;
+  let code = code_param.next().unwrap_or("0");
   let code = code.parse::<u32>()?;
 
-  let alt_code = code_param.next().map(|c| c.parse::<u32>()).transpose()?;
+  let alt_code = code_param.next().map(|c| c.parse::<u32>().ok()).flatten();
 
   let mods_param = params.next().unwrap_or("0");
   let mut mods_param = mods_param.split(':');
-  let mods = mods_param
-    .next()
-    .ok_or_else(|| anyhow!("No modifiers param"))?;
-  let mods = mods.parse::<u8>()?;
-  let kind = mods_param.next().map_or(Ok(1), |n| n.parse::<u8>())?;
+  let mods = mods_param.next().unwrap_or("0");
+  let mods = mods.parse::<u8>().unwrap_or(0);
+  let kind = mods_param.next().unwrap_or("1").parse::<u8>().unwrap_or(1);
 
   Ok((code, alt_code, mods, kind))
 }
