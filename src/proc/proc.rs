@@ -306,10 +306,10 @@ impl Proc {
     }
   }
 
-  pub fn kill(&mut self) {
+  pub async fn kill(&mut self) {
     if self.is_up() {
       if let ProcState::Some(inst) = &mut self.inst {
-        let _result = inst.process.kill();
+        inst.process.kill().await.log_ignore();
       }
     }
   }
@@ -471,7 +471,7 @@ impl Proc {
         *rendered = true;
       }
       ProcCmd::Stop => self.stop().await,
-      ProcCmd::Kill => self.kill(),
+      ProcCmd::Kill => self.kill().await,
 
       ProcCmd::SendKey(key) => self.send_key(&key).await,
       ProcCmd::SendMouse(event) => self.handle_mouse(event).await,

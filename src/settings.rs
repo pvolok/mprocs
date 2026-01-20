@@ -214,7 +214,7 @@ impl Settings {
       AppEvent::TermProc,
     );
     s.keymap_add_p(
-      Key::new(KeyCode::Char('X'), KeyModifiers::SHIFT),
+      Key::new(KeyCode::Char('X'), KeyModifiers::NONE),
       AppEvent::KillProc,
     );
     s.keymap_add_p(
@@ -222,7 +222,7 @@ impl Settings {
       AppEvent::RestartProc,
     );
     s.keymap_add_p(
-      Key::new(KeyCode::Char('R'), KeyModifiers::SHIFT),
+      Key::new(KeyCode::Char('R'), KeyModifiers::NONE),
       AppEvent::ForceRestartProc,
     );
     s.keymap_add_p(
@@ -236,7 +236,7 @@ impl Settings {
       AppEvent::ShowAddProc,
     );
     s.keymap_add_p(
-      Key::new(KeyCode::Char('C'), KeyModifiers::SHIFT),
+      Key::new(KeyCode::Char('C'), KeyModifiers::NONE),
       AppEvent::DuplicateProc,
     );
     s.keymap_add_p(

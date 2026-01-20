@@ -110,6 +110,8 @@ impl UnixProcess {
 }
 
 impl Process for UnixProcess {
+  fn on_exited(&mut self) {}
+
   async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
     loop {
       let mut guard = self.master.readable().await?;
