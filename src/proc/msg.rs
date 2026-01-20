@@ -1,7 +1,5 @@
 use std::{any::Any, fmt::Debug};
 
-use compact_str::CompactString;
-
 use crate::{
   kernel::{kernel_message::SharedVt, proc::ProcId},
   key::Key,
@@ -42,7 +40,6 @@ pub enum ProcEvent {
   Exited(u32),
   Started,
   SetVt(Option<SharedVt>),
-  TermReply(CompactString),
 }
 
 pub enum ProcUpdate {

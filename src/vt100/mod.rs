@@ -18,11 +18,9 @@ mod parser;
 mod row;
 mod screen;
 mod size;
-mod term_reply;
 
 pub use attrs::Color;
 pub use cell::Cell;
 pub use parser::Parser;
-pub use screen::{MouseProtocolEncoding, MouseProtocolMode, Screen, VtEvent};
+pub use screen::{MouseProtocolMode, Screen, VtEvent};
 pub use size::Size;
-pub use term_reply::TermReplySender;

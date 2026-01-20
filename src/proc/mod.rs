@@ -6,16 +6,11 @@ pub mod view;
 use std::fmt::Debug;
 
 use anyhow::bail;
-use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::UnboundedSender;
 use tui::layout::Rect;
 
 use crate::key::Key;
-use crate::vt100::TermReplySender;
 use crate::yaml_val::Val;
-
-use self::msg::ProcEvent;
 
 #[derive(Clone, Debug, Default)]
 pub enum StopSignal {
@@ -69,7 +64,7 @@ impl Size {
 #[allow(clippy::large_enum_variant)]
 pub enum CopyMode {
   None(Option<Pos>),
-  Active(crate::vt100::Screen<ReplySender>, Pos, Option<Pos>),
+  Active(crate::vt100::Screen, Pos, Option<Pos>),
 }
 
 impl Default for CopyMode {
@@ -113,16 +108,5 @@ impl Pos {
     } else {
       false
     }
-  }
-}
-
-#[derive(Clone)]
-pub struct ReplySender {
-  sender: UnboundedSender<ProcEvent>,
-}
-
-impl TermReplySender for ReplySender {
-  fn reply(&self, s: CompactString) {
-    let _ = self.sender.send(ProcEvent::TermReply(s));
   }
 }

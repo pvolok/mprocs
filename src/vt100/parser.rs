@@ -1,26 +1,18 @@
-use crate::vt100::TermReplySender;
-
 /// A parser for terminal output which produces an in-memory representation of
 /// the terminal contents.
-pub struct Parser<Reply: TermReplySender + Clone> {
-  pub screen: crate::vt100::screen::Screen<Reply>,
+pub struct Parser {
+  pub screen: crate::vt100::screen::Screen,
 }
 
-impl<Reply: TermReplySender + Clone> Parser<Reply> {
+impl Parser {
   /// Creates a new terminal parser of the given size and with the given
   /// amount of scrollback.
   #[must_use]
-  pub fn new(
-    rows: u16,
-    cols: u16,
-    scrollback_len: usize,
-    reply_sender: Reply,
-  ) -> Self {
+  pub fn new(rows: u16, cols: u16, scrollback_len: usize) -> Self {
     Self {
       screen: crate::vt100::screen::Screen::new(
         crate::vt100::grid::Size { rows, cols },
         scrollback_len,
-        reply_sender,
       ),
     }
   }
@@ -48,7 +40,7 @@ impl<Reply: TermReplySender + Clone> Parser<Reply> {
   /// Returns a reference to a `Screen` object containing the terminal
   /// state.
   #[must_use]
-  pub fn screen(&self) -> &crate::vt100::screen::Screen<Reply> {
+  pub fn screen(&self) -> &crate::vt100::screen::Screen {
     &self.screen
   }
 }

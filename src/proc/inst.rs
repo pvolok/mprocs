@@ -12,7 +12,7 @@ use crate::process::NativeProcess;
 use crate::term_types::winsize::Winsize;
 
 use super::msg::ProcEvent;
-use super::{ReplySender, Size};
+use super::Size;
 
 pub struct Inst {
   pub vt: SharedVt,
@@ -43,12 +43,7 @@ impl Inst {
     scrollback_len: usize,
     log_file: Option<PathBuf>,
   ) -> anyhow::Result<Self> {
-    let vt = crate::vt100::Parser::new(
-      size.height,
-      size.width,
-      scrollback_len,
-      ReplySender { sender: tx.clone() },
-    );
+    let vt = crate::vt100::Parser::new(size.height, size.width, scrollback_len);
     let vt = SharedVt::new(vt);
 
     tx.send(ProcEvent::SetVt(Some(vt.clone()))).log_ignore();
@@ -56,6 +51,7 @@ impl Inst {
     #[cfg(unix)]
     let process = {
       crate::process::unix_process::UnixProcess::spawn(
+        id,
         spec,
         crate::term_types::winsize::Winsize {
           x: size.width,

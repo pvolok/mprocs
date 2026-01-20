@@ -23,8 +23,8 @@ use crate::vt100::{self, VtEvent};
 use super::inst::Inst;
 use super::msg::{ProcCmd, ProcEvent};
 use super::view::ProcView;
+use super::Size;
 use super::StopSignal;
-use super::{ReplySender, Size};
 
 fn sanitize_log_filename(name: &str) -> String {
   let mut out = String::new();
@@ -142,13 +142,6 @@ async fn proc_main_loop(
         ProcEvent::Started => {
           ks.send(KernelCommand::ProcStarted);
         }
-        ProcEvent::TermReply(s) => match &mut proc.inst {
-          ProcState::None => (),
-          ProcState::Some(inst) => {
-            inst.process.write_all(s.as_bytes()).await.log_ignore();
-          }
-          ProcState::Error(_) => (),
-        },
         ProcEvent::SetVt(vt) => {
           ks.send(KernelCommand::ProcUpdatedScreen(vt));
         }
@@ -302,7 +295,7 @@ impl Proc {
 
   pub fn lock_vt(
     &self,
-  ) -> Option<std::sync::RwLockReadGuard<'_, vt100::Parser<ReplySender>>> {
+  ) -> Option<std::sync::RwLockReadGuard<'_, vt100::Parser>> {
     match &self.inst {
       ProcState::None => None,
       ProcState::Some(inst) => inst.vt.read().ok(),
@@ -312,7 +305,7 @@ impl Proc {
 
   pub fn lock_vt_mut(
     &mut self,
-  ) -> Option<std::sync::RwLockWriteGuard<'_, vt100::Parser<ReplySender>>> {
+  ) -> Option<std::sync::RwLockWriteGuard<'_, vt100::Parser>> {
     match &self.inst {
       ProcState::None => None,
       ProcState::Some(inst) => inst.vt.write().ok(),

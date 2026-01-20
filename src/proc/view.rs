@@ -3,7 +3,7 @@ use crate::{
   kernel::{kernel_message::SharedVt, proc::ProcId},
 };
 
-use super::{CopyMode, ReplySender};
+use super::CopyMode;
 
 use std::time::Instant;
 
@@ -94,6 +94,6 @@ impl ProcView {
 
 pub enum ProcViewFrame<'a> {
   Empty,
-  Vt(std::sync::RwLockReadGuard<'a, crate::vt100::Parser<ReplySender>>),
+  Vt(std::sync::RwLockReadGuard<'a, crate::vt100::Parser>),
   Err(&'a str),
 }

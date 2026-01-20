@@ -7,10 +7,7 @@ use std::{
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
-  proc::{
-    msg::{CustomProcCmd, ProcCmd},
-    ReplySender,
-  },
+  proc::msg::{CustomProcCmd, ProcCmd},
   vt100::Parser,
 };
 
@@ -38,10 +35,10 @@ pub enum KernelCommand {
 }
 
 #[derive(Clone)]
-pub struct SharedVt(Arc<RwLock<Parser<ReplySender>>>);
+pub struct SharedVt(Arc<RwLock<Parser>>);
 
 impl SharedVt {
-  pub fn new(parser: Parser<ReplySender>) -> Self {
+  pub fn new(parser: Parser) -> Self {
     SharedVt(Arc::new(RwLock::new(parser)))
   }
 }
@@ -53,7 +50,7 @@ impl Debug for SharedVt {
 }
 
 impl Deref for SharedVt {
-  type Target = Arc<RwLock<Parser<ReplySender>>>;
+  type Target = Arc<RwLock<Parser>>;
 
   fn deref(&self) -> &Self::Target {
     &self.0
