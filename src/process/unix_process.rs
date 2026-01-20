@@ -27,9 +27,8 @@ impl UnixProcess {
   ) -> std::io::Result<Self> {
     unsafe {
       let mut set = std::mem::zeroed();
-      let mut old_set = std::mem::zeroed();
       libc::sigfillset(&mut set);
-      libc::sigprocmask(libc::SIG_BLOCK, &set, &mut old_set);
+      libc::sigprocmask(libc::SIG_SETMASK, &set, null_mut());
 
       let mut master = -1;
       // Some args are *mut on some BSD vaiants.
@@ -51,7 +50,8 @@ impl UnixProcess {
         ] {
           libc::signal(*signo, libc::SIG_DFL);
         }
-        libc::sigprocmask(libc::SIG_SETMASK, &old_set, null_mut());
+        libc::sigemptyset(&mut set);
+        libc::sigprocmask(libc::SIG_SETMASK, &set, null_mut());
 
         if let Some(cwd) = spec.get_cwd() {
           rustix::process::chdir(cwd).unwrap();
@@ -78,7 +78,8 @@ impl UnixProcess {
         libc::_exit(1);
       }
 
-      libc::sigprocmask(libc::SIG_SETMASK, &old_set, null_mut());
+      libc::sigemptyset(&mut set);
+      libc::sigprocmask(libc::SIG_SETMASK, &set, null_mut());
 
       let flags = libc::fcntl(master, libc::F_GETFD, 0);
       if flags < 0 {

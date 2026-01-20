@@ -41,9 +41,9 @@ impl UnixProcessesWaiter {
     if holder.is_some() {
       bail!("UnixProcessWaiter is already initialized.");
     }
+    let mut signals = tokio::signal::unix::signal(SignalKind::child())?;
     let thread: tokio::task::JoinHandle<anyhow::Result<()>> =
-      tokio::spawn(async {
-        let mut signals = tokio::signal::unix::signal(SignalKind::child())?;
+      tokio::spawn(async move {
         while let Some(()) = signals.recv().await {
           loop {
             match rustix::process::wait(WaitOptions::NOHANG) {
