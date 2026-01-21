@@ -405,15 +405,14 @@ impl App {
                       if let Some(vt_ref) = proc.vt.as_mut() {
                         let mut vt = vt_ref.write().log_get().unwrap();
                         vt.screen
-                          .scroll_screen_down(self.config.mouse_scroll_speed);
+                          .scroll_screen_down(proc.cfg.mouse_scroll_speed);
                       }
                       CopyMode::None(pos)
                     }
                     MouseEventKind::ScrollUp => {
                       if let Some(vt_ref) = proc.vt.as_mut() {
                         let mut vt = vt_ref.write().log_get().unwrap();
-                        vt.screen
-                          .scroll_screen_up(self.config.mouse_scroll_speed);
+                        vt.screen.scroll_screen_up(proc.cfg.mouse_scroll_speed);
                       }
                       CopyMode::None(pos)
                     }

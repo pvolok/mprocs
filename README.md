@@ -170,7 +170,7 @@ settings in the _global_ config.
     the path of the directory where the config is located.
 - **hide_keymap_window**: _bool_ - Hide the pane at the bottom of the screen
   showing key bindings.
-- **mouse_scroll_speed**: _integer_ - Number of lines to scrollper one mouse
+- **mouse_scroll_speed**: _integer_ - Number of lines to scroll per one mouse
   scroll.
 - **scrollback**: _integer_ - Scrollback size. Default: _1000_.
 - **proc_list_width**: _integer_ - Process list window width.
