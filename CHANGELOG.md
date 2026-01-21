@@ -2,6 +2,10 @@
 
 - Add log_dir configuration in mprocs.yaml
 
+## 0.8.3 - 2026-01-21
+
+- Fix CSI-u input parsing on Ghostty
+
 ## 0.8.2 - 2025-12-22
 
 - Fix --cmd send-key when sending Space
