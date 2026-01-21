@@ -2,7 +2,7 @@
 
 set -e
 
-apk add --no-cache musl-dev bash jq make
+apk add --no-cache --no-check-certificate musl-dev bash jq make
 
 DIR=`dirname $0`
 
