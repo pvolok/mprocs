@@ -1,6 +1,8 @@
 use std::{
   io::Read,
   path::{Path, PathBuf},
+  fs::File,
+  io::BufReader,
 };
 
 use crate::app::{client_loop, create_app_proc, ClientId};
@@ -25,7 +27,7 @@ use crate::keymap::Keymap;
 use crate::package_json::load_npm_procs;
 use crate::proc::StopSignal;
 use crate::settings::Settings;
-use crate::yaml_val::Val;
+use crate::yaml_val::{value_to_string, Val};
 use anyhow::{bail, Result};
 use clap::{arg, command, ArgMatches};
 use flexi_logger::{FileSpec, LoggerHandle};
@@ -76,6 +78,7 @@ async fn run_app() -> anyhow::Result<()> {
     .arg(arg!(--"proc-list-title" [TITLE] "Title for the processes pane"))
     .arg(arg!(--names [NAMES] "Names for processes provided by cli arguments. Separated by comma."))
     .arg(arg!(--npm "Run scripts from package.json. Scripts are not started by default."))
+    .arg(arg!(--procfile [PATH] "Load processes from a Procfile."))
     .arg(arg!(--just "Run recipes from justfile. Recipes are not started by default. Requires just to be installed."))
     .arg(arg!(--"on-all-finished" [YAML] "Event to trigger when all processes are finished"))
     .arg(arg!(--"log-dir" [DIR] "Directory for process log files. Each process logs to <DIR>/<name>.log"))
@@ -160,6 +163,9 @@ async fn run_app() -> anyhow::Result<()> {
       config.procs = procs;
     } else if matches.get_flag("npm") {
       let procs = load_npm_procs(&settings)?;
+      config.procs = procs;
+    } else if let Some(path) = matches.get_one::<String>("procfile") {
+      let procs = load_procfile_procs(path, &settings)?;
       config.procs = procs;
     } else if matches.get_flag("just") {
       let procs = load_just_procs(&settings)?;
@@ -302,6 +308,31 @@ async fn run_app() -> anyhow::Result<()> {
   }
 }
 
+fn load_procfile_procs(path: &str, settings: &Settings) -> Result<Vec<ProcConfig>> {
+  let file = File::open(path)?;
+  let reader = BufReader::new(file);
+  let map: serde_yaml::Mapping = serde_yaml::from_reader(reader)?;
+
+  let mut procs = Vec::new();
+  let ctx = ConfigContext {
+    path: PathBuf::from(path),
+  };
+
+  for (key, value) in map {
+    let name = value_to_string(&key)?;
+    if let Some(proc) = ProcConfig::from_val(
+      name,
+      settings.mouse_scroll_speed,
+      settings.scrollback_len,
+      Val::new(&value)?,
+      &ctx,
+    )? {
+      procs.push(proc);
+    }
+  }
+  Ok(procs)
+}
+
 fn load_config_value(
   matches: &ArgMatches,
 ) -> Result<Option<(Value, ConfigContext)>> {
@@ -342,6 +373,16 @@ fn load_config_value(
     }
   }
 
+  {
+    let path = "Procfile";
+    if Path::new(path).is_file() {
+      return Ok(Some((
+        read_value(path)?,
+        ConfigContext { path: path.into() },
+      )));
+    }
+  }
+
   Ok(None)
 }
 
@@ -367,8 +408,53 @@ fn read_value(path: &str) -> Result<Value> {
       reader.read_to_string(&mut buf)?;
       load_lua_config(path, &buf)?
     }
+    _ if Path::new(path).file_name().map_or(false, |n| n == "Procfile") => {
+      let value: Value = serde_yaml::from_reader(reader)?;
+      let mut map = serde_yaml::Mapping::new();
+      map.insert(Value::from("procs"), value);
+      Value::Mapping(map)
+    }
     _ => bail!("Supported config extensions: lua, yaml, yml, json."),
   };
   value.apply_merge().unwrap();
   Ok(value)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::fs::File;
+  use std::io::Write;
+  use std::time::{SystemTime, UNIX_EPOCH};
+
+  #[test]
+  fn test_procfile_parsing() {
+    let mut temp_dir = std::env::temp_dir();
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().subsec_nanos();
+    temp_dir.push(format!("mprocs_test_{}", nanos));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let procfile_path = temp_dir.join("Procfile");
+    let mut file = File::create(&procfile_path).unwrap();
+    writeln!(file, "web: ./start-web.sh").unwrap();
+    writeln!(file, "worker: ./start-worker.sh").unwrap();
+
+    let path_str = procfile_path.to_str().unwrap();
+    let val = read_value(path_str).unwrap();
+
+    let map = val.as_mapping().unwrap();
+    let procs = map.get(&Value::from("procs")).unwrap();
+    let procs_map = procs.as_mapping().unwrap();
+
+    assert_eq!(procs_map.get(&Value::from("web")).unwrap().as_str().unwrap(), "./start-web.sh");
+    assert_eq!(procs_map.get(&Value::from("worker")).unwrap().as_str().unwrap(), "./start-worker.sh");
+
+    let settings = Settings::default();
+    let procs = load_procfile_procs(path_str, &settings).unwrap();
+    assert_eq!(procs.len(), 2);
+    assert!(procs.iter().any(|p| p.name == "web"));
+    assert!(procs.iter().any(|p| p.name == "worker"));
+
+    std::fs::remove_dir_all(&temp_dir).unwrap();
+  }
 }

@@ -155,7 +155,7 @@ pub struct ProcConfig {
 }
 
 impl ProcConfig {
-  fn from_val(
+  pub fn from_val(
     name: String,
     mouse_scroll_speed: usize,
     scrollback_len: usize,
