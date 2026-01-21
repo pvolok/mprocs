@@ -264,7 +264,7 @@ mprocs --npm
 Process list focused:
 
 - `q` - Quit (soft kill processes and wait then to exit)
-- `Q` - Force quit (terminate processes)
+- `Q` or `C-c` - Force quit (terminate processes)
 - `C-a` - Focus output pane
 - `x` - Soft kill selected process (send SIGTERM signal, hard kill on Windows)
 - `X` - Hard kill selected process (send SIGKILL)
