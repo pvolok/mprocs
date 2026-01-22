@@ -1,5 +1,6 @@
 use std::{
   io::Read,
+  io::BufRead,
   path::{Path, PathBuf},
   fs::File,
   io::BufReader,
@@ -27,7 +28,7 @@ use crate::keymap::Keymap;
 use crate::package_json::load_npm_procs;
 use crate::proc::StopSignal;
 use crate::settings::Settings;
-use crate::yaml_val::{value_to_string, Val};
+use crate::yaml_val::Val;
 use anyhow::{bail, Result};
 use clap::{arg, command, ArgMatches};
 use flexi_logger::{FileSpec, LoggerHandle};
@@ -78,7 +79,7 @@ async fn run_app() -> anyhow::Result<()> {
     .arg(arg!(--"proc-list-title" [TITLE] "Title for the processes pane"))
     .arg(arg!(--names [NAMES] "Names for processes provided by cli arguments. Separated by comma."))
     .arg(arg!(--npm "Run scripts from package.json. Scripts are not started by default."))
-    .arg(arg!(--procfile [PATH] "Load processes from a Procfile."))
+    .arg(arg!(--procfile "Load processes from Procfile. Processes are not started by default."))
     .arg(arg!(--just "Run recipes from justfile. Recipes are not started by default. Requires just to be installed."))
     .arg(arg!(--"on-all-finished" [YAML] "Event to trigger when all processes are finished"))
     .arg(arg!(--"log-dir" [DIR] "Directory for process log files. Each process logs to <DIR>/<name>.log"))
@@ -164,8 +165,8 @@ async fn run_app() -> anyhow::Result<()> {
     } else if matches.get_flag("npm") {
       let procs = load_npm_procs(&settings)?;
       config.procs = procs;
-    } else if let Some(path) = matches.get_one::<String>("procfile") {
-      let procs = load_procfile_procs(path, &settings)?;
+    } else if matches.get_flag("procfile") {
+      let procs = load_procfile_procs(&settings)?;
       config.procs = procs;
     } else if matches.get_flag("just") {
       let procs = load_just_procs(&settings)?;
@@ -308,26 +309,37 @@ async fn run_app() -> anyhow::Result<()> {
   }
 }
 
-fn load_procfile_procs(path: &str, settings: &Settings) -> Result<Vec<ProcConfig>> {
+fn load_procfile_procs(settings: &Settings) -> Result<Vec<ProcConfig>> {
+  let path = "Procfile";
   let file = File::open(path)?;
   let reader = BufReader::new(file);
-  let map: serde_yaml::Mapping = serde_yaml::from_reader(reader)?;
 
   let mut procs = Vec::new();
-  let ctx = ConfigContext {
-    path: PathBuf::from(path),
-  };
 
-  for (key, value) in map {
-    let name = value_to_string(&key)?;
-    if let Some(proc) = ProcConfig::from_val(
-      name,
-      settings.mouse_scroll_speed,
-      settings.scrollback_len,
-      Val::new(&value)?,
-      &ctx,
-    )? {
-      procs.push(proc);
+  for line in reader.lines() {
+    let line = line?;
+    let line = line.trim();
+    if line.is_empty() || line.starts_with('#') {
+      continue;
+    }
+
+    if let Some((name, cmd)) = line.split_once(':') {
+      let name = name.trim().to_string();
+      let cmd = cmd.trim().to_string();
+
+      procs.push(ProcConfig {
+        name,
+        cmd: CmdConfig::Shell { shell: cmd },
+        cwd: None,
+        env: None,
+        autostart: false,
+        autorestart: false,
+        stop: StopSignal::default(),
+        deps: Vec::new(),
+        mouse_scroll_speed: settings.mouse_scroll_speed,
+        scrollback_len: settings.scrollback_len,
+        log_dir: None,
+      });
     }
   }
   Ok(procs)
@@ -373,16 +385,6 @@ fn load_config_value(
     }
   }
 
-  {
-    let path = "Procfile";
-    if Path::new(path).is_file() {
-      return Ok(Some((
-        read_value(path)?,
-        ConfigContext { path: path.into() },
-      )));
-    }
-  }
-
   Ok(None)
 }
 
@@ -408,12 +410,6 @@ fn read_value(path: &str) -> Result<Value> {
       reader.read_to_string(&mut buf)?;
       load_lua_config(path, &buf)?
     }
-    _ if Path::new(path).file_name().map_or(false, |n| n == "Procfile") => {
-      let value: Value = serde_yaml::from_reader(reader)?;
-      let mut map = serde_yaml::Mapping::new();
-      map.insert(Value::from("procs"), value);
-      Value::Mapping(map)
-    }
     _ => bail!("Supported config extensions: lua, yaml, yml, json."),
   };
   value.apply_merge().unwrap();
@@ -438,22 +434,24 @@ mod tests {
     let mut file = File::create(&procfile_path).unwrap();
     writeln!(file, "web: ./start-web.sh").unwrap();
     writeln!(file, "worker: ./start-worker.sh").unwrap();
-
-    let path_str = procfile_path.to_str().unwrap();
-    let val = read_value(path_str).unwrap();
-
-    let map = val.as_mapping().unwrap();
-    let procs = map.get(&Value::from("procs")).unwrap();
-    let procs_map = procs.as_mapping().unwrap();
-
-    assert_eq!(procs_map.get(&Value::from("web")).unwrap().as_str().unwrap(), "./start-web.sh");
-    assert_eq!(procs_map.get(&Value::from("worker")).unwrap().as_str().unwrap(), "./start-worker.sh");
+    // Add comment
+    writeln!(file, "# comment: ignored").unwrap();
 
     let settings = Settings::default();
-    let procs = load_procfile_procs(path_str, &settings).unwrap();
+    
+    // We need to change cwd to the temp dir because load_procfile_procs looks for "Procfile" in CWD
+    let original_cwd = std::env::current_dir().unwrap();
+    std::env::set_current_dir(&temp_dir).unwrap();
+    
+    let procs = load_procfile_procs(&settings).unwrap();
+    
+    std::env::set_current_dir(original_cwd).unwrap();
+
     assert_eq!(procs.len(), 2);
     assert!(procs.iter().any(|p| p.name == "web"));
     assert!(procs.iter().any(|p| p.name == "worker"));
+    // Verify autostart is false
+    assert!(!procs[0].autostart);
 
     std::fs::remove_dir_all(&temp_dir).unwrap();
   }
