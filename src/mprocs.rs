@@ -1,9 +1,9 @@
 use std::{
-  io::Read,
-  io::BufRead,
-  path::{Path, PathBuf},
   fs::File,
+  io::BufRead,
   io::BufReader,
+  io::Read,
+  path::{Path, PathBuf},
 };
 
 use crate::app::{client_loop, create_app_proc, ClientId};
@@ -313,7 +313,10 @@ async fn run_app() -> anyhow::Result<()> {
   }
 }
 
-fn load_procfile_procs(path: &str, settings: &Settings) -> Result<Vec<ProcConfig>> {
+fn load_procfile_procs(
+  path: &str,
+  settings: &Settings,
+) -> Result<Vec<ProcConfig>> {
   let file = File::open(path)?;
   let reader = BufReader::new(file);
 
@@ -429,7 +432,10 @@ mod tests {
   #[test]
   fn test_procfile_parsing() {
     let mut temp_dir = std::env::temp_dir();
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().subsec_nanos();
+    let nanos = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .unwrap()
+      .subsec_nanos();
     temp_dir.push(format!("mprocs_test_{}", nanos));
     std::fs::create_dir_all(&temp_dir).unwrap();
 
@@ -441,13 +447,13 @@ mod tests {
     writeln!(file, "# comment: ignored").unwrap();
 
     let settings = Settings::default();
-    
+
     // We need to change cwd to the temp dir because load_procfile_procs looks for "Procfile" in CWD
     let original_cwd = std::env::current_dir().unwrap();
     std::env::set_current_dir(&temp_dir).unwrap();
-    
+
     let procs = load_procfile_procs("Procfile", &settings).unwrap();
-    
+
     std::env::set_current_dir(original_cwd).unwrap();
 
     assert_eq!(procs.len(), 2);
@@ -462,13 +468,16 @@ mod tests {
   #[test]
   fn test_procfile_parsing_edge_cases() {
     let mut temp_dir = std::env::temp_dir();
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().subsec_nanos();
+    let nanos = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .unwrap()
+      .subsec_nanos();
     temp_dir.push(format!("mprocs_test_edge_{}", nanos));
     std::fs::create_dir_all(&temp_dir).unwrap();
 
     let procfile_path = temp_dir.join("Procfile");
     let mut file = File::create(&procfile_path).unwrap();
-    
+
     writeln!(file, "").unwrap(); // Empty line
     writeln!(file, "  # indented comment").unwrap();
     writeln!(file, "clean: echo clean").unwrap();
@@ -476,26 +485,26 @@ mod tests {
     writeln!(file, "invalid_line_no_colon").unwrap();
 
     let settings = Settings::default();
-    
+
     let original_cwd = std::env::current_dir().unwrap();
     std::env::set_current_dir(&temp_dir).unwrap();
-    
+
     let procs = load_procfile_procs("Procfile", &settings).unwrap();
-    
+
     std::env::set_current_dir(original_cwd).unwrap();
 
     assert_eq!(procs.len(), 2);
-    
+
     let clean = procs.iter().find(|p| p.name == "clean").unwrap();
     match &clean.cmd {
-        CmdConfig::Shell { shell } => assert_eq!(shell, "echo clean"),
-        _ => panic!("Unexpected cmd type"),
+      CmdConfig::Shell { shell } => assert_eq!(shell, "echo clean"),
+      _ => panic!("Unexpected cmd type"),
     }
 
     let indented = procs.iter().find(|p| p.name == "indented").unwrap();
     match &indented.cmd {
-        CmdConfig::Shell { shell } => assert_eq!(shell, "echo indented"),
-        _ => panic!("Unexpected cmd type"),
+      CmdConfig::Shell { shell } => assert_eq!(shell, "echo indented"),
+      _ => panic!("Unexpected cmd type"),
     }
 
     std::fs::remove_dir_all(&temp_dir).unwrap();

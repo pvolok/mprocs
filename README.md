@@ -261,13 +261,13 @@ mprocs --npm
 
 #### Running processes from Procfile
 
-If there is a `Procfile` in the current directory, _mprocs_ will automatically
-load processes from it. Processes loaded from `Procfile` are started automatically.
-
-You can also specify a `Procfile` manually:
+You can specify a `Procfile` to load procs from:
 
 ```sh
 mprocs --procfile ./Procfile.dev
+
+# default: Profile
+mprocs --procfile
 ```
 
 ### Default keymap
