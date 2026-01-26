@@ -1,4 +1,7 @@
 use std::{
+  fs::File,
+  io::BufRead,
+  io::BufReader,
   io::Read,
   path::{Path, PathBuf},
 };
@@ -76,6 +79,11 @@ async fn run_app() -> anyhow::Result<()> {
     .arg(arg!(--"proc-list-title" [TITLE] "Title for the processes pane"))
     .arg(arg!(--names [NAMES] "Names for processes provided by cli arguments. Separated by comma."))
     .arg(arg!(--npm "Run scripts from package.json. Scripts are not started by default."))
+    .arg(
+      arg!(--procfile [PATH] "Load processes from Procfile. Processes are not started by default.")
+        .num_args(0..=1)
+        .default_missing_value("Procfile"),
+    )
     .arg(arg!(--just "Run recipes from justfile. Recipes are not started by default. Requires just to be installed."))
     .arg(arg!(--"on-all-finished" [YAML] "Event to trigger when all processes are finished"))
     .arg(arg!(--"log-dir" [DIR] "Directory for process log files. Each process logs to <DIR>/<name>.log"))
@@ -160,6 +168,9 @@ async fn run_app() -> anyhow::Result<()> {
       config.procs = procs;
     } else if matches.get_flag("npm") {
       let procs = load_npm_procs(&settings)?;
+      config.procs = procs;
+    } else if let Some(path) = matches.get_one::<String>("procfile") {
+      let procs = load_procfile_procs(path, &settings)?;
       config.procs = procs;
     } else if matches.get_flag("just") {
       let procs = load_just_procs(&settings)?;
@@ -302,6 +313,44 @@ async fn run_app() -> anyhow::Result<()> {
   }
 }
 
+fn load_procfile_procs(
+  path: &str,
+  settings: &Settings,
+) -> Result<Vec<ProcConfig>> {
+  let file = File::open(path)?;
+  let reader = BufReader::new(file);
+
+  let mut procs = Vec::new();
+
+  for line in reader.lines() {
+    let line = line?;
+    let line = line.trim();
+    if line.is_empty() || line.starts_with('#') {
+      continue;
+    }
+
+    if let Some((name, cmd)) = line.split_once(':') {
+      let name = name.trim().to_string();
+      let cmd = cmd.trim().to_string();
+
+      procs.push(ProcConfig {
+        name,
+        cmd: CmdConfig::Shell { shell: cmd },
+        cwd: None,
+        env: None,
+        autostart: false,
+        autorestart: false,
+        stop: StopSignal::default(),
+        deps: Vec::new(),
+        mouse_scroll_speed: settings.mouse_scroll_speed,
+        scrollback_len: settings.scrollback_len,
+        log_dir: None,
+      });
+    }
+  }
+  Ok(procs)
+}
+
 fn load_config_value(
   matches: &ArgMatches,
 ) -> Result<Option<(Value, ConfigContext)>> {
@@ -371,4 +420,93 @@ fn read_value(path: &str) -> Result<Value> {
   };
   value.apply_merge().unwrap();
   Ok(value)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::fs::File;
+  use std::io::Write;
+  use std::time::{SystemTime, UNIX_EPOCH};
+
+  #[test]
+  fn test_procfile_parsing() {
+    let mut temp_dir = std::env::temp_dir();
+    let nanos = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .unwrap()
+      .subsec_nanos();
+    temp_dir.push(format!("mprocs_test_{}", nanos));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let procfile_path = temp_dir.join("Procfile");
+    let mut file = File::create(&procfile_path).unwrap();
+    writeln!(file, "web: ./start-web.sh").unwrap();
+    writeln!(file, "worker: ./start-worker.sh").unwrap();
+    // Add comment
+    writeln!(file, "# comment: ignored").unwrap();
+
+    let settings = Settings::default();
+
+    // We need to change cwd to the temp dir because load_procfile_procs looks for "Procfile" in CWD
+    let original_cwd = std::env::current_dir().unwrap();
+    std::env::set_current_dir(&temp_dir).unwrap();
+
+    let procs = load_procfile_procs("Procfile", &settings).unwrap();
+
+    std::env::set_current_dir(original_cwd).unwrap();
+
+    assert_eq!(procs.len(), 2);
+    assert!(procs.iter().any(|p| p.name == "web"));
+    assert!(procs.iter().any(|p| p.name == "worker"));
+    // Verify autostart is false
+    assert!(!procs[0].autostart);
+
+    std::fs::remove_dir_all(&temp_dir).unwrap();
+  }
+
+  #[test]
+  fn test_procfile_parsing_edge_cases() {
+    let mut temp_dir = std::env::temp_dir();
+    let nanos = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .unwrap()
+      .subsec_nanos();
+    temp_dir.push(format!("mprocs_test_edge_{}", nanos));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let procfile_path = temp_dir.join("Procfile");
+    let mut file = File::create(&procfile_path).unwrap();
+
+    writeln!(file, "").unwrap(); // Empty line
+    writeln!(file, "  # indented comment").unwrap();
+    writeln!(file, "clean: echo clean").unwrap();
+    writeln!(file, "  indented  :  echo indented  ").unwrap();
+    writeln!(file, "invalid_line_no_colon").unwrap();
+
+    let settings = Settings::default();
+
+    let original_cwd = std::env::current_dir().unwrap();
+    std::env::set_current_dir(&temp_dir).unwrap();
+
+    let procs = load_procfile_procs("Procfile", &settings).unwrap();
+
+    std::env::set_current_dir(original_cwd).unwrap();
+
+    assert_eq!(procs.len(), 2);
+
+    let clean = procs.iter().find(|p| p.name == "clean").unwrap();
+    match &clean.cmd {
+      CmdConfig::Shell { shell } => assert_eq!(shell, "echo clean"),
+      _ => panic!("Unexpected cmd type"),
+    }
+
+    let indented = procs.iter().find(|p| p.name == "indented").unwrap();
+    match &indented.cmd {
+      CmdConfig::Shell { shell } => assert_eq!(shell, "echo indented"),
+      _ => panic!("Unexpected cmd type"),
+    }
+
+    std::fs::remove_dir_all(&temp_dir).unwrap();
+  }
 }

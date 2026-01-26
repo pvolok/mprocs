@@ -259,6 +259,17 @@ desired scripts manually.
 mprocs --npm
 ```
 
+#### Running processes from Procfile
+
+You can specify a `Procfile` to load procs from:
+
+```sh
+mprocs --procfile ./Procfile.dev
+
+# default: Profile
+mprocs --procfile
+```
+
 ### Default keymap
 
 Process list focused:
