@@ -1,13 +1,10 @@
 use crossterm::event::Event;
 #[cfg(unix)]
-use std::os::fd::{AsFd, AsRawFd};
+use std::os::fd::AsRawFd;
 use std::{io::Write, time::Duration};
-use termwiz::escape::{csi::Sgr, Action, OneBased, CSI};
-use tui::style::Modifier;
 
 use crate::{
   error::ResultLogger,
-  protocol::Color,
   term::{
     input_parser::InputParser,
     internal::{InternalTermEvent, KeyboardMode},
@@ -65,6 +62,8 @@ impl TermDriver {
       &termios,
     )?;
 
+    // Save Cursor (DECSC)
+    stdout.write_all(b"\x1b7")?;
     // Enter alternate screen.
     stdout.write_all(b"\x1B[?1049h")?;
     // Clear all.
@@ -236,6 +235,11 @@ impl TermDriver {
     // Leave alternate screen.
     self.stdout.write_all(b"\x1B[?1049l")?;
 
+    // Save/Restore does not work on tmux. So we just show cursor.
+    self.stdout.write_all(b"\x1b[?25h")?;
+    // Restore Cursor (DECRC)
+    self.stdout.write_all(b"\x1b8")?;
+
     #[cfg(unix)]
     rustix::termios::tcsetattr(
       self.stdin,
@@ -318,274 +322,5 @@ impl TermDriver {
         }
       };
     }
-  }
-}
-
-impl tui::backend::Backend for TermDriver {
-  fn draw<'a, I>(&mut self, content: I) -> std::io::Result<()>
-  where
-    I: Iterator<Item = (u16, u16, &'a tui::buffer::Cell)>,
-  {
-    let mut fg = tui::style::Color::Reset;
-    let mut bg = tui::style::Color::Reset;
-    let mut modifier = Modifier::empty();
-    let mut last_pos: Option<tui::layout::Position> = None;
-    let mut out = std::io::stdout();
-    for (x, y, cell) in content {
-      // Move the cursor if the previous location was not (x - 1, y)
-      if !matches!(last_pos, Some(p) if x == p.x + 1 && y == p.y) {
-        let action =
-          Action::CSI(CSI::Cursor(termwiz::escape::csi::Cursor::Position {
-            line: OneBased::from_zero_based(y.into()),
-            col: OneBased::from_zero_based(x.into()),
-          }));
-        write!(out, "{}", action)?;
-      }
-      last_pos = Some(tui::layout::Position { x, y });
-      if cell.modifier != modifier {
-        let removed = modifier - cell.modifier;
-        let added = cell.modifier - modifier;
-
-        if removed.contains(Modifier::REVERSED) {
-          let action = Action::CSI(CSI::Sgr(Sgr::Inverse(false)));
-          write!(out, "{}", action)?;
-        }
-        if removed.contains(Modifier::BOLD) || removed.contains(Modifier::DIM) {
-          // Bold and Dim are both reset by applying the Normal intensity
-          let action = Action::CSI(CSI::Sgr(Sgr::Intensity(
-            termwiz::cell::Intensity::Normal,
-          )));
-          write!(out, "{}", action)?;
-
-          // The remaining Bold and Dim attributes must be
-          // reapplied after the intensity reset above.
-          if cell.modifier.contains(Modifier::DIM) {
-            let action = Action::CSI(CSI::Sgr(Sgr::Intensity(
-              termwiz::cell::Intensity::Half,
-            )));
-            write!(out, "{}", action)?;
-          }
-
-          if cell.modifier.contains(Modifier::BOLD) {
-            let action = Action::CSI(CSI::Sgr(Sgr::Intensity(
-              termwiz::cell::Intensity::Bold,
-            )));
-            write!(out, "{}", action)?;
-          }
-        }
-        if removed.contains(Modifier::ITALIC) {
-          let action = Action::CSI(CSI::Sgr(Sgr::Italic(false)));
-          write!(out, "{}", action)?;
-        }
-        if removed.contains(Modifier::UNDERLINED) {
-          let action = Action::CSI(CSI::Sgr(Sgr::Underline(
-            termwiz::cell::Underline::None,
-          )));
-          write!(out, "{}", action)?;
-        }
-        if removed.contains(Modifier::CROSSED_OUT) {
-          let action = Action::CSI(CSI::Sgr(Sgr::StrikeThrough(false)));
-          write!(out, "{}", action)?;
-        }
-        if removed.contains(Modifier::SLOW_BLINK)
-          || removed.contains(Modifier::RAPID_BLINK)
-        {
-          let action =
-            Action::CSI(CSI::Sgr(Sgr::Blink(termwiz::cell::Blink::None)));
-          write!(out, "{}", action)?;
-        }
-
-        if added.contains(Modifier::REVERSED) {
-          let action = Action::CSI(CSI::Sgr(Sgr::Inverse(true)));
-          write!(out, "{}", action)?;
-        }
-        if added.contains(Modifier::BOLD) {
-          let action = Action::CSI(CSI::Sgr(Sgr::Intensity(
-            termwiz::cell::Intensity::Bold,
-          )));
-          write!(out, "{}", action)?;
-        }
-        if added.contains(Modifier::ITALIC) {
-          let action = Action::CSI(CSI::Sgr(Sgr::Italic(true)));
-          write!(out, "{}", action)?;
-        }
-        if added.contains(Modifier::UNDERLINED) {
-          let action = Action::CSI(CSI::Sgr(Sgr::Underline(
-            termwiz::cell::Underline::Single,
-          )));
-          write!(out, "{}", action)?;
-        }
-        if added.contains(Modifier::DIM) {
-          let action = Action::CSI(CSI::Sgr(Sgr::Intensity(
-            termwiz::cell::Intensity::Half,
-          )));
-          write!(out, "{}", action)?;
-        }
-        if added.contains(Modifier::CROSSED_OUT) {
-          let action = Action::CSI(CSI::Sgr(Sgr::StrikeThrough(true)));
-          write!(out, "{}", action)?;
-        }
-        if added.contains(Modifier::SLOW_BLINK) {
-          let action =
-            Action::CSI(CSI::Sgr(Sgr::Blink(termwiz::cell::Blink::Slow)));
-          write!(out, "{}", action)?;
-        }
-        if added.contains(Modifier::RAPID_BLINK) {
-          let action =
-            Action::CSI(CSI::Sgr(Sgr::Blink(termwiz::cell::Blink::Rapid)));
-          write!(out, "{}", action)?;
-        }
-
-        modifier = cell.modifier;
-      }
-      if cell.fg != fg || cell.bg != bg {
-        let action =
-          Action::CSI(CSI::Sgr(Sgr::Foreground(Color::from(cell.fg).into())));
-        write!(out, "{}", action)?;
-        let action =
-          Action::CSI(CSI::Sgr(Sgr::Background(Color::from(cell.bg).into())));
-        write!(out, "{}", action)?;
-        fg = cell.fg;
-        bg = cell.bg;
-      }
-
-      write!(out, "{}", cell.symbol())?;
-    }
-
-    let action = Action::CSI(CSI::Sgr(Sgr::Foreground(
-      termwiz::color::ColorSpec::Default,
-    )));
-    write!(out, "{}", action)?;
-    let action = Action::CSI(CSI::Sgr(Sgr::Background(
-      termwiz::color::ColorSpec::Default,
-    )));
-    write!(out, "{}", action)?;
-
-    Ok(())
-  }
-
-  fn hide_cursor(&mut self) -> std::io::Result<()> {
-    let action =
-      Action::CSI(CSI::Mode(termwiz::escape::csi::Mode::ResetDecPrivateMode(
-        termwiz::escape::csi::DecPrivateMode::Code(
-          termwiz::escape::csi::DecPrivateModeCode::ShowCursor,
-        ),
-      )));
-    write!(std::io::stdout(), "{}", action)?;
-    Ok(())
-  }
-
-  fn show_cursor(&mut self) -> std::io::Result<()> {
-    let action =
-      Action::CSI(CSI::Mode(termwiz::escape::csi::Mode::SetDecPrivateMode(
-        termwiz::escape::csi::DecPrivateMode::Code(
-          termwiz::escape::csi::DecPrivateModeCode::ShowCursor,
-        ),
-      )));
-    write!(std::io::stdout(), "{}", action)?;
-    Ok(())
-  }
-
-  fn get_cursor_position(&mut self) -> std::io::Result<tui::prelude::Position> {
-    // Only called for Viewport::Inline
-    log::error!("TermDriver::get_cursor_position() should not be called.");
-    Ok(Default::default())
-  }
-
-  fn set_cursor_position<P: Into<tui::prelude::Position>>(
-    &mut self,
-    position: P,
-  ) -> std::io::Result<()> {
-    let pos = position.into();
-    let action =
-      Action::CSI(CSI::Cursor(termwiz::escape::csi::Cursor::Position {
-        line: OneBased::from_zero_based(pos.y.into()),
-        col: OneBased::from_zero_based(pos.x.into()),
-      }));
-    write!(std::io::stdout(), "{}", action)?;
-    Ok(())
-  }
-
-  fn clear(&mut self) -> std::io::Result<()> {
-    let action =
-      Action::CSI(CSI::Edit(termwiz::escape::csi::Edit::EraseInDisplay(
-        termwiz::escape::csi::EraseInDisplay::EraseDisplay,
-      )));
-    write!(std::io::stdout(), "{}", action)?;
-    Ok(())
-  }
-
-  #[cfg(unix)]
-  fn size(&self) -> std::io::Result<tui::prelude::Size> {
-    let size = rustix::termios::tcgetwinsize(self.stdin.as_fd())?;
-    Ok(tui::layout::Size {
-      width: size.ws_col,
-      height: size.ws_row,
-    })
-  }
-
-  #[cfg(windows)]
-  fn size(&self) -> std::io::Result<tui::prelude::Size> {
-    use std::os::windows::io::AsRawHandle;
-
-    let mut info: winapi::um::wincon::CONSOLE_SCREEN_BUFFER_INFO =
-      unsafe { std::mem::zeroed() };
-    unsafe {
-      winapi::um::wincon::GetConsoleScreenBufferInfo(
-        self.stdout.as_raw_handle(),
-        &mut info,
-      )
-    };
-    let x = info.srWindow.Right - info.srWindow.Left + 1;
-    let y = info.srWindow.Bottom - info.srWindow.Top + 1;
-    Ok(tui::layout::Size {
-      width: x as u16,
-      height: y as u16,
-    })
-  }
-
-  #[cfg(unix)]
-  fn window_size(&mut self) -> std::io::Result<tui::backend::WindowSize> {
-    let size = rustix::termios::tcgetwinsize(self.stdin.as_fd())?;
-    Ok(tui::backend::WindowSize {
-      columns_rows: tui::layout::Size {
-        width: size.ws_col,
-        height: size.ws_row,
-      },
-      pixels: tui::layout::Size {
-        width: size.ws_xpixel,
-        height: size.ws_ypixel,
-      },
-    })
-  }
-
-  #[cfg(windows)]
-  fn window_size(&mut self) -> std::io::Result<tui::backend::WindowSize> {
-    use std::os::windows::io::AsRawHandle;
-
-    let mut info: winapi::um::wincon::CONSOLE_SCREEN_BUFFER_INFO =
-      unsafe { std::mem::zeroed() };
-    unsafe {
-      winapi::um::wincon::GetConsoleScreenBufferInfo(
-        self.stdout.as_raw_handle(),
-        &mut info,
-      )
-    };
-    let x = info.srWindow.Right - info.srWindow.Left + 1;
-    let y = info.srWindow.Bottom - info.srWindow.Top + 1;
-    Ok(tui::backend::WindowSize {
-      columns_rows: tui::layout::Size {
-        width: x as u16,
-        height: y as u16,
-      },
-      pixels: tui::layout::Size {
-        width: 0,
-        height: 0,
-      },
-    })
-  }
-
-  fn flush(&mut self) -> std::io::Result<()> {
-    self.stdout.flush()
   }
 }

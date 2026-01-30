@@ -1,14 +1,14 @@
 use crossterm::event::{Event, KeyCode, KeyEvent};
-use tui::{
-  prelude::{Margin, Rect},
-  text::Line,
-  widgets::{Clear, Paragraph},
-  Frame,
-};
 
 use crate::{
-  app::LoopAction, event::AppEvent, kernel::kernel_message::ProcContext,
-  state::State, theme::Theme,
+  app::LoopAction,
+  event::AppEvent,
+  kernel::kernel_message::ProcContext,
+  state::State,
+  vt100::{
+    attrs::Attrs,
+    grid::{BorderType, Rect},
+  },
 };
 
 use super::modal::Modal;
@@ -85,22 +85,45 @@ impl Modal for QuitModal {
     (36, 5)
   }
 
-  fn render(&mut self, frame: &mut Frame) {
-    let area = self.area(frame.area());
-    let theme = Theme::default();
+  fn render(&mut self, grid: &mut crate::vt100::Grid) {
+    use crate::vt100::grid::Rect;
 
-    let block = theme.pane(true);
-    frame.render_widget(block, area);
+    let area = self.area(grid.area());
 
-    let inner = area.inner(Margin::new(1, 1));
+    grid.draw_block(area, BorderType::Thick, Attrs::default());
 
-    let txt = Paragraph::new(vec![
-      Line::from("<e>   - exit client and server"),
-      Line::from("<d>   - detach client"),
-      Line::from("<Esc> - cancel"),
-    ]);
-    let txt_area = Rect::new(inner.x, inner.y, inner.width, 3);
-    frame.render_widget(Clear, txt_area);
-    frame.render_widget(txt, txt_area);
+    let inner = area.inner(1);
+
+    let txt_area = Rect {
+      x: inner.x,
+      y: inner.y,
+      width: inner.width,
+      height: 1,
+    };
+    grid.fill_area(inner, ' ', Attrs::default());
+    grid.draw_text(
+      Rect {
+        y: inner.y,
+        ..txt_area
+      },
+      "<e>   - exit client and server",
+      Attrs::default(),
+    );
+    grid.draw_text(
+      Rect {
+        y: inner.y + 1,
+        ..txt_area
+      },
+      "<d>   - detach client",
+      Attrs::default(),
+    );
+    grid.draw_text(
+      Rect {
+        y: inner.y + 2,
+        ..txt_area
+      },
+      "<Esc> - cancel",
+      Attrs::default(),
+    );
   }
 }

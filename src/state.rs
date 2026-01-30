@@ -3,6 +3,7 @@ use crate::{
   kernel::proc::ProcId,
   keymap::KeymapGroup,
   proc::{view::ProcView, CopyMode},
+  widgets::list::ListState,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -35,23 +36,27 @@ pub struct State {
 
   pub scope: Scope,
   pub procs: Vec<ProcView>,
-  pub selected: usize,
+  pub procs_list: ListState,
   pub hide_keymap_window: bool,
 
   pub quitting: bool,
 }
 
 impl State {
+  pub fn selected(&self) -> usize {
+    self.procs_list.selected()
+  }
+
   pub fn get_current_proc(&self) -> Option<&ProcView> {
-    self.procs.get(self.selected)
+    self.procs.get(self.procs_list.selected())
   }
 
   pub fn get_current_proc_mut(&mut self) -> Option<&mut ProcView> {
-    self.procs.get_mut(self.selected)
+    self.procs.get_mut(self.procs_list.selected())
   }
 
   pub fn select_proc(&mut self, index: usize) {
-    self.selected = index;
+    self.procs_list.select(index);
     if let Some(proc_handle) = self.procs.get_mut(index) {
       proc_handle.focus();
     }

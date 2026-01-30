@@ -7,9 +7,9 @@ use std::fmt::Debug;
 
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
-use tui::layout::Rect;
 
 use crate::key::Key;
+use crate::vt100::grid::Rect;
 use crate::yaml_val::Val;
 
 #[derive(Clone, Debug, Default)]

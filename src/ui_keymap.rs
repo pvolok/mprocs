@@ -1,36 +1,35 @@
-use tui::{
-  layout::{Margin, Rect},
-  style::{Color, Style},
-  text::{Line, Span, Text},
-  widgets::{Clear, Paragraph},
-  Frame,
-};
-
 use crate::{
   encode_term::print_key,
   event::AppEvent,
   keymap::{Keymap, KeymapGroup},
   state::State,
-  theme::Theme,
+  vt100::{attrs::Attrs, grid::Rect, Color, Grid},
 };
 
 pub fn render_keymap(
   area: Rect,
-  frame: &mut Frame,
+  grid: &mut Grid,
   state: &mut State,
   keymap: &Keymap,
 ) {
-  let theme = Theme::default();
+  if area.width <= 3 || area.height < 3 {
+    return;
+  }
 
-  let block = theme
-    .pane(false)
-    .title(Span::styled("Help", theme.pane_title(false)));
-  frame.render_widget(Clear, area);
-  frame.render_widget(block, area);
+  grid.draw_block(
+    area.into(),
+    crate::vt100::grid::BorderType::Plain,
+    Attrs::default(),
+  );
+  grid.draw_text(
+    Rect::new(area.x + 1, area.y, area.width - 2, 1),
+    "Help",
+    Attrs::default(),
+  );
 
   let group = state.get_keymap_group();
   let items = match group {
-    KeymapGroup::Procs => vec![
+    KeymapGroup::Procs => &[
       AppEvent::ToggleFocus,
       AppEvent::Quit,
       AppEvent::NextProc,
@@ -39,37 +38,32 @@ pub fn render_keymap(
       AppEvent::TermProc,
       AppEvent::RestartProc,
       AppEvent::ToggleKeymapWindow,
-    ],
-    KeymapGroup::Term => vec![AppEvent::ToggleFocus],
-    KeymapGroup::Copy => vec![
+    ][..],
+    KeymapGroup::Term => &[AppEvent::ToggleFocus][..],
+    KeymapGroup::Copy => &[
       AppEvent::CopyModeEnd,
       AppEvent::CopyModeCopy,
       AppEvent::CopyModeLeave,
-    ],
+    ][..],
   };
-  let line = items
-    .into_iter()
-    .filter_map(|event| Some((keymap.resolve_key(group, &event)?, event)))
-    .flat_map(|(key, event)| {
-      vec![
-        Span::raw(" <"),
-        Span::styled(print_key(key), Style::default().fg(Color::Yellow)),
-        Span::raw(": "),
-        Span::raw(event.desc()),
-        Span::raw("> "),
-      ]
-    })
-    .collect::<Vec<_>>();
 
-  let line = Line::from(line);
-  let line = Text::from(vec![line]);
-
-  let p = Paragraph::new(line);
-  frame.render_widget(
-    p,
-    area.inner(Margin {
-      vertical: 1,
-      horizontal: 1,
-    }),
-  );
+  let area: crate::vt100::grid::Rect = area.into();
+  let mut line = Rect {
+    x: area.x + 1,
+    y: area.y + 1,
+    width: area.width.saturating_sub(2),
+    height: area.height,
+  };
+  for event in items {
+    if let Some(key) = keymap.resolve_key(group, &event) {
+      let a = Attrs::default();
+      line.x = grid.draw_text(line, " <", a).right();
+      line.x = grid
+        .draw_text(line, &print_key(key), Attrs::default().fg(Color::YELLOW))
+        .right();
+      line.x = grid.draw_text(line, ": ", a).right();
+      line.x = grid.draw_text(line, &event.desc(), a).right();
+      line.x = grid.draw_text(line, "> ", a).right();
+    }
+  }
 }

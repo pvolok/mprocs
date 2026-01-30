@@ -1,7 +1,10 @@
 use crossterm::event::Event;
-use tui::{prelude::Rect, Frame};
 
-use crate::{app::LoopAction, state::State};
+use crate::{
+  app::LoopAction,
+  state::State,
+  vt100::{grid::Rect, Grid},
+};
 
 pub trait Modal: Send {
   fn boxed(self) -> Box<dyn Modal>
@@ -37,5 +40,5 @@ pub trait Modal: Send {
     }
   }
 
-  fn render(&mut self, frame: &mut Frame);
+  fn render(&mut self, grid: &mut Grid);
 }

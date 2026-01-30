@@ -1,3 +1,5 @@
+use crate::vt100::Size;
+
 /// A parser for terminal output which produces an in-memory representation of
 /// the terminal contents.
 pub struct Parser {
@@ -11,7 +13,7 @@ impl Parser {
   pub fn new(rows: u16, cols: u16, scrollback_len: usize) -> Self {
     Self {
       screen: crate::vt100::screen::Screen::new(
-        crate::vt100::grid::Size { rows, cols },
+        Size { height: rows, width: cols },
         scrollback_len,
       ),
     }

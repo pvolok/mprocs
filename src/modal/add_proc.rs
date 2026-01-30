@@ -1,14 +1,17 @@
 use crossterm::event::{Event, KeyCode, KeyEvent};
-use tui::{
-  prelude::{Margin, Rect},
-  text::Span,
-  Frame,
-};
 use tui_input::Input;
 
 use crate::{
-  app::LoopAction, event::AppEvent, kernel::kernel_message::ProcContext,
-  state::State, theme::Theme, widgets::text_input::TextInput,
+  app::LoopAction,
+  event::AppEvent,
+  kernel::kernel_message::ProcContext,
+  state::State,
+  vt100::{
+    attrs::Attrs,
+    grid::{Pos, Rect},
+    Grid,
+  },
+  widgets::text_input::{render_text_input, to_input_request},
 };
 
 use super::modal::Modal;
@@ -60,7 +63,7 @@ impl Modal for AddProcModal {
       _ => (),
     }
 
-    let req = tui_input::backend::crossterm::to_input_request(event);
+    let req = to_input_request(event);
     if let Some(req) = req {
       self.input.handle(req);
       loop_action.render();
@@ -84,25 +87,42 @@ impl Modal for AddProcModal {
     (42, 3)
   }
 
-  fn render(&mut self, frame: &mut Frame) {
-    let area = self.area(frame.area());
-    let theme = Theme::default();
-
-    let block = theme
-      .pane(true)
-      .title(Span::styled("Add process", theme.pane_title(true)));
-    frame.render_widget(block, area);
-
-    let inner = area.inner(Margin::new(1, 1));
-
-    let mut cursor = (0u16, 0u16);
-    let text_input = TextInput::new(&mut self.input);
-    frame.render_stateful_widget(
-      text_input,
-      Rect::new(inner.x, inner.y, inner.width, 1),
-      &mut cursor,
+  fn render(&mut self, grid: &mut Grid) {
+    let area = self.area(Rect {
+      x: 0,
+      y: 0,
+      width: grid.size().width,
+      height: grid.size().height,
+    });
+    grid.draw_block(
+      area.into(),
+      crate::vt100::grid::BorderType::Plain,
+      Attrs::default(),
+    );
+    grid.draw_text(
+      Rect {
+        x: area.x + 1,
+        y: area.y,
+        width: area.width.saturating_sub(2),
+        height: 1,
+      },
+      "Add process",
+      Attrs::default(),
     );
 
-    frame.set_cursor_position((cursor.0, cursor.1));
+    let inner = Rect {
+      x: area.x + 1,
+      y: area.y + 1,
+      width: area.width.saturating_sub(2),
+      height: 1,
+    };
+
+    let mut cursor = (0u16, 0u16);
+    render_text_input(&mut self.input, inner, grid, &mut cursor);
+
+    grid.cursor_pos = Some(Pos {
+      col: cursor.0,
+      row: cursor.1,
+    });
   }
 }

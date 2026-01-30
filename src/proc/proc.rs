@@ -7,7 +7,6 @@ use crossterm::event::MouseEventKind;
 use tokio::io::AsyncWriteExt;
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tui::layout::Rect;
 
 use crate::config::ProcConfig;
 use crate::encode_term::{encode_key, encode_mouse_event, KeyCodeEncodeModes};
@@ -18,6 +17,7 @@ use crate::key::Key;
 use crate::mouse::MouseEvent;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
+use crate::vt100::grid::Rect;
 use crate::vt100::{self, VtEvent};
 
 use super::inst::Inst;
@@ -211,9 +211,12 @@ impl Proc {
     id: ProcId,
     cfg: &ProcConfig,
     tx: UnboundedSender<ProcEvent>,
-    size: Rect,
+    area: Rect,
   ) -> Self {
-    let size = Size::new(size);
+    let size = Size {
+      width: area.width,
+      height: area.height,
+    };
     let mut proc = Proc {
       id,
       spec: cfg.into(),

@@ -1,5 +1,3 @@
-use tui::style::Modifier;
-
 /// Represents a foreground or background color for cells.
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub enum Color {
@@ -13,32 +11,30 @@ pub enum Color {
   Rgb(u8, u8, u8),
 }
 
+#[allow(dead_code)]
+impl Color {
+  pub const BLACK: Self = Color::Idx(0);
+  pub const RED: Self = Color::Idx(1);
+  pub const GREEN: Self = Color::Idx(2);
+  pub const YELLOW: Self = Color::Idx(3);
+  pub const BLUE: Self = Color::Idx(4);
+  pub const MAGENTA: Self = Color::Idx(5);
+  pub const CYAN: Self = Color::Idx(6);
+  pub const WHITE: Self = Color::Idx(7);
+
+  pub const BRIGHT_BLACK: Self = Color::Idx(8);
+  pub const BRIGHT_RED: Self = Color::Idx(9);
+  pub const BRIGHT_GREEN: Self = Color::Idx(10);
+  pub const BRIGHT_YELLOW: Self = Color::Idx(11);
+  pub const BRIGHT_BLUE: Self = Color::Idx(12);
+  pub const BRIGHT_MAGENTA: Self = Color::Idx(13);
+  pub const BRIGHT_CYAN: Self = Color::Idx(14);
+  pub const BRIGHT_WHITE: Self = Color::Idx(15);
+}
+
 impl Default for Color {
   fn default() -> Self {
     Self::Default
-  }
-}
-
-impl Color {
-  pub fn to_tui(self) -> tui::style::Color {
-    match self {
-      Color::Default => tui::style::Color::Reset,
-      Color::Idx(index) => tui::style::Color::Indexed(index),
-      Color::Rgb(r, g, b) => tui::style::Color::Rgb(r, g, b),
-    }
-  }
-}
-
-impl From<termwiz::color::ColorSpec> for Color {
-  fn from(value: termwiz::color::ColorSpec) -> Self {
-    match value {
-      termwiz::color::ColorSpec::Default => Self::Default,
-      termwiz::color::ColorSpec::PaletteIndex(idx) => Self::Idx(idx),
-      termwiz::color::ColorSpec::TrueColor(srgba) => {
-        let (r, g, b, _) = srgba.to_srgb_u8();
-        Self::Rgb(r, g, b)
-      }
-    }
   }
 }
 
@@ -55,62 +51,65 @@ pub struct Attrs {
 }
 
 impl Attrs {
+  pub fn fg(&mut self, color: Color) -> Self {
+    self.fgcolor = color;
+    *self
+  }
+
+  pub fn bg(&mut self, color: Color) -> Self {
+    self.bgcolor = color;
+    *self
+  }
+
   pub fn bold(&self) -> bool {
     self.mode & TEXT_MODE_BOLD != 0
   }
 
-  pub fn set_bold(&mut self, bold: bool) {
+  pub fn set_bold(&mut self, bold: bool) -> Self {
     if bold {
       self.mode |= TEXT_MODE_BOLD;
     } else {
       self.mode &= !TEXT_MODE_BOLD;
     }
+    *self
   }
 
   pub fn italic(&self) -> bool {
     self.mode & TEXT_MODE_ITALIC != 0
   }
 
-  pub fn set_italic(&mut self, italic: bool) {
+  pub fn set_italic(&mut self, italic: bool) -> Self {
     if italic {
       self.mode |= TEXT_MODE_ITALIC;
     } else {
       self.mode &= !TEXT_MODE_ITALIC;
     }
+    *self
   }
 
   pub fn underline(&self) -> bool {
     self.mode & TEXT_MODE_UNDERLINE != 0
   }
 
-  pub fn set_underline(&mut self, underline: bool) {
+  pub fn set_underline(&mut self, underline: bool) -> Self {
     if underline {
       self.mode |= TEXT_MODE_UNDERLINE;
     } else {
       self.mode &= !TEXT_MODE_UNDERLINE;
     }
+    *self
   }
 
   pub fn inverse(&self) -> bool {
     self.mode & TEXT_MODE_INVERSE != 0
   }
 
-  pub fn set_inverse(&mut self, inverse: bool) {
+  pub fn set_inverse(&mut self, inverse: bool) -> Self {
     if inverse {
       self.mode |= TEXT_MODE_INVERSE;
     } else {
       self.mode &= !TEXT_MODE_INVERSE;
     }
-  }
-}
-
-impl Attrs {
-  pub fn mods_to_tui(&self) -> tui::style::Modifier {
-    let mut mods = Modifier::empty();
-    mods.set(Modifier::BOLD, self.bold());
-    mods.set(Modifier::ITALIC, self.italic());
-    mods.set(Modifier::UNDERLINED, self.underline());
-    mods.set(Modifier::REVERSED, self.inverse());
-    mods
+    *self
   }
 }

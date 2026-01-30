@@ -1,129 +1,127 @@
-use tui::{
-  layout::{Margin, Rect},
-  style::{Color, Modifier, Style},
-  text::{Line, Span},
-  widgets::{List, ListItem, ListState},
-  Frame,
-};
+use std::borrow::Cow;
+
+use unicode_width::UnicodeWidthStr;
 
 use crate::{
   config::Config,
-  proc::view::ProcView,
   state::{Scope, State},
-  theme::Theme,
+  vt100::{
+    attrs::Attrs,
+    grid::{BorderType, Rect},
+    Color, Grid,
+  },
 };
 
 pub fn render_procs(
   area: Rect,
-  frame: &mut Frame,
+  grid: &mut Grid,
   state: &mut State,
   config: &Config,
 ) {
+  state.procs_list.fit(area.inner(1), state.procs.len());
+
   if area.width <= 2 {
     return;
   }
 
-  let theme = Theme::default();
-  let theme = &theme;
-
   let active = state.scope == Scope::Procs;
 
-  let mut list_state = ListState::default();
-  list_state.select(Some(state.selected));
-  let items = state
-    .procs
-    .iter_mut()
-    .enumerate()
-    .map(|(i, proc)| {
-      create_proc_item(proc, i == state.selected, area.width - 2, theme)
-    })
-    .collect::<Vec<_>>();
-
-  let title = {
-    let mut spans = vec![Span::styled(
-      config.proc_list_title.as_str(),
-      theme.pane_title(active),
-    )];
-    if state.quitting {
-      spans.push(Span::from(" "));
-      spans.push(Span::styled(
-        "QUITTING",
-        Style::default()
-          .fg(Color::Black)
-          .bg(Color::Red)
-          .add_modifier(Modifier::BOLD),
-      ));
-    }
-    spans
+  grid.draw_block(
+    area.into(),
+    if active {
+      BorderType::Thick
+    } else {
+      BorderType::Plain
+    },
+    Attrs::default(),
+  );
+  let title_area = Rect {
+    x: area.x + 1,
+    y: area.y,
+    width: area.width - 2,
+    height: 1,
   };
+  let r = grid.draw_text(
+    title_area,
+    config.proc_list_title.as_str(),
+    if active {
+      Attrs::default().set_bold(true)
+    } else {
+      Attrs::default()
+    },
+  );
+  if state.quitting {
+    let area = title_area.inner((0, 0, 0, r.width + 1));
+    grid.draw_text(
+      area,
+      "QUITTING",
+      Attrs::default()
+        .fg(Color::BLACK)
+        .bg(Color::RED)
+        .set_bold(true),
+    );
+  }
 
-  let items = List::new(items)
-    .block(theme.pane(active).title(title))
-    .style(Style::default().fg(Color::White));
-  frame.render_stateful_widget(items, area, &mut list_state);
-}
+  let range = state.procs_list.visible_range();
+  for (row, index) in range.enumerate() {
+    let proc = if let Some(proc) = state.procs.get(index) {
+      proc
+    } else {
+      continue;
+    };
 
-fn create_proc_item<'a>(
-  proc_handle: &mut ProcView,
-  is_cur: bool,
-  width: u16,
-  theme: &Theme,
-) -> ListItem<'a> {
-  let status = if proc_handle.is_up() {
-    Span::styled(
-      " UP ",
-      Style::default()
-        .fg(Color::LightGreen)
-        .add_modifier(Modifier::BOLD),
-    )
-  } else {
-    match proc_handle.exit_code() {
-      Some(0) => {
-        Span::styled(" DOWN (0)", Style::default().fg(Color::LightBlue))
+    let selected = index == state.selected();
+    let attrs = if selected {
+      Attrs::default().bg(crate::vt100::Color::Idx(240))
+    } else {
+      Attrs::default()
+    };
+    let mut row_area = crate::vt100::grid::Rect {
+      x: area.x + 1,
+      y: area.y + 1 + row as u16,
+      width: area.width.saturating_sub(2),
+      height: 1,
+    };
+
+    let r = grid.draw_text(row_area, if selected { "•" } else { " " }, attrs);
+    row_area.x += r.width;
+    row_area.width = row_area.width.saturating_sub(r.width);
+
+    let r = grid.draw_text(row_area, proc.name(), attrs);
+    row_area.x += r.width;
+    row_area.width = row_area.width.saturating_sub(r.width);
+
+    let (status_text, status_attrs) = if proc.is_up() {
+      (
+        Cow::from(" UP "),
+        attrs.clone().set_bold(true).fg(Color::BRIGHT_GREEN),
+      )
+    } else {
+      match proc.exit_code() {
+        Some(0) => {
+          (Cow::from(" DOWN (0)"), attrs.clone().fg(Color::BRIGHT_BLUE))
+        }
+        Some(exit_code) => (
+          Cow::from(format!(" DOWN ({})", exit_code)),
+          attrs.clone().fg(Color::BRIGHT_RED),
+        ),
+        None => (Cow::from(" DOWN "), attrs.clone().fg(Color::BRIGHT_RED)),
       }
-      Some(exit_code) => Span::styled(
-        format!(" DOWN ({})", exit_code),
-        Style::default().fg(Color::LightRed),
-      ),
-      None => Span::styled(" DOWN ", Style::default().fg(Color::LightRed)),
-    }
-  };
+    };
+    let status_width = status_text.width() as u16;
+    let r = grid.draw_text(
+      Rect {
+        x: row_area.x.max(row_area.x + row_area.width - status_width),
+        width: status_width.min(row_area.width),
+        ..row_area
+      },
+      &status_text,
+      status_attrs,
+    );
+    row_area.width = row_area.width.saturating_sub(r.width);
 
-  let mark = if is_cur {
-    Span::raw("•")
-  } else {
-    Span::raw(" ")
-  };
-
-  let mut name = proc_handle.name().to_string();
-  let name_max = (width as usize)
-    .saturating_sub(mark.width())
-    .saturating_sub(status.width());
-  let name_len = name.chars().count();
-  if name_len > name_max {
-    name.truncate(
-      name
-        .char_indices()
-        .nth(name_max)
-        .map_or(name.len(), |(n, _)| n),
-    )
+    grid.fill_area(row_area, ' ', attrs);
   }
-  if name_len < name_max {
-    for _ in name_len..name_max {
-      name.push(' ');
-    }
-  }
-
-  let name_style = Style::default();
-  let name_style = if proc_handle.changed() {
-    name_style.add_modifier(Modifier::BOLD)
-  } else {
-    name_style
-  };
-  let name = Span::styled(name, name_style);
-
-  ListItem::new(Line::from(vec![mark, name, status]))
-    .style(theme.get_procs_item(is_cur))
 }
 
 pub fn procs_get_clicked_index(
@@ -132,13 +130,10 @@ pub fn procs_get_clicked_index(
   y: u16,
   state: &State,
 ) -> Option<usize> {
-  let inner = area.inner(Margin {
-    vertical: 1,
-    horizontal: 1,
-  });
+  let inner = area.inner(1);
   if procs_check_hit(area, x, y) {
     let index = y - inner.y;
-    let scroll = (state.selected + 1).saturating_sub(inner.height as usize);
+    let scroll = (state.selected() + 1).saturating_sub(inner.height as usize);
     let index = index as usize + scroll;
     if index < state.procs.len() {
       return Some(index);

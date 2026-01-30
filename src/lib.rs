@@ -26,7 +26,6 @@ mod settings;
 mod state;
 mod term;
 mod term_types;
-mod theme;
 mod ui_keymap;
 mod ui_procs;
 mod ui_term;

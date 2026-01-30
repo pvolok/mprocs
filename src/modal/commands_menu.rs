@@ -1,16 +1,19 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
-use tui::{
-  prelude::{Margin, Rect},
-  style::{Modifier, Style},
-  text::{Line, Span},
-  widgets::{Clear, HighlightSpacing, ListItem, ListState, Paragraph},
-  Frame,
-};
 use tui_input::Input;
+use unicode_width::UnicodeWidthStr;
 
 use crate::{
-  app::LoopAction, event::AppEvent, kernel::kernel_message::ProcContext,
-  state::State, theme::Theme, widgets::text_input::TextInput,
+  app::LoopAction,
+  event::AppEvent,
+  kernel::kernel_message::ProcContext,
+  state::State,
+  term::line_symbols::{HORIZONTAL, VERTICAL_LEFT, VERTICAL_RIGHT},
+  vt100::{
+    attrs::Attrs,
+    grid::{Pos, Rect},
+    Color, Grid,
+  },
+  widgets::{list::ListState, text_input::render_text_input},
 };
 
 use super::modal::Modal;
@@ -27,7 +30,7 @@ impl CommandsMenuModal {
     CommandsMenuModal {
       pc,
       input: Input::default(),
-      list_state: ListState::default().with_selected(Some(0)),
+      list_state: ListState::default(),
       items: get_commands(""),
     }
   }
@@ -47,8 +50,7 @@ impl Modal for CommandsMenuModal {
         ..
       }) if modifiers.is_empty() => {
         self.pc.send_self_custom(AppEvent::CloseCurrentModal);
-        if let Some((_, _, event)) =
-          self.list_state.selected().and_then(|i| self.items.get(i))
+        if let Some((_, _, event)) = self.items.get(self.list_state.selected())
         {
           self.pc.send_self_custom(event.clone());
         }
@@ -70,13 +72,13 @@ impl Modal for CommandsMenuModal {
         modifiers,
         ..
       }) if modifiers == &KeyModifiers::CONTROL => {
-        let index = self.list_state.selected().unwrap_or(0);
+        let index = self.list_state.selected();
         let index = if index >= self.items.len() - 1 {
           0
         } else {
           index + 1
         };
-        self.list_state.select(Some(index));
+        self.list_state.select(index);
         loop_action.render();
         return true;
       }
@@ -85,13 +87,13 @@ impl Modal for CommandsMenuModal {
         modifiers,
         ..
       }) if modifiers == &KeyModifiers::CONTROL => {
-        let index = self.list_state.selected().unwrap_or(0);
+        let index = self.list_state.selected();
         let index = if index == 0 {
           self.items.len() - 1
         } else {
           index - 1
         };
-        self.list_state.select(Some(index));
+        self.list_state.select(index);
         loop_action.render();
         return true;
       }
@@ -127,83 +129,106 @@ impl Modal for CommandsMenuModal {
     (60, 30)
   }
 
-  fn render(&mut self, frame: &mut Frame) {
-    let area = self.area(frame.area());
-    let theme = Theme::default();
+  fn render(&mut self, grid: &mut Grid) {
+    let area = self.area(Rect {
+      x: 0,
+      y: 0,
+      width: grid.size().width,
+      height: grid.size().height,
+    });
 
-    let block = theme
-      .pane(true)
-      .border_type(tui::widgets::BorderType::Rounded);
-    frame.render_widget(block, area);
-
-    let inner = area.inner(Margin::new(1, 1));
-    let list_area = Rect::new(
-      inner.x,
-      inner.y,
-      inner.width,
-      inner.height.saturating_sub(2),
-    );
-    let above_input = Rect::new(
-      inner.x,
-      (inner.y + inner.height).saturating_sub(2),
-      inner.width,
-      1,
+    grid.draw_block(
+      area.into(),
+      crate::vt100::grid::BorderType::Plain,
+      Attrs::default(),
     );
 
-    frame.render_widget(Clear, inner);
+    let inner = area.inner(1);
+    let list_area = Rect {
+      x: inner.x,
+      y: inner.y,
+      width: inner.width,
+      height: inner.height.saturating_sub(2),
+    };
+    let above_input = Rect {
+      x: inner.x,
+      y: (inner.y + inner.height).saturating_sub(2),
+      width: inner.width,
+      height: 1,
+    };
 
-    let list_items = self
-      .items
-      .iter()
-      .map(|(cmd, desc, _event)| {
-        let line = Line::from(vec![
-          Span::styled(*cmd, Style::reset().fg(tui::style::Color::White)),
-          "  ".into(),
-          Span::styled(
-            desc,
-            Style::reset()
-              .fg(tui::style::Color::DarkGray)
-              .add_modifier(Modifier::ITALIC),
-          ),
-        ]);
-        ListItem::new(line)
-      })
-      .collect::<Vec<_>>();
-    let list = tui::widgets::List::new(list_items)
-      .highlight_spacing(HighlightSpacing::Always)
-      .highlight_symbol(">")
-      .direction(tui::widgets::ListDirection::TopToBottom);
-    frame.render_stateful_widget(list, list_area, &mut self.list_state);
+    grid.fill_area(inner.into(), ' ', Attrs::default());
 
-    let input_label = "Run command";
-    frame.render_widget(Paragraph::new(input_label), above_input);
-
-    frame.render_widget(
-      Paragraph::new(tui::symbols::line::VERTICAL_RIGHT),
-      Rect::new(area.x, above_input.y, 1, 1),
-    );
-    frame.render_widget(
-      Paragraph::new(tui::symbols::line::VERTICAL_LEFT),
-      Rect::new(above_input.right(), above_input.y, 1, 1),
-    );
-    for x in above_input.x + input_label.len() as u16
-      ..above_input.x + above_input.width
-    {
-      frame.render_widget(
-        Paragraph::new(tui::symbols::line::HORIZONTAL),
-        Rect::new(x, above_input.y, 1, 1),
-      );
+    for (i, (cmd, desc, _event)) in self.items.iter().enumerate() {
+      let mut row_area = Rect {
+        x: list_area.x,
+        y: list_area.y + i as u16,
+        width: list_area.width,
+        height: 1,
+      };
+      row_area.x = grid
+        .draw_text(
+          row_area,
+          if self.list_state.selected() == i {
+            ">"
+          } else {
+            " "
+          },
+          Attrs::default(),
+        )
+        .right();
+      row_area.x = grid
+        .draw_text(row_area, *cmd, Attrs::default().fg(Color::WHITE))
+        .right();
+      row_area.x = grid.draw_text(row_area, " ", Attrs::default()).right();
+      row_area.x = grid.draw_text(row_area, " ", Attrs::default()).right();
+      row_area.x = grid
+        .draw_text(
+          row_area,
+          &desc,
+          Attrs::default().fg(Color::BRIGHT_BLACK).set_italic(true),
+        )
+        .right();
     }
 
+    let input_label = "Run command";
+    grid.draw_text(above_input, input_label, Attrs::default());
+
+    grid.draw_text(
+      Rect::new(area.x, above_input.y, 1, 1),
+      VERTICAL_RIGHT,
+      Attrs::default(),
+    );
+    grid.draw_text(
+      Rect::new(above_input.right(), above_input.y, 1, 1),
+      VERTICAL_LEFT,
+      Attrs::default(),
+    );
+    let line_width =
+      above_input.width.saturating_sub(input_label.width() as u16);
+    grid.draw_text(
+      Rect::new(
+        above_input.x + above_input.width - line_width,
+        above_input.y,
+        line_width,
+        1,
+      ),
+      HORIZONTAL.repeat(line_width as usize).as_str(),
+      Attrs::default(),
+    );
+
     let mut cursor = (0u16, 0u16);
-    let text_input = TextInput::new(&mut self.input);
-    frame.render_stateful_widget(
-      text_input,
+    render_text_input(
+      &mut self.input,
       Rect::new(inner.x, inner.y + inner.height - 1, inner.width, 1),
+      grid,
       &mut cursor,
     );
 
-    frame.set_cursor_position((cursor.0, cursor.1));
+    grid.cursor_pos = Some(Pos {
+      col: cursor.0,
+      row: cursor.1,
+    });
   }
 }
 

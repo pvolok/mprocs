@@ -1,16 +1,15 @@
 use crossterm::event::{Event, KeyCode, KeyEvent};
-use tui::{
-  prelude::{Margin, Rect},
-  widgets::{Clear, Paragraph},
-  Frame,
-};
 
 use crate::{
   app::LoopAction,
   event::AppEvent,
   kernel::{kernel_message::ProcContext, proc::ProcId},
   state::State,
-  theme::Theme,
+  vt100::{
+    attrs::Attrs,
+    grid::{BorderType, Rect},
+    Grid,
+  },
 };
 
 use super::modal::Modal;
@@ -80,18 +79,20 @@ impl Modal for RemoveProcModal {
     (36, 3)
   }
 
-  fn render(&mut self, frame: &mut Frame) {
-    let area = self.area(frame.area());
-    let theme = Theme::default();
+  fn render(&mut self, grid: &mut Grid) {
+    let area = self.area(grid.area());
 
-    let block = theme.pane(true);
-    frame.render_widget(block, area);
+    grid.draw_block(area, BorderType::Thick, Attrs::default());
 
-    let inner = area.inner(Margin::new(1, 1));
+    let inner = area.inner(1);
 
-    let txt = Paragraph::new("Remove process? (y/n)");
-    let txt_area = Rect::new(inner.x, inner.y, inner.width, 1);
-    frame.render_widget(Clear, txt_area);
-    frame.render_widget(txt, txt_area);
+    let txt_area = Rect {
+      x: inner.x,
+      y: inner.y,
+      width: inner.width,
+      height: 1,
+    };
+    grid.fill_area(txt_area, ' ', Attrs::default());
+    grid.draw_text(txt_area, "Remove process? (y/n)", Attrs::default());
   }
 }

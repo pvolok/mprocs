@@ -1,13 +1,13 @@
-use tui::{layout::Rect, text::Text, widgets::Paragraph, Frame};
-
 use crate::{
   event::AppEvent,
   keymap::{Keymap, KeymapGroup},
-  theme::Theme,
+  vt100::{attrs::Attrs, grid::Rect, Color, Grid},
 };
 
-pub fn render_zoom_tip(area: Rect, frame: &mut Frame, keymap: &Keymap) {
-  let theme = Theme::default();
+pub fn render_zoom_tip(area: Rect, grid: &mut Grid, keymap: &Keymap) {
+  if area.height == 0 {
+    return;
+  }
 
   let events = vec![
     AppEvent::FocusTerm,
@@ -18,11 +18,16 @@ pub fn render_zoom_tip(area: Rect, frame: &mut Frame, keymap: &Keymap) {
     .into_iter()
     .find_map(|event| keymap.resolve_key(KeymapGroup::Term, &event));
 
-  let line = if let Some(key) = key {
-    Text::from(format!(" To exit zoom mode press {}", key.to_string()))
+  let attrs = Attrs::default().fg(Color::BLACK).bg(Color::YELLOW);
+  let r = if let Some(key) = key {
+    grid.draw_text(
+      area,
+      format!(" To exit zoom mode press {}", key.to_string()).as_str(),
+      attrs,
+    )
   } else {
-    Text::from(" No key bound to exit the zoom mode")
+    grid.draw_text(area, " No key bound to exit the zoom mode", attrs)
   };
-  let p = Paragraph::new(line).style(theme.zoom_tip());
-  frame.render_widget(p, area);
+
+  grid.fill_area(area.inner((0, 0, 0, r.width)), ' ', attrs);
 }

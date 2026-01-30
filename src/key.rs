@@ -69,11 +69,6 @@ impl Key {
   pub fn mods(&self) -> KeyModifiers {
     self.mods
   }
-
-  pub fn set_mods(mut self, mods: KeyModifiers) -> Self {
-    self.mods = mods;
-    self
-  }
 }
 
 impl From<KeyCode> for Key {

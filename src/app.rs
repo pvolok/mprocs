@@ -6,13 +6,7 @@ use crossterm::event::{
 };
 use futures::{future::FutureExt, select};
 use serde::{Deserialize, Serialize};
-use termwiz::escape::csi::CursorStyle;
 use tokio::{io::AsyncReadExt, sync::mpsc::UnboundedReceiver};
-use tui::{
-  layout::{Constraint, Direction, Layout, Margin, Rect},
-  widgets::Widget,
-  Terminal,
-};
 
 use crate::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
@@ -37,17 +31,18 @@ use crate::{
     view::{TargetState, RESTART_THRESHOLD_SECONDS},
     CopyMode, Pos, StopSignal,
   },
-  protocol::{CltToSrv, ProxyBackend, SrvToClt},
+  protocol::{CltToSrv, SrvToClt},
   server::server_message::ServerMessage,
   state::{Scope, State},
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
   ui_term::{render_term, term_check_hit},
   ui_zoom_tip::render_zoom_tip,
-  vt100::{MouseProtocolMode, Size},
+  vt100::{
+    attrs::Attrs, grid::Rect, Grid, MouseProtocolMode, ScreenDiffer, Size,
+  },
+  widgets::list::ListState,
 };
-
-type Term = Terminal<ProxyBackend>;
 
 #[derive(Debug, Default, PartialEq)]
 pub enum LoopAction {
@@ -150,20 +145,20 @@ impl App {
   async fn main_loop(mut self) -> anyhow::Result<()> {
     self.pc.send(KernelCommand::ListenProcUpdates);
 
-    self.start_procs(Rect::new(
-      0,
-      0,
-      self.screen_size.width,
-      self.screen_size.height,
-    ))?;
+    self.start_procs(Rect {
+      x: 0,
+      y: 0,
+      width: self.screen_size.width,
+      height: self.screen_size.height,
+    })?;
 
     let mut render_needed = true;
-    let mut last_term_size = self.get_layout().term_area().as_size();
+    let mut last_term_size = self.get_layout().term_area().size();
 
     loop {
       let layout = self.get_layout();
 
-      let term_size = layout.term_area().as_size();
+      let term_size = layout.term_area().size();
       if term_size != last_term_size {
         for proc_handle in &mut self.state.procs {
           self.pc.send(KernelCommand::ProcCmd(
@@ -476,7 +471,7 @@ impl App {
               }
             }
           }
-        } else if procs_check_hit(layout.procs, mev.column, mev.row) {
+        } else if procs_check_hit(layout.procs.into(), mev.column, mev.row) {
           if let (Scope::Term, MouseEventKind::Down(_)) =
             (self.state.scope, mev.kind)
           {
@@ -486,7 +481,7 @@ impl App {
             MouseEventKind::Down(btn) => match btn {
               MouseButton::Left => {
                 if let Some(index) = procs_get_clicked_index(
-                  layout.procs,
+                  layout.procs.into(),
                   mev.column,
                   mev.row,
                   &self.state,
@@ -500,15 +495,16 @@ impl App {
             MouseEventKind::Drag(_) => (),
             MouseEventKind::Moved => (),
             MouseEventKind::ScrollDown => {
-              if self.state.selected < self.state.procs.len().saturating_sub(1)
+              if self.state.selected()
+                < self.state.procs.len().saturating_sub(1)
               {
-                let index = self.state.selected + 1;
+                let index = self.state.selected() + 1;
                 self.state.select_proc(index);
               }
             }
             MouseEventKind::ScrollUp => {
-              if self.state.selected > 0 {
-                let index = self.state.selected - 1;
+              if self.state.selected() > 0 {
+                let index = self.state.selected() - 1;
                 self.state.select_proc(index);
               }
             }
@@ -605,7 +601,7 @@ impl App {
         loop_action.render();
       }
       AppEvent::NextProc => {
-        let mut next = self.state.selected + 1;
+        let mut next = self.state.selected() + 1;
         if next >= self.state.procs.len() {
           next = 0;
         }
@@ -613,8 +609,8 @@ impl App {
         loop_action.render();
       }
       AppEvent::PrevProc => {
-        let next = if self.state.selected > 0 {
-          self.state.selected - 1
+        let next = if self.state.selected() > 0 {
+          self.state.selected() - 1
         } else {
           self.state.procs.len().saturating_sub(1)
         };
@@ -716,7 +712,7 @@ impl App {
               pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::ScrollUp))
             }
             CopyMode::Active(screen, _, _) => {
-              screen.scroll_screen_up(screen.size().rows as usize / 2)
+              screen.scroll_screen_up(screen.size().height as usize / 2)
             }
           }
           loop_action.render();
@@ -729,7 +725,7 @@ impl App {
               pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::ScrollDown))
             }
             CopyMode::Active(screen, _, _) => {
-              screen.scroll_screen_down(screen.size().rows as usize / 2)
+              screen.scroll_screen_down(screen.size().height as usize / 2)
             }
           }
           loop_action.render();
@@ -819,7 +815,7 @@ impl App {
         if let Some(proc) = self.state.get_current_proc_mut() {
           if let Some(vt_ref) = proc.vt.as_ref() {
             let screen = vt_ref.read().unwrap().screen().clone();
-            let y = (screen.size().rows - 1) as i32;
+            let y = (screen.size().height - 1) as i32;
             proc.copy_mode = CopyMode::Active(screen, Pos { y, x: 0 }, None);
           }
           self.state.scope = Scope::Term;
@@ -845,7 +841,7 @@ impl App {
                   }
                 }
                 CopyMove::Right => {
-                  if pos_.x + 1 < screen.size().cols as i32 {
+                  if pos_.x + 1 < screen.size().width as i32 {
                     pos_.x += 1
                   }
                 }
@@ -855,7 +851,7 @@ impl App {
                   }
                 }
                 CopyMove::Down => {
-                  if pos_.y + 1 < screen.size().rows as i32 {
+                  if pos_.y + 1 < screen.size().height as i32 {
                     pos_.y += 1
                   }
                 }
@@ -1068,32 +1064,20 @@ impl AppLayout {
       config.proc_list_width as u16
     };
     let zoom_banner_h = if zoom { 1 } else { 0 };
-    let top_bot = Layout::default()
-      .direction(Direction::Vertical)
-      .constraints([Constraint::Min(1), Constraint::Length(keymap_h)])
-      .split(area);
-    let chunks = Layout::default()
-      .direction(Direction::Horizontal)
-      .constraints([Constraint::Length(procs_w), Constraint::Min(2)].as_ref())
-      .split(top_bot[0]);
-    let term_zoom = Layout::default()
-      .direction(Direction::Vertical)
-      .constraints([Constraint::Length(zoom_banner_h), Constraint::Min(1)])
-      .split(chunks[1]);
+    let (top, keymap) = area.split_h(area.height.saturating_sub(keymap_h));
+    let (procs, term) = top.split_v(procs_w);
+    let (zoom_banner, term) = term.split_h(zoom_banner_h);
 
     Self {
-      procs: chunks[0],
-      term: term_zoom[1],
-      keymap: top_bot[1],
-      zoom_banner: term_zoom[0],
+      procs,
+      term,
+      keymap,
+      zoom_banner,
     }
   }
 
   pub fn term_area(&self) -> Rect {
-    self.term.inner(Margin {
-      vertical: 1,
-      horizontal: 1,
-    })
+    self.term.inner(1)
   }
 }
 
@@ -1152,9 +1136,8 @@ pub async fn client_loop(
 pub struct ClientHandle {
   id: ClientId,
   sender: MsgSender<SrvToClt>,
-  terminal: Term,
-
-  cursor_style: CursorStyle,
+  grid: Grid,
+  differ: ScreenDiffer,
 }
 
 impl Debug for ClientHandle {
@@ -1168,44 +1151,28 @@ impl Debug for ClientHandle {
 impl ClientHandle {
   fn create(
     id: ClientId,
-    client_sender: MsgSender<SrvToClt>,
+    mut client_sender: MsgSender<SrvToClt>,
     size: Size,
   ) -> anyhow::Result<Self> {
-    let backend = ProxyBackend {
-      tx: client_sender.clone(),
-      width: size.width,
-      height: size.height,
-      x: 0,
-      y: 0,
-    };
-    let terminal = Terminal::new(backend)?;
+    let grid = Grid::new(size, 0);
+    client_sender
+      .send(SrvToClt::Print("\x1b[1;1H".to_string()))
+      .log_ignore();
 
     Ok(Self {
       id,
       sender: client_sender,
-      terminal,
-
-      cursor_style: CursorStyle::Default,
+      grid,
+      differ: ScreenDiffer::new(),
     })
   }
 
   fn size(&self) -> Size {
-    let backend = self.terminal.backend();
-    Size {
-      width: backend.width,
-      height: backend.height,
-    }
+    self.grid.size()
   }
 
   fn resize(&mut self, size: Size) {
-    self
-      .terminal
-      .backend_mut()
-      .set_size(size.width, size.height);
-    self
-      .terminal
-      .resize(Rect::new(0, 0, size.width, size.height))
-      .log_ignore();
+    self.grid.set_size(size);
   }
 
   fn render(
@@ -1217,64 +1184,38 @@ impl ClientHandle {
     modal: &mut Option<Box<dyn Modal>>,
     rest: &mut [ClientHandle],
   ) -> anyhow::Result<()> {
-    self.terminal.draw(|f| {
-      let mut cursor_style = self.cursor_style;
+    let grid = &mut self.grid;
+    grid.erase_all(Attrs::default());
+    grid.cursor_pos = None;
+    grid.cursor_style = crate::protocol::CursorStyle::Default;
 
-      render_procs(layout.procs, f, state, config);
-      render_term(layout.term, f, state, &mut cursor_style);
-      render_keymap(layout.keymap, f, state, keymap);
-      render_zoom_tip(layout.zoom_banner, f, keymap);
+    render_procs(layout.procs.into(), grid, state, config);
+    render_term(layout.term, grid, state);
+    render_keymap(layout.keymap.into(), grid, state, keymap);
+    render_zoom_tip(layout.zoom_banner.into(), grid, keymap);
 
-      if let Some(modal) = modal {
-        cursor_style = CursorStyle::Default;
-        modal.render(f);
-      }
-
-      for client_handle in rest {
-        f.render_widget(RenderOtherClient(client_handle), f.area());
-      }
-
-      if self.cursor_style != cursor_style {
-        self
-          .sender
-          .send(SrvToClt::CursorShape(cursor_style.into()))
-          .log_ignore();
-        self.cursor_style = cursor_style;
-      }
-    })?;
-
-    Ok(())
-  }
-
-  fn render_from(&mut self, buf: &tui::buffer::Buffer) -> anyhow::Result<()> {
-    self.terminal.draw(|f| {
-      let area = buf.area().intersection(f.area());
-      f.render_widget(CopyBuffer(buf), area);
-    })?;
-    Ok(())
-  }
-}
-
-struct RenderOtherClient<'a>(&'a mut ClientHandle);
-
-impl Widget for RenderOtherClient<'_> {
-  fn render(self, _area: Rect, buf: &mut tui::prelude::Buffer) {
-    self.0.render_from(buf).log_ignore();
-  }
-}
-
-struct CopyBuffer<'a>(&'a tui::buffer::Buffer);
-
-impl Widget for CopyBuffer<'_> {
-  fn render(self, area: Rect, buf: &mut tui::prelude::Buffer) {
-    for row in area.y..area.height {
-      for col in area.x..area.width {
-        let from = self.0.cell((col, row));
-        if let Some(cell) = buf.cell_mut((col, row)) {
-          *cell = from.cloned().unwrap_or_default();
-        }
-      }
+    if let Some(modal) = modal {
+      grid.cursor_style = crate::protocol::CursorStyle::Default;
+      modal.render(grid);
     }
+
+    //
+    // Render
+    //
+
+    let mut out = String::new();
+    self.differ.diff(&mut out, grid).log_ignore();
+    self.sender.send(SrvToClt::Print(out)).unwrap();
+    self.sender.send(SrvToClt::Flush).unwrap();
+
+    for client_handle in rest {
+      let mut out = String::new();
+      client_handle.differ.diff(&mut out, grid).log_ignore();
+      client_handle.sender.send(SrvToClt::Print(out)).unwrap();
+      client_handle.sender.send(SrvToClt::Flush).unwrap();
+    }
+
+    Ok(())
   }
 }
 
@@ -1313,7 +1254,7 @@ pub async fn server_main(
 
     scope: Scope::Procs,
     procs: Vec::new(),
-    selected: 0,
+    procs_list: ListState::default(),
     hide_keymap_window: config.hide_keymap_window,
 
     quitting: false,

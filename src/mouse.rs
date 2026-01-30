@@ -1,7 +1,6 @@
 use crossterm::event::{KeyModifiers, MouseEventKind};
-use tui::prelude::Rect;
 
-use crate::proc::Pos;
+use crate::{proc::Pos, vt100::grid::Rect};
 
 #[derive(Debug)]
 pub struct MouseEvent {

@@ -1,11 +1,11 @@
 use std::fmt::Debug;
 
-use crate::vt100::{attrs::Attrs, Color};
+use crate::{
+  protocol::CursorStyle,
+  vt100::{attrs::Attrs, Color, Size},
+};
 use compact_str::CompactString;
-use termwiz::escape::csi::CursorStyle;
 use unicode_width::UnicodeWidthChar as _;
-
-use super::grid::Size;
 
 const MODE_APPLICATION_KEYPAD: u8 = 0b0000_0001;
 const MODE_APPLICATION_CURSOR: u8 = 0b0000_0010;
@@ -85,8 +85,6 @@ pub struct Screen {
   attrs: crate::vt100::attrs::Attrs,
   saved_attrs: crate::vt100::attrs::Attrs,
 
-  cursor_style: CursorStyle,
-
   modes: u8,
   mouse_protocol_mode: MouseProtocolMode,
   mouse_protocol_encoding: MouseProtocolEncoding,
@@ -116,10 +114,7 @@ impl Screen {
     self.grid().get_selected_text(low_x, low_y, high_x, high_y)
   }
 
-  pub(crate) fn new(
-    size: crate::vt100::grid::Size,
-    scrollback_len: usize,
-  ) -> Self {
+  pub(crate) fn new(size: Size, scrollback_len: usize) -> Self {
     let grid = crate::vt100::grid::Grid::new(size, scrollback_len);
     Self {
       feed_buf: Vec::new(),
@@ -129,8 +124,6 @@ impl Screen {
 
       attrs: crate::vt100::attrs::Attrs::default(),
       saved_attrs: crate::vt100::attrs::Attrs::default(),
-
-      cursor_style: CursorStyle::Default,
 
       modes: 0,
       mouse_protocol_mode: MouseProtocolMode::default(),
@@ -150,10 +143,14 @@ impl Screen {
   }
 
   pub(crate) fn set_size(&mut self, rows: u16, cols: u16) {
-    self.grid.set_size(crate::vt100::grid::Size { rows, cols });
-    self
-      .alternate_grid
-      .set_size(crate::vt100::grid::Size { rows, cols });
+    self.grid.set_size(Size {
+      height: rows,
+      width: cols,
+    });
+    self.alternate_grid.set_size(Size {
+      height: rows,
+      width: cols,
+    });
   }
 
   /// Returns the current size of the terminal.
@@ -212,7 +209,7 @@ impl Screen {
 
   #[must_use]
   pub fn cursor_style(&self) -> CursorStyle {
-    self.cursor_style
+    self.grid.cursor_style
   }
 
   /// Returns whether the terminal should be in application cursor mode.
@@ -327,10 +324,10 @@ impl Screen {
     // (xterm handles this by introducing the concept of triple width
     // cells, which i really don't want to do).
     let mut wrap = false;
-    if pos.col > size.cols - width {
+    if pos.col > size.width - width {
       let last_cell_pos = crate::vt100::grid::Pos {
         row: pos.row,
-        col: size.cols - 1,
+        col: size.width - 1,
       };
       let last_cell = self
         .grid()
@@ -384,13 +381,13 @@ impl Screen {
         if prev_row.wrapped() {
           let prev_cell_pos = crate::vt100::grid::Pos {
             row: pos.row - 1,
-            col: size.cols - 1,
+            col: size.width - 1,
           };
           let prev_cell_pos = if self.grid().is_wide_continuation(prev_cell_pos)
           {
             crate::vt100::grid::Pos {
               row: pos.row - 1,
-              col: size.cols - 2,
+              col: size.width - 2,
             }
           } else {
             prev_cell_pos
@@ -493,7 +490,7 @@ impl Screen {
             // wide character after it.
             .unwrap();
           next_next_cell.clear(attrs);
-          if next_next_pos.col == size.cols - 1 {
+          if next_next_pos.col == size.width - 1 {
             self
               .grid_mut()
               .drawing_row_mut(pos.row)
@@ -1299,7 +1296,7 @@ impl Screen {
           "6" => CursorStyle::SteadyBar,
           _ => CursorStyle::Default,
         };
-        self.cursor_style = cursor_style;
+        self.grid.cursor_style = cursor_style;
       }
       ("", _, "", b'r') => {
         // DECSTBM - Set Top and Bottom Margins
