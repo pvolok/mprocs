@@ -244,6 +244,11 @@ impl App {
 
     self.state.procs.append(&mut procs);
 
+    // Populate group proc_indices after procs are started
+    self.state.populate_group_indices(&self.config.groups);
+    // Build the sidebar items
+    self.state.rebuild_sidebar_items();
+
     Ok(())
   }
 
@@ -480,13 +485,24 @@ impl App {
           match mev.kind {
             MouseEventKind::Down(btn) => match btn {
               MouseButton::Left => {
-                if let Some(index) = procs_get_clicked_index(
+                if let Some(sidebar_index) = procs_get_clicked_index(
                   layout.procs.into(),
                   mev.column,
                   mev.row,
                   &self.state,
                 ) {
-                  self.state.select_proc(index);
+                  // Check if clicking on a group header - toggle it
+                  if let Some(crate::state::SidebarItem::Group { group_index }) =
+                    self.state.sidebar_items.get(sidebar_index)
+                  {
+                    let group_index = *group_index;
+                    self.state.select_sidebar_item(sidebar_index);
+                    self.state.toggle_group(group_index);
+                    self.state.rebuild_sidebar_items();
+                    self.state.adjust_selection_after_collapse();
+                  } else {
+                    self.state.select_sidebar_item(sidebar_index);
+                  }
                 }
               }
               MouseButton::Right | MouseButton::Middle => (),
@@ -495,17 +511,16 @@ impl App {
             MouseEventKind::Drag(_) => (),
             MouseEventKind::Moved => (),
             MouseEventKind::ScrollDown => {
-              if self.state.selected()
-                < self.state.procs.len().saturating_sub(1)
-              {
+              let sidebar_len = self.state.sidebar_len();
+              if self.state.selected() < sidebar_len.saturating_sub(1) {
                 let index = self.state.selected() + 1;
-                self.state.select_proc(index);
+                self.state.select_sidebar_item(index);
               }
             }
             MouseEventKind::ScrollUp => {
               if self.state.selected() > 0 {
                 let index = self.state.selected() - 1;
-                self.state.select_proc(index);
+                self.state.select_sidebar_item(index);
               }
             }
             MouseEventKind::ScrollLeft => (),
@@ -601,21 +616,27 @@ impl App {
         loop_action.render();
       }
       AppEvent::NextProc => {
-        let mut next = self.state.selected() + 1;
-        if next >= self.state.procs.len() {
-          next = 0;
+        let sidebar_len = self.state.sidebar_len();
+        if sidebar_len > 0 {
+          let mut next = self.state.selected() + 1;
+          if next >= sidebar_len {
+            next = 0;
+          }
+          self.state.select_sidebar_item(next);
+          loop_action.render();
         }
-        self.state.select_proc(next);
-        loop_action.render();
       }
       AppEvent::PrevProc => {
-        let next = if self.state.selected() > 0 {
-          self.state.selected() - 1
-        } else {
-          self.state.procs.len().saturating_sub(1)
-        };
-        self.state.select_proc(next);
-        loop_action.render();
+        let sidebar_len = self.state.sidebar_len();
+        if sidebar_len > 0 {
+          let next = if self.state.selected() > 0 {
+            self.state.selected() - 1
+          } else {
+            sidebar_len.saturating_sub(1)
+          };
+          self.state.select_sidebar_item(next);
+          loop_action.render();
+        }
       }
       AppEvent::SelectProc { index } => {
         self.state.select_proc(*index);
@@ -892,6 +913,50 @@ impl App {
       AppEvent::SendKey { key } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::SendKey(*key)));
+        }
+      }
+
+      // Group operations
+      AppEvent::ToggleGroup { name } => {
+        if self.state.toggle_group_by_name(name) {
+          self.state.rebuild_sidebar_items();
+          self.state.adjust_selection_after_collapse();
+          loop_action.render();
+        }
+      }
+      AppEvent::CollapseGroup { name } => {
+        if self.state.collapse_group_by_name(name) {
+          self.state.rebuild_sidebar_items();
+          self.state.adjust_selection_after_collapse();
+          loop_action.render();
+        }
+      }
+      AppEvent::ExpandGroup { name } => {
+        if self.state.expand_group_by_name(name) {
+          self.state.rebuild_sidebar_items();
+          loop_action.render();
+        }
+      }
+      AppEvent::CollapseAllGroups => {
+        self.state.collapse_all_groups();
+        self.state.rebuild_sidebar_items();
+        self.state.adjust_selection_after_collapse();
+        loop_action.render();
+      }
+      AppEvent::ExpandAllGroups => {
+        self.state.expand_all_groups();
+        self.state.rebuild_sidebar_items();
+        loop_action.render();
+      }
+      AppEvent::ToggleSelectedGroup => {
+        // Toggle the currently selected group (if a group is selected)
+        if let Some(crate::state::SidebarItem::Group { group_index }) =
+          self.state.get_selected_sidebar_item().cloned()
+        {
+          self.state.toggle_group(group_index);
+          self.state.rebuild_sidebar_items();
+          self.state.adjust_selection_after_collapse();
+          loop_action.render();
         }
       }
     }
@@ -1249,7 +1314,7 @@ pub async fn server_main(
   pr: UnboundedReceiver<ProcCmd>,
   pc: ProcContext,
 ) -> anyhow::Result<()> {
-  let state = State {
+  let mut state = State {
     current_client_id: None,
 
     scope: Scope::Procs,
@@ -1258,7 +1323,13 @@ pub async fn server_main(
     hide_keymap_window: config.hide_keymap_window,
 
     quitting: false,
+
+    groups: Vec::new(),
+    sidebar_items: Vec::new(),
   };
+
+  // Initialize groups from config
+  state.init_groups(&config.groups);
 
   let app = App {
     config,

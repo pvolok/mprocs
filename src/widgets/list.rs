@@ -66,4 +66,8 @@ impl ListState {
   pub fn selected(&self) -> usize {
     self.selected as usize
   }
+
+  pub fn top_index(&self) -> usize {
+    self.top_index as usize
+  }
 }

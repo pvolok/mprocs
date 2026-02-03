@@ -283,6 +283,16 @@ impl Settings {
       AppEvent::CopyModeEnter,
     );
 
+    // Group toggle keybindings (Enter and Space toggle selected group)
+    s.keymap_add_p(
+      Key::new(KeyCode::Enter, KeyModifiers::NONE),
+      AppEvent::ToggleSelectedGroup,
+    );
+    s.keymap_add_p(
+      Key::new(KeyCode::Char(' '), KeyModifiers::NONE),
+      AppEvent::ToggleSelectedGroup,
+    );
+
     for i in 0..8 {
       let char = char::from_digit(i + 1, 10).unwrap();
       s.keymap_add_p(

@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add process groups feature for organizing sidebar with collapsible groups
 - Add log_dir configuration in mprocs.yaml
 
 ## 0.8.3 - 2026-01-21

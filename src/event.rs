@@ -55,6 +55,14 @@ pub enum AppEvent {
   ToggleKeymapWindow,
 
   SendKey { key: Key },
+
+  // Group operations
+  ToggleGroup { name: String },
+  CollapseGroup { name: String },
+  ExpandGroup { name: String },
+  CollapseAllGroups,
+  ExpandAllGroups,
+  ToggleSelectedGroup,
 }
 
 impl CustomProcCmd for AppEvent {}
@@ -109,6 +117,12 @@ impl AppEvent {
       AppEvent::CopyModeCopy => "Copy selected text".to_string(),
       AppEvent::ToggleKeymapWindow => "Toggle help".to_string(),
       AppEvent::SendKey { key } => format!("Send {} key", key.to_string()),
+      AppEvent::ToggleGroup { name } => format!("Toggle group: {}", name),
+      AppEvent::CollapseGroup { name } => format!("Collapse group: {}", name),
+      AppEvent::ExpandGroup { name } => format!("Expand group: {}", name),
+      AppEvent::CollapseAllGroups => "Collapse all groups".to_string(),
+      AppEvent::ExpandAllGroups => "Expand all groups".to_string(),
+      AppEvent::ToggleSelectedGroup => "Toggle selected group".to_string(),
     }
   }
 }
@@ -159,5 +173,72 @@ mod tests {
       .unwrap(),
       "c: send-key\nkey: <C-a>\n"
     );
+  }
+
+  #[test]
+  fn serialize_group_events() {
+    // Test ToggleGroup serialization
+    assert_eq!(
+      serde_yaml::to_string(&AppEvent::ToggleGroup {
+        name: "backend".to_string()
+      })
+      .unwrap(),
+      "c: toggle-group\nname: backend\n"
+    );
+
+    // Test CollapseGroup serialization
+    assert_eq!(
+      serde_yaml::to_string(&AppEvent::CollapseGroup {
+        name: "frontend".to_string()
+      })
+      .unwrap(),
+      "c: collapse-group\nname: frontend\n"
+    );
+
+    // Test ExpandGroup serialization
+    assert_eq!(
+      serde_yaml::to_string(&AppEvent::ExpandGroup {
+        name: "test".to_string()
+      })
+      .unwrap(),
+      "c: expand-group\nname: test\n"
+    );
+
+    // Test CollapseAllGroups serialization
+    assert_eq!(
+      serde_yaml::to_string(&AppEvent::CollapseAllGroups).unwrap(),
+      "c: collapse-all-groups\n"
+    );
+
+    // Test ExpandAllGroups serialization
+    assert_eq!(
+      serde_yaml::to_string(&AppEvent::ExpandAllGroups).unwrap(),
+      "c: expand-all-groups\n"
+    );
+
+    // Test deserialization
+    let event: AppEvent =
+      serde_yaml::from_str("c: toggle-group\nname: backend\n").unwrap();
+    assert_eq!(
+      event,
+      AppEvent::ToggleGroup {
+        name: "backend".to_string()
+      }
+    );
+
+    let event: AppEvent =
+      serde_yaml::from_str("c: collapse-all-groups\n").unwrap();
+    assert_eq!(event, AppEvent::CollapseAllGroups);
+
+    // Test ToggleSelectedGroup serialization
+    assert_eq!(
+      serde_yaml::to_string(&AppEvent::ToggleSelectedGroup).unwrap(),
+      "c: toggle-selected-group\n"
+    );
+
+    // Test ToggleSelectedGroup deserialization
+    let event: AppEvent =
+      serde_yaml::from_str("c: toggle-selected-group\n").unwrap();
+    assert_eq!(event, AppEvent::ToggleSelectedGroup);
   }
 }

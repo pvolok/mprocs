@@ -31,8 +31,17 @@ fn resolve_config_path(path: &str, ctx: &ConfigContext) -> Result<PathBuf> {
   Ok(buf)
 }
 
+/// Configuration for a process group in the sidebar
+#[derive(Clone, Debug)]
+pub struct GroupConfig {
+  pub name: String,
+  pub collapsed: bool,
+  pub proc_names: Vec<String>,
+}
+
 pub struct Config {
   pub procs: Vec<ProcConfig>,
+  pub groups: Vec<GroupConfig>,
   pub server: Option<ServerConfig>,
   pub hide_keymap_window: bool,
   pub mouse_scroll_speed: usize,
@@ -106,8 +115,57 @@ impl Config {
       },
     };
 
+    // Parse groups section
+    let proc_names: std::collections::HashSet<_> =
+      procs.iter().map(|p| p.name.as_str()).collect();
+    let groups = if let Some(groups_val) = config.get(&Value::from("groups")) {
+      let groups_map = groups_val.as_object()?;
+      let mut groups = Vec::new();
+      for (name, group_val) in groups_map {
+        let group_name = value_to_string(&name)?;
+        let group_obj = group_val.as_object()?;
+
+        let collapsed = group_obj
+          .get(&Value::from("collapsed"))
+          .map_or(Ok(false), |v| v.as_bool())?;
+
+        let proc_names_in_group =
+          if let Some(procs_val) = group_obj.get(&Value::from("procs")) {
+            procs_val
+              .as_array()?
+              .iter()
+              .filter_map(|p| {
+                let name = p.as_str().ok()?;
+                if proc_names.contains(name) {
+                  Some(name.to_string())
+                } else {
+                  log::warn!(
+                    "Group '{}' references unknown process '{}'",
+                    group_name,
+                    name
+                  );
+                  None
+                }
+              })
+              .collect()
+          } else {
+            Vec::new()
+          };
+
+        groups.push(GroupConfig {
+          name: group_name,
+          collapsed,
+          proc_names: proc_names_in_group,
+        });
+      }
+      groups
+    } else {
+      Vec::new()
+    };
+
     let config = Config {
       procs,
+      groups,
       server,
       hide_keymap_window: settings.hide_keymap_window,
       mouse_scroll_speed: settings.mouse_scroll_speed,
@@ -124,6 +182,7 @@ impl Config {
   pub fn make_default(settings: &Settings) -> anyhow::Result<Self> {
     Ok(Self {
       procs: Vec::new(),
+      groups: Vec::new(),
       server: None,
       hide_keymap_window: settings.hide_keymap_window,
       mouse_scroll_speed: settings.mouse_scroll_speed,
@@ -411,4 +470,149 @@ pub fn cmd_from_shell(shell: &str) -> ProcessSpec {
 #[cfg(not(windows))]
 pub fn cmd_from_shell(shell: &str) -> ProcessSpec {
   ProcessSpec::from_argv(vec!["/bin/sh".into(), "-c".into(), shell.into()])
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::path::PathBuf;
+
+  fn make_test_settings() -> Settings {
+    Settings::default()
+  }
+
+  fn make_test_ctx() -> ConfigContext {
+    ConfigContext {
+      path: PathBuf::from("/tmp/mprocs.yaml"),
+    }
+  }
+
+  #[test]
+  fn test_groups_parsing_basic() {
+    let yaml = r#"
+procs:
+  server: "node server.js"
+  client: "npm run dev"
+groups:
+  backend:
+    procs:
+      - server
+"#;
+    let value: Value = serde_yaml::from_str(yaml).unwrap();
+    let settings = make_test_settings();
+    let ctx = make_test_ctx();
+    let config = Config::from_value(&value, &ctx, &settings).unwrap();
+
+    assert_eq!(config.groups.len(), 1);
+    assert_eq!(config.groups[0].name, "backend");
+    assert_eq!(config.groups[0].proc_names, vec!["server".to_string()]);
+    assert!(!config.groups[0].collapsed);
+  }
+
+  #[test]
+  fn test_groups_parsing_collapsed() {
+    let yaml = r#"
+procs:
+  server: "node server.js"
+groups:
+  backend:
+    collapsed: true
+    procs:
+      - server
+"#;
+    let value: Value = serde_yaml::from_str(yaml).unwrap();
+    let settings = make_test_settings();
+    let ctx = make_test_ctx();
+    let config = Config::from_value(&value, &ctx, &settings).unwrap();
+
+    assert_eq!(config.groups.len(), 1);
+    assert!(config.groups[0].collapsed);
+  }
+
+  #[test]
+  fn test_groups_parsing_empty_groups() {
+    let yaml = r#"
+procs:
+  server: "node server.js"
+"#;
+    let value: Value = serde_yaml::from_str(yaml).unwrap();
+    let settings = make_test_settings();
+    let ctx = make_test_ctx();
+    let config = Config::from_value(&value, &ctx, &settings).unwrap();
+
+    assert!(config.groups.is_empty());
+  }
+
+  #[test]
+  fn test_groups_parsing_unknown_proc_filtered() {
+    let yaml = r#"
+procs:
+  server: "node server.js"
+groups:
+  backend:
+    procs:
+      - server
+      - unknown_proc
+"#;
+    let value: Value = serde_yaml::from_str(yaml).unwrap();
+    let settings = make_test_settings();
+    let ctx = make_test_ctx();
+    let config = Config::from_value(&value, &ctx, &settings).unwrap();
+
+    assert_eq!(config.groups.len(), 1);
+    // unknown_proc should be filtered out
+    assert_eq!(config.groups[0].proc_names, vec!["server".to_string()]);
+  }
+
+  #[test]
+  fn test_groups_parsing_multiple_groups() {
+    let yaml = r#"
+procs:
+  server: "node server.js"
+  client: "npm run dev"
+  tests: "npm test"
+groups:
+  backend:
+    procs:
+      - server
+  frontend:
+    collapsed: true
+    procs:
+      - client
+"#;
+    let value: Value = serde_yaml::from_str(yaml).unwrap();
+    let settings = make_test_settings();
+    let ctx = make_test_ctx();
+    let config = Config::from_value(&value, &ctx, &settings).unwrap();
+
+    assert_eq!(config.groups.len(), 2);
+    // Note: YAML map ordering may vary, so we check by finding groups by name
+    let backend = config.groups.iter().find(|g| g.name == "backend").unwrap();
+    let frontend = config.groups.iter().find(|g| g.name == "frontend").unwrap();
+
+    assert!(!backend.collapsed);
+    assert_eq!(backend.proc_names, vec!["server".to_string()]);
+
+    assert!(frontend.collapsed);
+    assert_eq!(frontend.proc_names, vec!["client".to_string()]);
+  }
+
+  #[test]
+  fn test_groups_parsing_empty_procs_list() {
+    let yaml = r#"
+procs:
+  server: "node server.js"
+groups:
+  empty_group:
+    collapsed: false
+"#;
+    let value: Value = serde_yaml::from_str(yaml).unwrap();
+    let settings = make_test_settings();
+    let ctx = make_test_ctx();
+    let config = Config::from_value(&value, &ctx, &settings).unwrap();
+
+    assert_eq!(config.groups.len(), 1);
+    assert_eq!(config.groups[0].name, "empty_group");
+    assert!(config.groups[0].proc_names.is_empty());
+  }
 }

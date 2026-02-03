@@ -177,6 +177,11 @@ settings in the _global_ config.
 - **log_dir**: _string|null_ - Default directory for process log files. Each
   process logs to `<log_dir>/<name>.log`. Prefix `<CONFIG_DIR>` will be replaced
   with the path of the directory where the config is located.
+- **groups**: _object_ - Define process groups for organizing the sidebar. Only
+  allowed in local config.
+  - **collapsed**: _bool_ - Start with group collapsed. Default: _false_.
+  - **procs**: _array<string>_ - List of process names to include in this group.
+    Process names must match keys defined in the **procs** section.
 - **keymap_procs**: _object_ - Key bindings for process list. See
   [Keymap](#keymap).
 - **keymap_term**: _object_ - Key bindings for terminal window. See
@@ -295,6 +300,7 @@ Process list focused:
 - `C-y` - Scroll output up by 3 lines
 - `z` - Zoom into terminal window
 - `v` - Enter copy mode
+- `Enter` or `Space` - Toggle selected group (expand/collapse)
 
 Process output focused:
 
@@ -363,6 +369,12 @@ Commands are encoded as yaml. Available commands:
 - `{c: send-key, key: "<KEY>"}` - Send key to current process. Key examples:
   `<C-a>`, `<Enter>`
 - `{c: batch, cmds: [{c: focus-procs}, …]}` - Send multiple commands
+- `{c: toggle-group, name: "<GROUP NAME>"}` - Toggle a group's collapsed state
+- `{c: collapse-group, name: "<GROUP NAME>"}` - Collapse a group
+- `{c: expand-group, name: "<GROUP NAME>"}` - Expand a group
+- `{c: collapse-all-groups}` - Collapse all groups
+- `{c: expand-all-groups}` - Expand all groups
+- `{c: toggle-selected-group}` - Toggle the currently selected group
 
 ## FAQ
 
