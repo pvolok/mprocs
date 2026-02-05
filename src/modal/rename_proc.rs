@@ -1,17 +1,18 @@
-use crossterm::event::{Event, KeyCode, KeyEvent};
 use tui_input::Input;
 
 use crate::{
   app::LoopAction,
   event::AppEvent,
   kernel::kernel_message::ProcContext,
+  key::{Key, KeyCode},
   state::State,
+  term::TermEvent,
   vt100::{
     attrs::Attrs,
     grid::{BorderType, Pos, Rect},
     Grid,
   },
-  widgets::text_input::render_text_input,
+  widgets::text_input::{render_text_input, to_input_request},
 };
 
 use super::modal::Modal;
@@ -35,14 +36,14 @@ impl Modal for RenameProcModal {
     &mut self,
     _state: &mut State,
     loop_action: &mut LoopAction,
-    event: &Event,
+    event: &TermEvent,
   ) -> bool {
     match event {
-      Event::Key(KeyEvent {
+      TermEvent::Key(Key {
         code: KeyCode::Enter,
-        modifiers,
+        mods,
         ..
-      }) if modifiers.is_empty() => {
+      }) if mods.is_empty() => {
         self.pc.send_self_custom(AppEvent::CloseCurrentModal);
         self.pc.send_self_custom(AppEvent::RenameProc {
           name: self.input.value().to_string(),
@@ -50,11 +51,11 @@ impl Modal for RenameProcModal {
         // Skip because RenameProc event will immediately rerender.
         return true;
       }
-      Event::Key(KeyEvent {
+      TermEvent::Key(Key {
         code: KeyCode::Esc,
-        modifiers,
+        mods,
         ..
-      }) if modifiers.is_empty() => {
+      }) if mods.is_empty() => {
         self.pc.send_self_custom(AppEvent::CloseCurrentModal);
         loop_action.render();
         return true;
@@ -62,7 +63,7 @@ impl Modal for RenameProcModal {
       _ => (),
     }
 
-    let req = tui_input::backend::crossterm::to_input_request(event);
+    let req = to_input_request(event);
     if let Some(req) = req {
       self.input.handle(req);
       loop_action.render();
@@ -70,15 +71,15 @@ impl Modal for RenameProcModal {
     }
 
     match event {
-      Event::FocusGained => false,
-      Event::FocusLost => false,
+      TermEvent::FocusGained => false,
+      TermEvent::FocusLost => false,
       // Block keys
-      Event::Key(_) => true,
+      TermEvent::Key(_) => true,
       // Block mouse
-      Event::Mouse(_) => true,
+      TermEvent::Mouse(_) => true,
       // Block paste
-      Event::Paste(_) => true,
-      Event::Resize(_, _) => false,
+      TermEvent::Paste(_) => true,
+      TermEvent::Resize(_, _) => false,
     }
   }
 

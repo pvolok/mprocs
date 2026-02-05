@@ -3,7 +3,6 @@ use std::future::pending;
 use std::path::PathBuf;
 
 use assert_matches::assert_matches;
-use crossterm::event::MouseEventKind;
 use tokio::io::AsyncWriteExt;
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -14,7 +13,7 @@ use crate::error::ResultLogger;
 use crate::kernel::kernel_message::{KernelCommand, ProcContext};
 use crate::kernel::proc::{ProcId, ProcInit, ProcStatus};
 use crate::key::Key;
-use crate::mouse::MouseEvent;
+use crate::mouse::{MouseEvent, MouseEventKind};
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
 use crate::vt100::grid::Rect;

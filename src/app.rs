@@ -1,9 +1,6 @@
 use std::{any::Any, collections::HashMap, fmt::Debug, time::Instant};
 
 use anyhow::bail;
-use crossterm::event::{
-  Event, KeyEvent, KeyEventKind, MouseButton, MouseEventKind,
-};
 use futures::{future::FutureExt, select};
 use serde::{Deserialize, Serialize};
 use tokio::{io::AsyncReadExt, sync::mpsc::UnboundedReceiver};
@@ -17,14 +14,14 @@ use crate::{
     kernel_message::{KernelCommand, ProcContext, ProcSender},
     proc::{ProcId, ProcInit, ProcStatus},
   },
-  key::Key,
+  key::{Key, KeyEventKind},
   keymap::Keymap,
   modal::{
     add_proc::AddProcModal, commands_menu::CommandsMenuModal, modal::Modal,
     quit::QuitModal, remove_proc::RemoveProcModal,
     rename_proc::RenameProcModal,
   },
-  mouse::MouseEvent,
+  mouse::{MouseButton, MouseEventKind},
   proc::{
     msg::{ProcCmd, ProcUpdate},
     proc::launch_proc,
@@ -34,6 +31,7 @@ use crate::{
   protocol::{CltToSrv, SrvToClt},
   server::server_message::ServerMessage,
   state::{Scope, State},
+  term::TermEvent,
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
   ui_term::{render_term, term_check_hit},
@@ -298,9 +296,9 @@ impl App {
     &mut self,
     loop_action: &mut LoopAction,
     client_id: ClientId,
-    event: Event,
+    event: TermEvent,
   ) {
-    if let Event::Key(KeyEvent {
+    if let TermEvent::Key(Key {
       kind: KeyEventKind::Release,
       ..
     }) = event
@@ -316,13 +314,13 @@ impl App {
     }
 
     match event {
-      Event::Key(KeyEvent {
+      TermEvent::Key(Key {
         code,
-        modifiers,
+        mods,
         kind: KeyEventKind::Press | KeyEventKind::Repeat,
         state: _,
       }) => {
-        let key = Key::new(code, modifiers);
+        let key = Key::new(code, mods);
         let group = self.state.get_keymap_group();
         if let Some(bound) = self.keymap.resolve(group, &key) {
           let bound = bound.clone();
@@ -336,17 +334,19 @@ impl App {
           }
         }
       }
-      Event::Key(KeyEvent {
+      TermEvent::Key(Key {
         kind: KeyEventKind::Release,
         ..
       }) => (),
-      Event::Mouse(mev) => {
-        let mouse_event = MouseEvent::from_crossterm(mev);
-
+      TermEvent::Mouse(mouse_event) => {
         let layout = self.get_layout();
-        if term_check_hit(layout.term_area(), mev.column, mev.row) {
+        if term_check_hit(
+          layout.term_area(),
+          mouse_event.x as u16,
+          mouse_event.y as u16,
+        ) {
           if let (Scope::Procs, MouseEventKind::Down(_)) =
-            (self.state.scope, mev.kind)
+            (self.state.scope, mouse_event.kind)
           {
             self.state.scope = Scope::Term
           }
@@ -471,19 +471,23 @@ impl App {
               }
             }
           }
-        } else if procs_check_hit(layout.procs.into(), mev.column, mev.row) {
+        } else if procs_check_hit(
+          layout.procs.into(),
+          mouse_event.x as u16,
+          mouse_event.y as u16,
+        ) {
           if let (Scope::Term, MouseEventKind::Down(_)) =
-            (self.state.scope, mev.kind)
+            (self.state.scope, mouse_event.kind)
           {
             self.state.scope = Scope::Procs
           }
-          match mev.kind {
+          match mouse_event.kind {
             MouseEventKind::Down(btn) => match btn {
               MouseButton::Left => {
                 if let Some(index) = procs_get_clicked_index(
                   layout.procs.into(),
-                  mev.column,
-                  mev.row,
+                  mouse_event.x as u16,
+                  mouse_event.y as u16,
                   &self.state,
                 ) {
                   self.state.select_proc(index);
@@ -514,7 +518,7 @@ impl App {
         }
         loop_action.render();
       }
-      Event::Resize(width, height) => {
+      TermEvent::Resize(width, height) => {
         if let Some(client) =
           self.clients.iter_mut().find(|c| c.id == client_id)
         {
@@ -525,13 +529,13 @@ impl App {
 
         loop_action.render();
       }
-      Event::FocusGained => {
+      TermEvent::FocusGained => {
         log::warn!("Ignore input event: {:?}", event);
       }
-      Event::FocusLost => {
+      TermEvent::FocusLost => {
         log::warn!("Ignore input event: {:?}", event);
       }
-      Event::Paste(_) => {
+      TermEvent::Paste(_) => {
         log::warn!("Ignore input event: {:?}", event);
       }
     }

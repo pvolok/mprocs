@@ -1,8 +1,7 @@
-use crossterm::event::Event;
-
 use crate::{
   app::LoopAction,
   state::State,
+  term::TermEvent,
   vt100::{grid::Rect, Grid},
 };
 
@@ -18,7 +17,7 @@ pub trait Modal: Send {
     &mut self,
     state: &mut State,
     loop_action: &mut LoopAction,
-    event: &Event,
+    event: &TermEvent,
   ) -> bool;
 
   fn get_size(&mut self, frame_area: Rect) -> (u16, u16);

@@ -1,13 +1,12 @@
 use std::{fs::File, io::BufReader, path::PathBuf};
 
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyModifiers};
 use indexmap::IndexMap;
 use serde_yaml::Value;
 
 use crate::{
   event::{AppEvent, CopyMove},
-  key::Key,
+  key::{Key, KeyCode, KeyMods},
   keymap::Keymap,
   yaml_val::{value_to_string, Val},
 };
@@ -174,119 +173,107 @@ impl Settings {
     let s = self;
 
     s.keymap_add_p(
-      Key::new(KeyCode::Char('a'), KeyModifiers::CONTROL),
+      Key::new(KeyCode::Char('a'), KeyMods::CONTROL),
       AppEvent::ToggleFocus,
     );
     s.keymap_add_t(
-      Key::new(KeyCode::Char('a'), KeyModifiers::CONTROL),
+      Key::new(KeyCode::Char('a'), KeyMods::CONTROL),
       AppEvent::ToggleFocus,
     );
     s.keymap_add_c(
-      Key::new(KeyCode::Char('a'), KeyModifiers::CONTROL),
+      Key::new(KeyCode::Char('a'), KeyMods::CONTROL),
       AppEvent::ToggleFocus,
     );
 
     s.keymap_add_p(KeyCode::Char('q').into(), AppEvent::Quit);
     s.keymap_add_p(KeyCode::Char('Q').into(), AppEvent::ForceQuit);
     s.keymap_add_p(KeyCode::Char('p').into(), AppEvent::ShowCommandsMenu);
+    s.keymap_add_p(Key::new(KeyCode::Down, KeyMods::NONE), AppEvent::NextProc);
     s.keymap_add_p(
-      Key::new(KeyCode::Down, KeyModifiers::NONE),
+      Key::new(KeyCode::Char('j'), KeyMods::NONE),
       AppEvent::NextProc,
     );
+    s.keymap_add_p(Key::new(KeyCode::Up, KeyMods::NONE), AppEvent::PrevProc);
     s.keymap_add_p(
-      Key::new(KeyCode::Char('j'), KeyModifiers::NONE),
-      AppEvent::NextProc,
-    );
-    s.keymap_add_p(
-      Key::new(KeyCode::Up, KeyModifiers::NONE),
+      Key::new(KeyCode::Char('k'), KeyMods::NONE),
       AppEvent::PrevProc,
     );
     s.keymap_add_p(
-      Key::new(KeyCode::Char('k'), KeyModifiers::NONE),
-      AppEvent::PrevProc,
-    );
-    s.keymap_add_p(
-      Key::new(KeyCode::Char('s'), KeyModifiers::NONE),
+      Key::new(KeyCode::Char('s'), KeyMods::NONE),
       AppEvent::StartProc,
     );
     s.keymap_add_p(
-      Key::new(KeyCode::Char('x'), KeyModifiers::NONE),
+      Key::new(KeyCode::Char('x'), KeyMods::NONE),
       AppEvent::TermProc,
     );
     s.keymap_add_p(
-      Key::new(KeyCode::Char('X'), KeyModifiers::NONE),
+      Key::new(KeyCode::Char('X'), KeyMods::NONE),
       AppEvent::KillProc,
     );
     s.keymap_add_p(
-      Key::new(KeyCode::Char('r'), KeyModifiers::NONE),
+      Key::new(KeyCode::Char('r'), KeyMods::NONE),
       AppEvent::RestartProc,
     );
     s.keymap_add_p(
-      Key::new(KeyCode::Char('R'), KeyModifiers::NONE),
+      Key::new(KeyCode::Char('R'), KeyMods::NONE),
       AppEvent::ForceRestartProc,
     );
     s.keymap_add_p(
-      Key::new(KeyCode::Char('e'), KeyModifiers::NONE),
+      Key::new(KeyCode::Char('e'), KeyMods::NONE),
       AppEvent::ShowRenameProc,
     );
-    let ctrlc = Key::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+    let ctrlc = Key::new(KeyCode::Char('c'), KeyMods::CONTROL);
     s.keymap_add_p(ctrlc, AppEvent::SendKey { key: ctrlc });
     s.keymap_add_p(
-      Key::new(KeyCode::Char('a'), KeyModifiers::NONE),
+      Key::new(KeyCode::Char('a'), KeyMods::NONE),
       AppEvent::ShowAddProc,
     );
     s.keymap_add_p(
-      Key::new(KeyCode::Char('C'), KeyModifiers::NONE),
+      Key::new(KeyCode::Char('C'), KeyMods::NONE),
       AppEvent::DuplicateProc,
     );
     s.keymap_add_p(
-      Key::new(KeyCode::Char('d'), KeyModifiers::NONE),
+      Key::new(KeyCode::Char('d'), KeyMods::NONE),
       AppEvent::ShowRemoveProc,
     );
 
     // Scrolling in TERM and COPY modes
     for map in [&mut s.keymap_procs, &mut s.keymap_copy] {
       map.insert(
-        Key::new(KeyCode::Char('y'), KeyModifiers::CONTROL),
+        Key::new(KeyCode::Char('y'), KeyMods::CONTROL),
         AppEvent::ScrollUpLines { n: 3 },
       );
       map.insert(
-        Key::new(KeyCode::Char('e'), KeyModifiers::CONTROL),
+        Key::new(KeyCode::Char('e'), KeyMods::CONTROL),
         AppEvent::ScrollDownLines { n: 3 },
       );
-      let ctrlu = Key::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
+      let ctrlu = Key::new(KeyCode::Char('u'), KeyMods::CONTROL);
       map.insert(ctrlu, AppEvent::ScrollUp);
-      map.insert(
-        Key::new(KeyCode::PageUp, KeyModifiers::NONE),
-        AppEvent::ScrollUp,
-      );
-      let ctrld = Key::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
+      map.insert(Key::new(KeyCode::PageUp, KeyMods::NONE), AppEvent::ScrollUp);
+      let ctrld = Key::new(KeyCode::Char('d'), KeyMods::CONTROL);
       map.insert(ctrld, AppEvent::ScrollDown);
       map.insert(
-        Key::new(KeyCode::PageDown, KeyModifiers::NONE),
+        Key::new(KeyCode::PageDown, KeyMods::NONE),
         AppEvent::ScrollDown,
       );
     }
 
-    s.keymap_add_p(
-      Key::new(KeyCode::Char('z'), KeyModifiers::NONE),
-      AppEvent::Zoom,
-    );
+    s.keymap_add_p(Key::new(KeyCode::Char('z'), KeyMods::NONE), AppEvent::Zoom);
 
     s.keymap_add_p(
-      Key::new(KeyCode::Char('?'), KeyModifiers::NONE),
+      Key::new(KeyCode::Char('?'), KeyMods::NONE),
       AppEvent::ToggleKeymapWindow,
     );
 
     s.keymap_add_p(
-      Key::new(KeyCode::Char('v'), KeyModifiers::NONE),
+      Key::new(KeyCode::Char('v'), KeyMods::NONE),
       AppEvent::CopyModeEnter,
     );
 
     for i in 0..8 {
       let char = char::from_digit(i + 1, 10).unwrap();
       s.keymap_add_p(
-        Key::new(KeyCode::Char(char), KeyModifiers::ALT),
+        Key::new(KeyCode::Char(char), KeyMods::ALT),
         AppEvent::SelectProc { index: i as usize },
       );
     }

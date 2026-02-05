@@ -1,9 +1,11 @@
 use std::fmt::Write;
 
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind};
 
-use crate::{key::Key, mouse::MouseEvent};
+use crate::{
+  key::{Key, KeyCode, KeyMods},
+  mouse::{MouseButton, MouseEvent, MouseEventKind},
+};
 
 pub const CSI: &str = "\x1b[";
 pub const SS3: &str = "\x1bO";
@@ -49,9 +51,9 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
   let mods = match code {
     Char(c)
       if (c.is_ascii_punctuation() || c.is_ascii_uppercase())
-        && mods.contains(KeyModifiers::SHIFT) =>
+        && mods.contains(KeyMods::SHIFT) =>
     {
-      mods.difference(KeyModifiers::SHIFT)
+      mods.difference(KeyMods::SHIFT)
     }
     _ => mods,
   };
@@ -68,22 +70,18 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
   match code {
     Char(c)
       if is_ambiguous_ascii_ctrl(c)
-        && mods.contains(KeyModifiers::CONTROL)
+        && mods.contains(KeyMods::CONTROL)
         && modes.enable_csi_u_key_encoding =>
     {
       csi_u_encode(&mut buf, c, mods, modes.enable_csi_u_key_encoding)?;
     }
-    Char(c)
-      if c.is_ascii_uppercase() && mods.contains(KeyModifiers::CONTROL) =>
-    {
+    Char(c) if c.is_ascii_uppercase() && mods.contains(KeyMods::CONTROL) => {
       csi_u_encode(&mut buf, c, mods, modes.enable_csi_u_key_encoding)?;
     }
 
-    Char(c)
-      if mods.contains(KeyModifiers::CONTROL) && ctrl_mapping(c).is_some() =>
-    {
+    Char(c) if mods.contains(KeyMods::CONTROL) && ctrl_mapping(c).is_some() => {
       let c = ctrl_mapping(c).unwrap();
-      if mods.contains(KeyModifiers::ALT) {
+      if mods.contains(KeyMods::ALT) {
         buf.push(0x1b as char);
       }
       buf.push(c);
@@ -96,7 +94,7 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
     // <fffffffff> as the input, so we want to avoid that.
     Char(c)
       if (c.is_ascii_alphanumeric() || c.is_ascii_punctuation())
-        && mods.contains(KeyModifiers::ALT) =>
+        && mods.contains(KeyMods::ALT) =>
     {
       buf.push(0x1b as char);
       buf.push(c);
@@ -111,12 +109,10 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
         Backspace => '\x7f',
         _ => unreachable!(),
       };
-      if mods.contains(KeyModifiers::SHIFT)
-        || mods.contains(KeyModifiers::CONTROL)
-      {
+      if mods.contains(KeyMods::SHIFT) || mods.contains(KeyMods::CONTROL) {
         csi_u_encode(&mut buf, c, mods, modes.enable_csi_u_key_encoding)?;
       } else {
-        if mods.contains(KeyModifiers::ALT) {
+        if mods.contains(KeyMods::ALT) {
           buf.push(0x1b as char);
         }
         buf.push(c);
@@ -127,23 +123,19 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
     }
 
     Tab => {
-      if mods.contains(KeyModifiers::ALT) {
+      if mods.contains(KeyMods::ALT) {
         buf.push(0x1b as char);
       }
-      let mods = mods & !KeyModifiers::ALT;
-      if mods == KeyModifiers::CONTROL {
+      let mods = mods & !KeyMods::ALT;
+      if mods == KeyMods::CONTROL {
         buf.push_str("\x1b[9;5u");
-      } else if mods == KeyModifiers::CONTROL | KeyModifiers::SHIFT {
+      } else if mods == KeyMods::CONTROL | KeyMods::SHIFT {
         buf.push_str("\x1b[1;5Z");
-      } else if mods == KeyModifiers::SHIFT {
+      } else if mods == KeyMods::SHIFT {
         buf.push_str("\x1b[Z");
       } else {
         buf.push('\t');
       }
-    }
-
-    BackTab => {
-      buf.push_str("\x1b[Z");
     }
 
     Char(c) => {
@@ -180,9 +172,9 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
         CSI
       };
 
-      if mods.contains(KeyModifiers::ALT)
-        || mods.contains(KeyModifiers::SHIFT)
-        || mods.contains(KeyModifiers::CONTROL)
+      if mods.contains(KeyMods::ALT)
+        || mods.contains(KeyMods::SHIFT)
+        || mods.contains(KeyMods::CONTROL)
       {
         write!(buf, "{}1;{}{}", CSI, 1 + encode_modifiers(mods), c)?;
       } else {
@@ -199,9 +191,9 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
         _ => unreachable!(),
       };
 
-      if mods.contains(KeyModifiers::ALT)
-        || mods.contains(KeyModifiers::SHIFT)
-        || mods.contains(KeyModifiers::CONTROL)
+      if mods.contains(KeyMods::ALT)
+        || mods.contains(KeyMods::SHIFT)
+        || mods.contains(KeyMods::CONTROL)
       {
         write!(buf, "\x1b[{};{}~", c, 1 + encode_modifiers(mods))?;
       } else {
@@ -264,15 +256,15 @@ pub fn encode_key(key: &Key, modes: KeyCodeEncodeModes) -> Result<String> {
   Ok(buf)
 }
 
-fn encode_modifiers(mods: KeyModifiers) -> u8 {
+fn encode_modifiers(mods: KeyMods) -> u8 {
   let mut number = 0;
-  if mods.contains(KeyModifiers::SHIFT) {
+  if mods.contains(KeyMods::SHIFT) {
     number |= 1;
   }
-  if mods.contains(KeyModifiers::ALT) {
+  if mods.contains(KeyMods::ALT) {
     number |= 2;
   }
-  if mods.contains(KeyModifiers::CONTROL) {
+  if mods.contains(KeyMods::CONTROL) {
     number |= 4;
   }
   number
@@ -338,19 +330,18 @@ fn ctrl_mapping(c: char) -> Option<char> {
 fn csi_u_encode(
   buf: &mut String,
   c: char,
-  mods: KeyModifiers,
+  mods: KeyMods,
   enable_csi_u_key_encoding: bool,
 ) -> Result<()> {
   if enable_csi_u_key_encoding {
     write!(buf, "\x1b[{};{}u", c as u32, 1 + encode_modifiers(mods))?;
   } else {
-    let c = if mods.contains(KeyModifiers::CONTROL) && ctrl_mapping(c).is_some()
-    {
+    let c = if mods.contains(KeyMods::CONTROL) && ctrl_mapping(c).is_some() {
       ctrl_mapping(c).unwrap()
     } else {
       c
     };
-    if mods.contains(KeyModifiers::ALT) {
+    if mods.contains(KeyMods::ALT) {
       buf.push(0x1b as char);
     }
     write!(buf, "{}", c)?;
@@ -366,9 +357,9 @@ fn csi_u_encode(
 /// In fact, this function might be better off if it lived elsewhere.
 pub fn normalize_shift_to_upper_case(
   code: KeyCode,
-  modifiers: &KeyModifiers,
+  modifiers: &KeyMods,
 ) -> KeyCode {
-  if modifiers.contains(KeyModifiers::SHIFT) {
+  if modifiers.contains(KeyMods::SHIFT) {
     match code {
       KeyCode::Char(c) if c.is_ascii_lowercase() => KeyCode::Char(c),
       _ => code,
@@ -388,13 +379,13 @@ pub fn encode_key_win32(
   // defines the dwControlKeyState values
   let mut control_key_state = 0;
 
-  if key.mods().contains(KeyModifiers::SHIFT) {
+  if key.mods().contains(KeyMods::SHIFT) {
     control_key_state |= winapi::um::wincon::SHIFT_PRESSED;
   }
-  if key.mods().contains(KeyModifiers::ALT) {
+  if key.mods().contains(KeyMods::ALT) {
     control_key_state |= winapi::um::wincon::LEFT_ALT_PRESSED;
   }
-  if key.mods().contains(KeyModifiers::CONTROL) {
+  if key.mods().contains(KeyMods::CONTROL) {
     control_key_state |= winapi::um::wincon::LEFT_CTRL_PRESSED;
   }
 
@@ -406,9 +397,9 @@ pub fn encode_key_win32(
         '\x7f' => '\x00',
         // Backspace key is transmitted as 0x8, 0x7f or 0x0
         '\x08' => {
-          if key.mods().contains(KeyModifiers::CONTROL) {
-            if key.mods().contains(KeyModifiers::ALT)
-              || key.mods().contains(KeyModifiers::SHIFT)
+          if key.mods().contains(KeyMods::CONTROL) {
+            if key.mods().contains(KeyMods::ALT)
+              || key.mods().contains(KeyMods::SHIFT)
             {
               '\x00'
             } else {
@@ -421,7 +412,7 @@ pub fn encode_key_win32(
         _ => c,
       };
 
-      let c = if key.mods().contains(KeyModifiers::CONTROL) {
+      let c = if key.mods().contains(KeyMods::CONTROL) {
         // Ensure that we rewrite the unicode value to the ASCII CTRL
         // equivalent value.
         // <https://github.com/microsoft/terminal/issues/13134>
@@ -521,13 +512,13 @@ fn virtual_key_code(code: &KeyCode) -> Option<i32> {
 pub fn print_key(key: &Key) -> String {
   let mut buf = String::new();
 
-  if key.mods().contains(KeyModifiers::CONTROL) {
+  if key.mods().contains(KeyMods::CONTROL) {
     buf.push_str("C-");
   }
-  if key.mods().contains(KeyModifiers::SHIFT) {
+  if key.mods().contains(KeyMods::SHIFT) {
     buf.push_str("S-");
   }
-  if key.mods().contains(KeyModifiers::ALT) {
+  if key.mods().contains(KeyMods::ALT) {
     buf.push_str("M-");
   }
 
@@ -543,7 +534,6 @@ pub fn print_key(key: &Key) -> String {
     KeyCode::PageUp => buf.push_str("PgUp"),
     KeyCode::PageDown => buf.push_str("PgDn"),
     KeyCode::Tab => buf.push_str("Tab"),
-    KeyCode::BackTab => buf.push_str("BackTab"),
     KeyCode::Delete => buf.push_str("Del"),
     KeyCode::Insert => buf.push_str("Ins"),
     KeyCode::F(n) => buf.push_str(&format!("F{}", n)),

@@ -1,5 +1,5 @@
 use anyhow::bail;
-use crossterm::event::{KeyCode, KeyModifiers};
+use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
 static KEYS: phf::Map<&'static str, KeyCode> = phf::phf_map! {
@@ -49,13 +49,33 @@ static SPECIAL_CHARS: phf::Map<char, &str> = phf::phf_map! {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Key {
-  code: KeyCode,
-  mods: KeyModifiers,
+  pub code: KeyCode,
+  pub mods: KeyMods,
+  pub kind: KeyEventKind,
+  pub state: KeyEventState,
 }
 
 impl Key {
-  pub fn new(code: KeyCode, mods: KeyModifiers) -> Key {
-    Self { code, mods }
+  pub fn new(code: KeyCode, mods: KeyMods) -> Key {
+    Self {
+      code,
+      mods,
+      kind: KeyEventKind::Press,
+      state: KeyEventState::empty(),
+    }
+  }
+
+  pub const fn new_with_kind(
+    code: KeyCode,
+    mods: KeyMods,
+    kind: KeyEventKind,
+  ) -> Key {
+    Key {
+      code,
+      mods,
+      kind,
+      state: KeyEventState::empty(),
+    }
   }
 
   pub fn parse(text: &str) -> anyhow::Result<Key> {
@@ -66,14 +86,14 @@ impl Key {
     self.code
   }
 
-  pub fn mods(&self) -> KeyModifiers {
+  pub fn mods(&self) -> KeyMods {
     self.mods
   }
 }
 
 impl From<KeyCode> for Key {
   fn from(code: KeyCode) -> Self {
-    Key::new(code, KeyModifiers::NONE)
+    Key::new(code, KeyMods::NONE)
   }
 }
 
@@ -84,13 +104,13 @@ impl ToString for Key {
     buf.push('<');
 
     let mods = self.mods;
-    if mods.intersects(KeyModifiers::CONTROL) {
+    if mods.intersects(KeyMods::CONTROL) {
       buf.push_str("C-");
     }
-    if mods.intersects(KeyModifiers::SHIFT) {
+    if mods.intersects(KeyMods::SHIFT) {
       buf.push_str("S-");
     }
-    if mods.intersects(KeyModifiers::ALT) {
+    if mods.intersects(KeyMods::ALT) {
       buf.push_str("M-");
     }
 
@@ -106,7 +126,6 @@ impl ToString for Key {
       KeyCode::PageUp => buf.push_str("PageUp"),
       KeyCode::PageDown => buf.push_str("PageDown"),
       KeyCode::Tab => buf.push_str("Tab"),
-      KeyCode::BackTab => buf.push_str("S-Tab"),
       KeyCode::Delete => buf.push_str("Del"),
       KeyCode::Insert => buf.push_str("Insert"),
       KeyCode::F(n) => {
@@ -129,9 +148,23 @@ impl ToString for Key {
       KeyCode::Pause => buf.push_str("Pause"),
       KeyCode::Menu => buf.push_str("Menu"),
       KeyCode::KeypadBegin => buf.push_str("KeypadBegin"),
-      KeyCode::Media(_code) => {
-        // TODO
-        buf.push_str("Nul");
+      KeyCode::Media(code) => {
+        let s = match code {
+          MediaKeyCode::Play => "MediaPlay",
+          MediaKeyCode::Pause => "MediaPause",
+          MediaKeyCode::PlayPause => "MediaPlayPause",
+          MediaKeyCode::Reverse => "MediaReverse",
+          MediaKeyCode::Stop => "MediaStop",
+          MediaKeyCode::FastForward => "MediaFastForward",
+          MediaKeyCode::Rewind => "MediaRewind",
+          MediaKeyCode::Next => "MediaNext",
+          MediaKeyCode::Prev => "MediaPrev",
+          MediaKeyCode::Record => "MediaRecord",
+          MediaKeyCode::VolumeDown => "VolumeDown",
+          MediaKeyCode::VolumeUp => "VolumeUp",
+          MediaKeyCode::VolumeMute => "VolumeMute",
+        };
+        buf.push_str(s);
       }
       KeyCode::Modifier(_code) => {
         // TODO
@@ -162,6 +195,111 @@ impl<'de> Deserialize<'de> for Key {
     let text = String::deserialize(deserializer)?;
     Key::parse(text.as_str())
       .map_err(|err| serde::de::Error::custom(err.to_string()))
+  }
+}
+
+#[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum KeyCode {
+  Backspace,
+  Enter,
+  Left,
+  Right,
+  Up,
+  Down,
+  Home,
+  End,
+  PageUp,
+  PageDown,
+  Tab,
+  Delete,
+  Insert,
+  F(u8),
+  Char(char),
+  Null,
+  Esc,
+
+  CapsLock,
+  ScrollLock,
+  NumLock,
+  PrintScreen,
+  Pause,
+  Menu,
+  /// The "Begin" key (on X11 mapped to the 5 key when Num Lock is turned on).
+  KeypadBegin,
+  Media(MediaKeyCode),
+  Modifier(ModKeyCode),
+}
+
+#[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum KeyEventKind {
+  Press,
+  Repeat,
+  Release,
+}
+
+bitflags! {
+  #[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy, Hash)]
+  pub struct KeyEventState: u8 {
+    /// The key event origins from the keypad.
+    const KEYPAD = 0b0000_0001;
+    /// Caps Lock was enabled for this key event.
+    ///
+    /// **Note:** this is set for the initial press of Caps Lock itself.
+    const CAPS_LOCK = 0b0000_0010;
+    /// Num Lock was enabled for this key event.
+    ///
+    /// **Note:** this is set for the initial press of Num Lock itself.
+    const NUM_LOCK = 0b0000_0100;
+    const NONE = 0b0000_0000;
+  }
+}
+
+#[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum MediaKeyCode {
+  Play,
+  Pause,
+  PlayPause,
+  Reverse,
+  Stop,
+  FastForward,
+  Rewind,
+  Next,
+  Prev,
+  Record,
+  VolumeDown,
+  VolumeUp,
+  VolumeMute,
+}
+
+/// Represents a modifier key (as part of [`KeyCode::Modifier`]).
+#[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum ModKeyCode {
+  LeftShift,
+  LeftControl,
+  LeftAlt,
+  LeftSuper,
+  LeftHyper,
+  LeftMeta,
+  RightShift,
+  RightControl,
+  RightAlt,
+  RightSuper,
+  RightHyper,
+  RightMeta,
+  IsoLevel3Shift,
+  IsoLevel5Shift,
+}
+
+bitflags! {
+  #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+  pub struct KeyMods: u8 {
+    const SHIFT = 0b0000_0001;
+    const CONTROL = 0b0000_0010;
+    const ALT = 0b0000_0100;
+    const SUPER = 0b0000_1000;
+    const HYPER = 0b0001_0000;
+    const META = 0b0010_0000;
+    const NONE = 0b0000_0000;
   }
 }
 
@@ -225,14 +363,14 @@ impl KeyParser<'_> {
     Ok(&self.text[start..next_pos])
   }
 
-  fn take_mods(&mut self) -> anyhow::Result<KeyModifiers> {
-    let mut mods = KeyModifiers::NONE;
+  fn take_mods(&mut self) -> anyhow::Result<KeyMods> {
+    let mut mods = KeyMods::NONE;
     let mut pos = self.pos;
     while pos + 1 < self.text.len() && &self.text[pos + 1..pos + 2] == "-" {
       match &self.text[pos..pos + 1] {
-        "c" | "C" => mods = mods.union(KeyModifiers::CONTROL),
-        "s" | "S" => mods = mods.union(KeyModifiers::SHIFT),
-        "m" | "M" => mods = mods.union(KeyModifiers::ALT),
+        "c" | "C" => mods = mods.union(KeyMods::CONTROL),
+        "s" | "S" => mods = mods.union(KeyMods::SHIFT),
+        "m" | "M" => mods = mods.union(KeyMods::ALT),
         ch => bail!("Wrong key modifier: \"{}\"", ch),
       }
       pos += 2;
@@ -252,41 +390,38 @@ mod tests {
   fn parse() {
     assert_eq!(
       Key::parse("<Tab>").unwrap(),
-      Key::new(KeyCode::Tab, KeyModifiers::NONE)
+      Key::new(KeyCode::Tab, KeyMods::NONE)
     );
     assert_eq!(
       Key::parse("<C-Enter>").unwrap(),
-      Key::new(KeyCode::Enter, KeyModifiers::CONTROL)
+      Key::new(KeyCode::Enter, KeyMods::CONTROL)
     );
     assert_eq!(
       Key::parse("<C-Esc>").unwrap(),
-      Key::new(KeyCode::Esc, KeyModifiers::CONTROL)
+      Key::new(KeyCode::Esc, KeyMods::CONTROL)
     );
 
     assert_eq!(
       Key::parse("<F1>").unwrap(),
-      Key::new(KeyCode::F(1), KeyModifiers::NONE)
+      Key::new(KeyCode::F(1), KeyMods::NONE)
     );
     assert_eq!(
       Key::parse("<f12>").unwrap(),
-      Key::new(KeyCode::F(12), KeyModifiers::NONE)
+      Key::new(KeyCode::F(12), KeyMods::NONE)
     );
     assert_matches!(Key::parse("<F13>"), Err(_));
 
     assert_eq!(
       Key::parse("<a>").unwrap(),
-      Key::new(KeyCode::Char('a'), KeyModifiers::NONE)
+      Key::new(KeyCode::Char('a'), KeyMods::NONE)
     );
     assert_eq!(
       Key::parse("<C-a>").unwrap(),
-      Key::new(KeyCode::Char('a'), KeyModifiers::CONTROL)
+      Key::new(KeyCode::Char('a'), KeyMods::CONTROL)
     );
     assert_eq!(
       Key::parse("<C-M-a>").unwrap(),
-      Key::new(
-        KeyCode::Char('a'),
-        KeyModifiers::CONTROL | KeyModifiers::ALT
-      )
+      Key::new(KeyCode::Char('a'), KeyMods::CONTROL | KeyMods::ALT)
     );
   }
 

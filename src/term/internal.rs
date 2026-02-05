@@ -1,8 +1,8 @@
-use crossterm::event::{KeyEvent, MouseEvent};
+use crate::{key::Key, mouse::MouseEvent};
 
 #[derive(Clone, Debug)]
 pub enum InternalTermEvent {
-  Key(KeyEvent),
+  Key(Key),
   Mouse(MouseEvent),
   Resize(u16, u16),
   FocusGained,

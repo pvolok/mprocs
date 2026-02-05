@@ -1,10 +1,13 @@
 use anyhow::{anyhow, bail, Context};
-use crossterm::event::{
-  KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MediaKeyCode,
-  ModifierKeyCode, MouseButton, MouseEvent, MouseEventKind,
-};
 
-use crate::term::internal::InternalTermEvent as E;
+use crate::{
+  key::{
+    Key, KeyCode, KeyEventKind, KeyEventState, KeyMods, MediaKeyCode,
+    ModKeyCode,
+  },
+  mouse::{MouseButton, MouseEvent, MouseEventKind},
+  term::internal::InternalTermEvent as E,
+};
 
 pub struct InputParser {
   buf: Vec<u8>,
@@ -33,7 +36,7 @@ impl InputParser {
     let mut i = 0;
     let mut consumed = 0;
 
-    use crossterm::event::KeyModifiers as Mods;
+    use crate::key::KeyMods as Mods;
 
     self.buf.extend_from_slice(input);
     let buf = &self.buf;
@@ -47,7 +50,7 @@ impl InputParser {
             if more {
               break;
             } else {
-              f(E::Key(KeyEvent::new(KeyCode::Esc, Mods::NONE)));
+              f(E::Key(Key::new(KeyCode::Esc, Mods::NONE)));
               consumed = i;
               continue;
             }
@@ -64,34 +67,31 @@ impl InputParser {
               match next_char {
                 b'A' => {
                   consumed = i;
-                  f(E::Key(KeyEvent::new(KeyCode::Up, Mods::NONE)));
+                  f(E::Key(Key::new(KeyCode::Up, Mods::NONE)));
                 }
                 b'B' => {
                   consumed = i;
-                  f(E::Key(KeyEvent::new(KeyCode::Down, Mods::NONE)));
+                  f(E::Key(Key::new(KeyCode::Down, Mods::NONE)));
                 }
                 b'C' => {
                   consumed = i;
-                  f(E::Key(KeyEvent::new(KeyCode::Right, Mods::NONE)));
+                  f(E::Key(Key::new(KeyCode::Right, Mods::NONE)));
                 }
                 b'D' => {
                   consumed = i;
-                  f(E::Key(KeyEvent::new(KeyCode::Left, Mods::NONE)));
+                  f(E::Key(Key::new(KeyCode::Left, Mods::NONE)));
                 }
                 b'F' => {
                   consumed = i;
-                  f(E::Key(KeyEvent::new(KeyCode::End, Mods::NONE)));
+                  f(E::Key(Key::new(KeyCode::End, Mods::NONE)));
                 }
                 b'H' => {
                   consumed = i;
-                  f(E::Key(KeyEvent::new(KeyCode::Home, Mods::NONE)));
+                  f(E::Key(Key::new(KeyCode::Home, Mods::NONE)));
                 }
                 val @ b'P'..=b'S' => {
                   consumed = i;
-                  f(E::Key(KeyEvent::new(
-                    KeyCode::F(1 + val - b'P'),
-                    Mods::NONE,
-                  )));
+                  f(E::Key(Key::new(KeyCode::F(1 + val - b'P'), Mods::NONE)));
                 }
                 _ => {
                   consumed = i;
@@ -113,12 +113,12 @@ impl InputParser {
                 i += 3;
                 consumed = i;
                 match parse_cb(b) {
-                  Ok((kind, modifiers)) => {
+                  Ok((kind, mods)) => {
                     f(E::Mouse(MouseEvent {
                       kind,
-                      modifiers,
-                      column: x,
-                      row: y,
+                      mods,
+                      x: x as i32,
+                      y: y as i32,
                     }));
                   }
                   Err(err) => {
@@ -140,7 +140,7 @@ impl InputParser {
               }
             }
             b'\x1B' => {
-              f(E::Key(KeyEvent::new(KeyCode::Esc, Mods::NONE)));
+              f(E::Key(Key::new(KeyCode::Esc, Mods::NONE)));
               consumed = i;
             }
             c => {
@@ -148,7 +148,7 @@ impl InputParser {
                 Ok((used, key)) => {
                   i += used;
                   if let Some(mut key) = key {
-                    key.modifiers |= Mods::ALT;
+                    key.mods |= Mods::ALT;
                     f(E::Key(key));
                   }
                 }
@@ -183,25 +183,22 @@ impl InputParser {
   }
 }
 
-fn parse_char_key(
-  c: u8,
-  buf: &[u8],
-) -> anyhow::Result<(usize, Option<KeyEvent>)> {
-  use crossterm::event::KeyModifiers as Mods;
+fn parse_char_key(c: u8, buf: &[u8]) -> anyhow::Result<(usize, Option<Key>)> {
+  use crate::key::KeyMods as Mods;
 
   let mut i = 0;
   let key = match c {
-    b'\r' => KeyEvent::new(KeyCode::Enter, Mods::NONE),
-    b'\n' => KeyEvent::new(KeyCode::Enter, Mods::NONE),
-    b'\t' => KeyEvent::new(KeyCode::Tab, Mods::NONE),
-    b'\x7F' => KeyEvent::new(KeyCode::Backspace, Mods::NONE),
+    b'\r' => Key::new(KeyCode::Enter, Mods::NONE),
+    b'\n' => Key::new(KeyCode::Enter, Mods::NONE),
+    b'\t' => Key::new(KeyCode::Tab, Mods::NONE),
+    b'\x7F' => Key::new(KeyCode::Backspace, Mods::NONE),
     c @ b'\x01'..=b'\x1A' => {
-      KeyEvent::new(KeyCode::Char((c - 0x1 + b'a') as char), Mods::CONTROL)
+      Key::new(KeyCode::Char((c - 0x1 + b'a') as char), Mods::CONTROL)
     }
     c @ b'\x1C'..=b'\x1F' => {
-      KeyEvent::new(KeyCode::Char((c - 0x1C + b'4') as char), Mods::CONTROL)
+      Key::new(KeyCode::Char((c - 0x1C + b'4') as char), Mods::CONTROL)
     }
-    b'\0' => KeyEvent::new(KeyCode::Char(' '), Mods::CONTROL),
+    b'\0' => Key::new(KeyCode::Char(' '), Mods::CONTROL),
     first_byte => {
       let char_len = utf8_char_len(first_byte);
       if char_len == 0 {
@@ -213,7 +210,7 @@ fn parse_char_key(
         match char {
           Ok(s) => {
             let char = s.chars().next().unwrap();
-            KeyEvent::new(KeyCode::Char(char), Mods::NONE)
+            Key::new(KeyCode::Char(char), Mods::NONE)
           }
           Err(_) => {
             bail!("Invalid utf-8 char");
@@ -304,16 +301,16 @@ where
         );
         (mods, kind)
       } else {
-        (KeyModifiers::NONE, KeyEventKind::Press)
+        (KeyMods::NONE, KeyEventKind::Press)
       };
 
-      f(E::Key(KeyEvent::new_with_kind(code, mods, kind)));
+      f(E::Key(Key::new_with_kind(code, mods, kind)));
     }
     b'c' if params.starts_with(b"?") => {
       f(E::PrimaryDeviceAttributes);
     }
     b'Z' => {
-      f(E::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)));
+      f(E::Key(Key::new(KeyCode::Tab, KeyMods::SHIFT)));
     }
     b'I' => {
       f(E::FocusGained);
@@ -353,13 +350,7 @@ where
                 // enter raw mode, we disable that, so \n no longer has any meaning - it's better to
                 // use Ctrl+J. Waiting to handle it here means it gets picked up later
                 '\n' if !is_raw_mode => KeyCode::Enter,
-                '\t' => {
-                  if mods.contains(KeyModifiers::SHIFT) {
-                    KeyCode::BackTab
-                  } else {
-                    KeyCode::Tab
-                  }
-                }
+                '\t' => KeyCode::Tab,
                 '\x7F' => KeyCode::Backspace,
                 _ => KeyCode::Char(c),
               },
@@ -377,23 +368,23 @@ where
 
         if let KeyCode::Modifier(modifier_keycode) = keycode {
           match modifier_keycode {
-            ModifierKeyCode::LeftAlt | ModifierKeyCode::RightAlt => {
-              mods.set(KeyModifiers::ALT, true)
+            ModKeyCode::LeftAlt | ModKeyCode::RightAlt => {
+              mods.set(KeyMods::ALT, true)
             }
-            ModifierKeyCode::LeftControl | ModifierKeyCode::RightControl => {
-              mods.set(KeyModifiers::CONTROL, true)
+            ModKeyCode::LeftControl | ModKeyCode::RightControl => {
+              mods.set(KeyMods::CONTROL, true)
             }
-            ModifierKeyCode::LeftShift | ModifierKeyCode::RightShift => {
-              mods.set(KeyModifiers::SHIFT, true)
+            ModKeyCode::LeftShift | ModKeyCode::RightShift => {
+              mods.set(KeyMods::SHIFT, true)
             }
-            ModifierKeyCode::LeftSuper | ModifierKeyCode::RightSuper => {
-              mods.set(KeyModifiers::SUPER, true)
+            ModKeyCode::LeftSuper | ModKeyCode::RightSuper => {
+              mods.set(KeyMods::SUPER, true)
             }
-            ModifierKeyCode::LeftHyper | ModifierKeyCode::RightHyper => {
-              mods.set(KeyModifiers::HYPER, true)
+            ModKeyCode::LeftHyper | ModKeyCode::RightHyper => {
+              mods.set(KeyMods::HYPER, true)
             }
-            ModifierKeyCode::LeftMeta | ModifierKeyCode::RightMeta => {
-              mods.set(KeyModifiers::META, true)
+            ModKeyCode::LeftMeta | ModKeyCode::RightMeta => {
+              mods.set(KeyMods::META, true)
             }
             _ => {}
           }
@@ -403,19 +394,19 @@ where
         // and the terminal sends a keyboard event containing shift, the sequence will
         // contain an additional codepoint separated by a ':' character which contains
         // the shifted character according to the keyboard layout.
-        if mods.contains(KeyModifiers::SHIFT) {
+        if mods.contains(KeyMods::SHIFT) {
           if let Some(shifted_c) = alt_code.and_then(char::from_u32) {
             keycode = KeyCode::Char(shifted_c);
-            mods.set(KeyModifiers::SHIFT, false);
+            mods.set(KeyMods::SHIFT, false);
           }
         }
 
-        let key_event = KeyEvent::new_with_kind_and_state(
-          keycode,
+        let key_event = Key {
+          code: keycode,
           mods,
           kind,
-          state_from_keycode | state_from_mods,
-        );
+          state: state_from_keycode | state_from_mods,
+        };
 
         f(E::Key(key_event));
       }
@@ -428,7 +419,7 @@ where
 
       let b = params.next().ok_or_else(|| anyhow!("No Cb param"))?;
       let b = b.parse::<u8>()?;
-      let (kind, modifiers) = parse_cb(b)?;
+      let (kind, mods) = parse_cb(b)?;
       let kind = if final_ == b'm' {
         match kind {
           MouseEventKind::Down(button) => MouseEventKind::Up(button),
@@ -445,9 +436,9 @@ where
 
       f(E::Mouse(MouseEvent {
         kind,
-        modifiers,
-        column: x,
-        row: y,
+        mods,
+        x: x as i32,
+        y: y as i32,
       }));
     }
     b'M' => {
@@ -458,7 +449,7 @@ where
 
       let b = params.next().ok_or_else(|| anyhow!("No rxvt Cb param"))?;
       let b = b.parse::<u8>()?.saturating_sub(32);
-      let (kind, modifiers) = parse_cb(b)?;
+      let (kind, mods) = parse_cb(b)?;
 
       let x = params.next().ok_or_else(|| anyhow!("No rxvt Cx param"))?;
       let x = x.parse::<u16>()? - 1;
@@ -467,9 +458,9 @@ where
 
       f(E::Mouse(MouseEvent {
         kind,
-        modifiers,
-        column: x,
-        row: y,
+        mods,
+        x: x as i32,
+        y: y as i32,
       }));
     }
     b'R' => {
@@ -498,7 +489,7 @@ where
         let mask = mods_param.parse::<u8>()?;
         (parse_modifiers(mask), parse_modifiers_to_state(mask))
       } else {
-        (KeyModifiers::NONE, KeyEventState::NONE)
+        (KeyMods::NONE, KeyEventState::NONE)
       };
 
       if first == 27 {
@@ -518,12 +509,12 @@ where
           bail!("Empty code in modifyOtherKeys")
         };
 
-        f(E::Key(KeyEvent::new_with_kind_and_state(
+        f(E::Key(Key {
           code,
           mods,
-          KeyEventKind::Press,
+          kind: KeyEventKind::Press,
           state,
-        )));
+        }));
       } else {
         let code = first;
         let code = match code {
@@ -541,12 +532,12 @@ where
           v => bail!("Wrong key param ({}) in CSI ~", v),
         };
 
-        f(E::Key(KeyEvent::new_with_kind_and_state(
+        f(E::Key(Key {
           code,
           mods,
-          KeyEventKind::Press,
+          kind: KeyEventKind::Press,
           state,
-        )));
+        }));
       }
     }
     _ => {
@@ -582,26 +573,26 @@ fn parse_csi_u(params: &[u8]) -> anyhow::Result<(u32, Option<u32>, u8, u8)> {
   Ok((code, alt_code, mods, kind))
 }
 
-fn parse_modifiers(mask: u8) -> KeyModifiers {
+fn parse_modifiers(mask: u8) -> KeyMods {
   let modifier_mask = mask.saturating_sub(1);
-  let mut modifiers = KeyModifiers::empty();
+  let mut modifiers = KeyMods::empty();
   if modifier_mask & 1 != 0 {
-    modifiers |= KeyModifiers::SHIFT;
+    modifiers |= KeyMods::SHIFT;
   }
   if modifier_mask & 2 != 0 {
-    modifiers |= KeyModifiers::ALT;
+    modifiers |= KeyMods::ALT;
   }
   if modifier_mask & 4 != 0 {
-    modifiers |= KeyModifiers::CONTROL;
+    modifiers |= KeyMods::CONTROL;
   }
   if modifier_mask & 8 != 0 {
-    modifiers |= KeyModifiers::SUPER;
+    modifiers |= KeyMods::SUPER;
   }
   if modifier_mask & 16 != 0 {
-    modifiers |= KeyModifiers::HYPER;
+    modifiers |= KeyMods::HYPER;
   }
   if modifier_mask & 32 != 0 {
-    modifiers |= KeyModifiers::META;
+    modifiers |= KeyMods::META;
   }
   modifiers
 }
@@ -702,26 +693,26 @@ fn translate_functional_key_code(
     57432 => Some(KeyCode::Media(MediaKeyCode::Stop)),
     57433 => Some(KeyCode::Media(MediaKeyCode::FastForward)),
     57434 => Some(KeyCode::Media(MediaKeyCode::Rewind)),
-    57435 => Some(KeyCode::Media(MediaKeyCode::TrackNext)),
-    57436 => Some(KeyCode::Media(MediaKeyCode::TrackPrevious)),
+    57435 => Some(KeyCode::Media(MediaKeyCode::Next)),
+    57436 => Some(KeyCode::Media(MediaKeyCode::Prev)),
     57437 => Some(KeyCode::Media(MediaKeyCode::Record)),
-    57438 => Some(KeyCode::Media(MediaKeyCode::LowerVolume)),
-    57439 => Some(KeyCode::Media(MediaKeyCode::RaiseVolume)),
-    57440 => Some(KeyCode::Media(MediaKeyCode::MuteVolume)),
-    57441 => Some(KeyCode::Modifier(ModifierKeyCode::LeftShift)),
-    57442 => Some(KeyCode::Modifier(ModifierKeyCode::LeftControl)),
-    57443 => Some(KeyCode::Modifier(ModifierKeyCode::LeftAlt)),
-    57444 => Some(KeyCode::Modifier(ModifierKeyCode::LeftSuper)),
-    57445 => Some(KeyCode::Modifier(ModifierKeyCode::LeftHyper)),
-    57446 => Some(KeyCode::Modifier(ModifierKeyCode::LeftMeta)),
-    57447 => Some(KeyCode::Modifier(ModifierKeyCode::RightShift)),
-    57448 => Some(KeyCode::Modifier(ModifierKeyCode::RightControl)),
-    57449 => Some(KeyCode::Modifier(ModifierKeyCode::RightAlt)),
-    57450 => Some(KeyCode::Modifier(ModifierKeyCode::RightSuper)),
-    57451 => Some(KeyCode::Modifier(ModifierKeyCode::RightHyper)),
-    57452 => Some(KeyCode::Modifier(ModifierKeyCode::RightMeta)),
-    57453 => Some(KeyCode::Modifier(ModifierKeyCode::IsoLevel3Shift)),
-    57454 => Some(KeyCode::Modifier(ModifierKeyCode::IsoLevel5Shift)),
+    57438 => Some(KeyCode::Media(MediaKeyCode::VolumeDown)),
+    57439 => Some(KeyCode::Media(MediaKeyCode::VolumeUp)),
+    57440 => Some(KeyCode::Media(MediaKeyCode::VolumeMute)),
+    57441 => Some(KeyCode::Modifier(ModKeyCode::LeftShift)),
+    57442 => Some(KeyCode::Modifier(ModKeyCode::LeftControl)),
+    57443 => Some(KeyCode::Modifier(ModKeyCode::LeftAlt)),
+    57444 => Some(KeyCode::Modifier(ModKeyCode::LeftSuper)),
+    57445 => Some(KeyCode::Modifier(ModKeyCode::LeftHyper)),
+    57446 => Some(KeyCode::Modifier(ModKeyCode::LeftMeta)),
+    57447 => Some(KeyCode::Modifier(ModKeyCode::RightShift)),
+    57448 => Some(KeyCode::Modifier(ModKeyCode::RightControl)),
+    57449 => Some(KeyCode::Modifier(ModKeyCode::RightAlt)),
+    57450 => Some(KeyCode::Modifier(ModKeyCode::RightSuper)),
+    57451 => Some(KeyCode::Modifier(ModKeyCode::RightHyper)),
+    57452 => Some(KeyCode::Modifier(ModKeyCode::RightMeta)),
+    57453 => Some(KeyCode::Modifier(ModKeyCode::IsoLevel3Shift)),
+    57454 => Some(KeyCode::Modifier(ModKeyCode::IsoLevel5Shift)),
     _ => None,
   } {
     return Some((keycode, KeyEventState::empty()));
@@ -743,7 +734,7 @@ fn translate_functional_key_code(
 /// - mouse is dragging
 /// - button number
 /// - button number
-fn parse_cb(cb: u8) -> anyhow::Result<(MouseEventKind, KeyModifiers)> {
+fn parse_cb(cb: u8) -> anyhow::Result<(MouseEventKind, KeyMods)> {
   let button_number = (cb & 0b0000_0011) | ((cb & 0b1100_0000) >> 4);
   let dragging = cb & 0b0010_0000 == 0b0010_0000;
 
@@ -764,16 +755,16 @@ fn parse_cb(cb: u8) -> anyhow::Result<(MouseEventKind, KeyModifiers)> {
     _ => bail!("Failed to parse Cb param button"),
   };
 
-  let mut modifiers = KeyModifiers::empty();
+  let mut modifiers = KeyMods::empty();
 
   if cb & 0b0000_0100 == 0b0000_0100 {
-    modifiers |= KeyModifiers::SHIFT;
+    modifiers |= KeyMods::SHIFT;
   }
   if cb & 0b0000_1000 == 0b0000_1000 {
-    modifiers |= KeyModifiers::ALT;
+    modifiers |= KeyMods::ALT;
   }
   if cb & 0b0001_0000 == 0b0001_0000 {
-    modifiers |= KeyModifiers::CONTROL;
+    modifiers |= KeyMods::CONTROL;
   }
 
   Ok((kind, modifiers))

@@ -1,8 +1,7 @@
 use std::io::{stdout, Write};
 
-use crossterm::event::Event;
-
 use crate::term::term_driver::TermDriver;
+use crate::term::TermEvent;
 use crate::{
   host::{receiver::MsgReceiver, sender::MsgSender},
   protocol::{CltToSrv, SrvToClt},
@@ -28,13 +27,16 @@ async fn client_main_loop(
   mut sender: MsgSender<CltToSrv>,
   mut receiver: MsgReceiver<SrvToClt>,
 ) -> anyhow::Result<()> {
-  let (width, height) = crossterm::terminal::size()?;
-  sender.send(CltToSrv::Init { width, height })?;
+  let size = term_driver.size()?;
+  sender.send(CltToSrv::Init {
+    width: size.width,
+    height: size.height,
+  })?;
 
   #[derive(Debug)]
   enum LocalEvent {
     ServerMsg(Option<SrvToClt>),
-    TermEvent(std::io::Result<Option<Event>>),
+    TermEvent(std::io::Result<Option<TermEvent>>),
   }
 
   loop {

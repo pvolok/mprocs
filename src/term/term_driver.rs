@@ -1,4 +1,3 @@
-use crossterm::event::Event;
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
 use std::{io::Write, time::Duration};
@@ -8,7 +7,9 @@ use crate::{
   term::{
     input_parser::InputParser,
     internal::{InternalTermEvent, KeyboardMode},
+    TermEvent,
   },
+  vt100::Size,
 };
 
 pub struct TermDriver {
@@ -256,7 +257,7 @@ impl TermDriver {
     Ok(())
   }
 
-  pub async fn input(&mut self) -> std::io::Result<Option<Event>> {
+  pub async fn input(&mut self) -> std::io::Result<Option<TermEvent>> {
     loop {
       let event = if let Some(event) = self.events.recv().await {
         event
@@ -265,16 +266,18 @@ impl TermDriver {
       };
       match event {
         InternalTermEvent::Key(key_event) => {
-          return Ok(Some(Event::Key(key_event)));
+          return Ok(Some(TermEvent::Key(key_event)));
         }
         InternalTermEvent::Mouse(mouse_event) => {
-          return Ok(Some(Event::Mouse(mouse_event)));
+          return Ok(Some(TermEvent::Mouse(mouse_event)));
         }
         InternalTermEvent::Resize(cols, rows) => {
-          return Ok(Some(Event::Resize(cols, rows)))
+          return Ok(Some(TermEvent::Resize(cols, rows)))
         }
-        InternalTermEvent::FocusGained => return Ok(Some(Event::FocusGained)),
-        InternalTermEvent::FocusLost => return Ok(Some(Event::FocusLost)),
+        InternalTermEvent::FocusGained => {
+          return Ok(Some(TermEvent::FocusGained))
+        }
+        InternalTermEvent::FocusLost => return Ok(Some(TermEvent::FocusLost)),
         InternalTermEvent::CursorPos(_x, _y) => (),
         InternalTermEvent::PrimaryDeviceAttributes => {
           if let Some(timeout) = &self.init_timeout {
@@ -322,5 +325,14 @@ impl TermDriver {
         }
       };
     }
+  }
+
+  #[cfg(unix)]
+  pub fn size(&self) -> std::io::Result<Size> {
+    let winsize = rustix::termios::tcgetwinsize(self.stdin)?;
+    Ok(Size {
+      height: winsize.ws_row,
+      width: winsize.ws_col,
+    })
   }
 }

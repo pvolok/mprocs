@@ -1,4 +1,3 @@
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use tui_input::Input;
 use unicode_width::UnicodeWidthStr;
 
@@ -6,14 +5,21 @@ use crate::{
   app::LoopAction,
   event::AppEvent,
   kernel::kernel_message::ProcContext,
+  key::{Key, KeyCode, KeyMods},
   state::State,
-  term::line_symbols::{HORIZONTAL, VERTICAL_LEFT, VERTICAL_RIGHT},
+  term::{
+    line_symbols::{HORIZONTAL, VERTICAL_LEFT, VERTICAL_RIGHT},
+    TermEvent,
+  },
   vt100::{
     attrs::Attrs,
     grid::{Pos, Rect},
     Color, Grid,
   },
-  widgets::{list::ListState, text_input::render_text_input},
+  widgets::{
+    list::ListState,
+    text_input::{render_text_input, to_input_request},
+  },
 };
 
 use super::modal::Modal;
@@ -41,14 +47,14 @@ impl Modal for CommandsMenuModal {
     &mut self,
     _state: &mut State,
     loop_action: &mut LoopAction,
-    event: &Event,
+    event: &TermEvent,
   ) -> bool {
     match event {
-      Event::Key(KeyEvent {
+      TermEvent::Key(Key {
         code: KeyCode::Enter,
-        modifiers,
+        mods,
         ..
-      }) if modifiers.is_empty() => {
+      }) if mods.is_empty() => {
         self.pc.send_self_custom(AppEvent::CloseCurrentModal);
         if let Some((_, _, event)) = self.items.get(self.list_state.selected())
         {
@@ -57,21 +63,21 @@ impl Modal for CommandsMenuModal {
         // Skip because AddProc event will immediately rerender.
         return true;
       }
-      Event::Key(KeyEvent {
+      TermEvent::Key(Key {
         code: KeyCode::Esc,
-        modifiers,
+        mods,
         ..
-      }) if modifiers.is_empty() => {
+      }) if mods.is_empty() => {
         self.pc.send_self_custom(AppEvent::CloseCurrentModal);
         loop_action.render();
         return true;
       }
       // List bindings
-      Event::Key(KeyEvent {
+      TermEvent::Key(Key {
         code: KeyCode::Char('n'),
-        modifiers,
+        mods,
         ..
-      }) if modifiers == &KeyModifiers::CONTROL => {
+      }) if mods == &KeyMods::CONTROL => {
         let index = self.list_state.selected();
         let index = if index >= self.items.len() - 1 {
           0
@@ -82,11 +88,11 @@ impl Modal for CommandsMenuModal {
         loop_action.render();
         return true;
       }
-      Event::Key(KeyEvent {
+      TermEvent::Key(Key {
         code: KeyCode::Char('p'),
-        modifiers,
+        mods,
         ..
-      }) if modifiers == &KeyModifiers::CONTROL => {
+      }) if mods == &KeyMods::CONTROL => {
         let index = self.list_state.selected();
         let index = if index == 0 {
           self.items.len() - 1
@@ -100,7 +106,7 @@ impl Modal for CommandsMenuModal {
       _ => (),
     }
 
-    let req = tui_input::backend::crossterm::to_input_request(event);
+    let req = to_input_request(event);
     if let Some(req) = req {
       let res = self.input.handle(req);
       if let Some(res) = res {
@@ -113,15 +119,15 @@ impl Modal for CommandsMenuModal {
     }
 
     match event {
-      Event::FocusGained => false,
-      Event::FocusLost => false,
+      TermEvent::FocusGained => false,
+      TermEvent::FocusLost => false,
       // Block keys
-      Event::Key(_) => true,
+      TermEvent::Key(_) => true,
       // Block mouse
-      Event::Mouse(_) => true,
+      TermEvent::Mouse(_) => true,
       // Block paste
-      Event::Paste(_) => true,
-      Event::Resize(_, _) => false,
+      TermEvent::Paste(_) => true,
+      TermEvent::Resize(_, _) => false,
     }
   }
 

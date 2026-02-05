@@ -1,10 +1,10 @@
-use crossterm::event::{Event, KeyCode, KeyEvent};
-
 use crate::{
   app::LoopAction,
   event::AppEvent,
   kernel::{kernel_message::ProcContext, proc::ProcId},
+  key::{Key, KeyCode},
   state::State,
+  term::TermEvent,
   vt100::{
     attrs::Attrs,
     grid::{BorderType, Rect},
@@ -30,14 +30,14 @@ impl Modal for RemoveProcModal {
     &mut self,
     _state: &mut State,
     loop_action: &mut LoopAction,
-    event: &Event,
+    event: &TermEvent,
   ) -> bool {
     match event {
-      Event::Key(KeyEvent {
+      TermEvent::Key(Key {
         code: KeyCode::Char('y'),
-        modifiers,
+        mods,
         ..
-      }) if modifiers.is_empty() => {
+      }) if mods.is_empty() => {
         self.pc.send_self_custom(AppEvent::CloseCurrentModal);
         self
           .pc
@@ -45,16 +45,16 @@ impl Modal for RemoveProcModal {
         // Skip because RemoveProc event will immediately rerender.
         return true;
       }
-      Event::Key(KeyEvent {
+      TermEvent::Key(Key {
         code: KeyCode::Esc,
-        modifiers,
+        mods,
         ..
       })
-      | Event::Key(KeyEvent {
+      | TermEvent::Key(Key {
         code: KeyCode::Char('n'),
-        modifiers,
+        mods,
         ..
-      }) if modifiers.is_empty() => {
+      }) if mods.is_empty() => {
         self.pc.send_self_custom(AppEvent::CloseCurrentModal);
         loop_action.render();
         return true;
@@ -63,15 +63,15 @@ impl Modal for RemoveProcModal {
     }
 
     match event {
-      Event::FocusGained => false,
-      Event::FocusLost => false,
+      TermEvent::FocusGained => false,
+      TermEvent::FocusLost => false,
       // Block keys
-      Event::Key(_) => true,
+      TermEvent::Key(_) => true,
       // Block mouse
-      Event::Mouse(_) => true,
+      TermEvent::Mouse(_) => true,
       // Block paste
-      Event::Paste(_) => true,
-      Event::Resize(_, _) => false,
+      TermEvent::Paste(_) => true,
+      TermEvent::Resize(_, _) => false,
     }
   }
 
