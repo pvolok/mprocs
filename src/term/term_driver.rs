@@ -166,19 +166,29 @@ impl TermDriver {
     #[cfg(windows)]
     unsafe {
       std::thread::spawn(move || {
-        let stdin = winapi::um::processenv::GetStdHandle(
-          winapi::um::winbase::STD_INPUT_HANDLE,
-        );
+        let stdin = match windows::Win32::System::Console::GetStdHandle(
+          windows::Win32::System::Console::STD_INPUT_HANDLE,
+        ) {
+          Ok(stdin) => stdin,
+          Err(err) => {
+            log::error!("GetStdHandle error: {}", err);
+            return;
+          }
+        };
         let mut input_parser = InputParser::new();
-        let mut buf = [winapi::um::wincon::INPUT_RECORD::default(); 128];
+        let mut buf =
+          [windows::Win32::System::Console::INPUT_RECORD::default(); 128];
         loop {
           let mut count = 0;
-          winapi::um::consoleapi::ReadConsoleInputA(
-            stdin,
-            buf.as_mut_ptr(),
-            buf.len() as u32,
-            &mut count,
-          );
+          match windows::Win32::System::Console::ReadConsoleInputA(
+            stdin, &mut buf, &mut count,
+          ) {
+            Ok(()) => (),
+            Err(err) => {
+              log::error!("ReadConsoleInputA error: {}", err);
+              break;
+            }
+          };
 
           super::windows::decode_input_records(
             &mut input_parser,
@@ -334,5 +344,31 @@ impl TermDriver {
       height: winsize.ws_row,
       width: winsize.ws_col,
     })
+  }
+
+  #[cfg(windows)]
+  pub fn size(&self) -> std::io::Result<Size> {
+    unsafe {
+      use std::os::windows::io::AsRawHandle;
+
+      use windows::Win32::{
+        Foundation::HANDLE,
+        System::Console::{
+          GetConsoleScreenBufferInfo, CONSOLE_SCREEN_BUFFER_INFO,
+        },
+      };
+
+      let mut csbi: CONSOLE_SCREEN_BUFFER_INFO = Default::default();
+
+      GetConsoleScreenBufferInfo(
+        HANDLE(self.stdout.as_raw_handle()),
+        &mut csbi,
+      )?;
+
+      Ok(Size {
+        height: (csbi.srWindow.Bottom - csbi.srWindow.Top + 1) as u16,
+        width: (csbi.srWindow.Right - csbi.srWindow.Left + 1) as u16,
+      })
+    }
   }
 }

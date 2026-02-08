@@ -1,80 +1,62 @@
-use anyhow::bail;
-use crossterm::event::{
-  KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
-  MouseEventKind,
-};
-use winapi::um::{
-  consoleapi::{GetConsoleMode, SetConsoleMode},
-  handleapi::INVALID_HANDLE_VALUE,
-  processenv::GetStdHandle,
-  winbase::{STD_INPUT_HANDLE, STD_OUTPUT_HANDLE},
-  wincon::{
-    CAPSLOCK_ON, ENABLE_EXTENDED_FLAGS, ENABLE_MOUSE_INPUT,
-    ENABLE_PROCESSED_OUTPUT, ENABLE_QUICK_EDIT_MODE,
-    ENABLE_VIRTUAL_TERMINAL_PROCESSING, ENABLE_WINDOW_INPUT,
-    FROM_LEFT_1ST_BUTTON_PRESSED, FROM_LEFT_2ND_BUTTON_PRESSED, INPUT_RECORD,
-    KEY_EVENT, KEY_EVENT_RECORD, MOUSE_EVENT, MOUSE_EVENT_RECORD,
-    MOUSE_HWHEELED, MOUSE_MOVED, MOUSE_WHEELED, RIGHTMOST_BUTTON_PRESSED,
-    SHIFT_PRESSED, WINDOW_BUFFER_SIZE_EVENT, WINDOW_BUFFER_SIZE_RECORD,
+use windows::Win32::{
+  Foundation::HANDLE,
+  System::Console::{
+    GetConsoleMode, GetStdHandle, SetConsoleMode, CAPSLOCK_ON, CONSOLE_MODE,
+    ENABLE_EXTENDED_FLAGS, ENABLE_MOUSE_INPUT, ENABLE_PROCESSED_OUTPUT,
+    ENABLE_QUICK_EDIT_MODE, ENABLE_VIRTUAL_TERMINAL_PROCESSING,
+    ENABLE_WINDOW_INPUT, FROM_LEFT_1ST_BUTTON_PRESSED,
+    FROM_LEFT_2ND_BUTTON_PRESSED, INPUT_RECORD, KEY_EVENT, KEY_EVENT_RECORD,
+    MOUSE_EVENT, MOUSE_EVENT_RECORD, MOUSE_HWHEELED, MOUSE_MOVED,
+    MOUSE_WHEELED, RIGHTMOST_BUTTON_PRESSED, SHIFT_PRESSED, STD_INPUT_HANDLE,
+    STD_OUTPUT_HANDLE, WINDOW_BUFFER_SIZE_EVENT, WINDOW_BUFFER_SIZE_RECORD,
   },
-  winuser::{
-    GetForegroundWindow, GetKeyboardLayout, GetWindowThreadProcessId,
-    ToUnicodeEx,
+  UI::{
+    Input::KeyboardAndMouse::{GetKeyboardLayout, ToUnicodeEx, VK_MENU},
+    WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId},
   },
 };
 
-use crate::term::{input_parser::InputParser, internal::InternalTermEvent};
+use crate::{
+  error::ResultLogger,
+  key::{Key, KeyCode, KeyEventKind, KeyMods},
+  mouse::{MouseButton, MouseEvent, MouseEventKind},
+  term::{input_parser::InputParser, internal::InternalTermEvent},
+};
 
 pub struct WinVt {
-  h_in: usize,
-  h_out: usize,
+  h_in: HANDLE,
+  h_out: HANDLE,
 
-  orig_stdin_mode: u32,
-  orig_stdout_mode: u32,
+  orig_stdin_mode: CONSOLE_MODE,
+  orig_stdout_mode: CONSOLE_MODE,
 }
 
 impl WinVt {
   pub fn enable() -> anyhow::Result<Self> {
     unsafe {
-      let h_in = GetStdHandle(STD_INPUT_HANDLE);
-      if h_in == INVALID_HANDLE_VALUE {
-        bail!("WinVt enable: Failed to get stdin.");
-      }
-      let h_out = GetStdHandle(STD_OUTPUT_HANDLE);
-      if h_out == INVALID_HANDLE_VALUE {
-        bail!("WinVt enable: Failed to get stdout.");
-      }
+      let h_in = GetStdHandle(STD_INPUT_HANDLE)?;
+      let h_out = GetStdHandle(STD_OUTPUT_HANDLE)?;
 
-      let mut orig_stdin_mode = 0;
-      if GetConsoleMode(h_in, &mut orig_stdin_mode) == 0 {
-        bail!("WinVt enable: Failed to get stdin mode.");
-      }
-      if SetConsoleMode(
+      let mut orig_stdin_mode = std::mem::zeroed();
+      GetConsoleMode(h_in, &mut orig_stdin_mode)?;
+      SetConsoleMode(
         h_in,
         (ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT)
           & !ENABLE_QUICK_EDIT_MODE,
-      ) == 0
-      {
-        bail!("WinVt enable: Failed to set stdin mode.");
-      }
+      )?;
 
-      let mut orig_stdout_mode = 0;
-      if GetConsoleMode(h_out, &mut orig_stdout_mode) == 0 {
-        bail!("WinVt enable: Failed to get stdout mode.");
-      }
-      if SetConsoleMode(
+      let mut orig_stdout_mode = std::mem::zeroed();
+      GetConsoleMode(h_out, &mut orig_stdout_mode)?;
+      SetConsoleMode(
         h_out,
         orig_stdout_mode
           | ENABLE_PROCESSED_OUTPUT
           | ENABLE_VIRTUAL_TERMINAL_PROCESSING,
-      ) == 0
-      {
-        bail!("WinVt enable: Failed to set stdout mode.");
-      }
+      )?;
 
       Ok(Self {
-        h_in: h_in as _,
-        h_out: h_out as _,
+        h_in,
+        h_out,
         orig_stdin_mode,
         orig_stdout_mode,
       })
@@ -83,8 +65,8 @@ impl WinVt {
 
   pub fn disable(&mut self) {
     unsafe {
-      SetConsoleMode(self.h_in as _, self.orig_stdin_mode);
-      SetConsoleMode(self.h_out as _, self.orig_stdout_mode);
+      SetConsoleMode(self.h_in as _, self.orig_stdin_mode).log_ignore();
+      SetConsoleMode(self.h_out as _, self.orig_stdout_mode).log_ignore();
     }
   }
 }
@@ -93,12 +75,12 @@ fn decode_key_record<F: FnMut(InternalTermEvent)>(
   record: &KEY_EVENT_RECORD,
   f: &mut F,
 ) {
-  use winapi::um::winuser::*;
+  use windows::Win32::UI::Input::KeyboardAndMouse::*;
 
-  let uchar = unsafe { *record.uChar.UnicodeChar() };
+  let uchar = unsafe { record.uChar.UnicodeChar };
 
   let modifiers = modifiers_from_ctrl_key_state(record.dwControlKeyState);
-  let virtual_key_code = record.wVirtualKeyCode as i32;
+  let virtual_key_code = record.wVirtualKeyCode;
 
   // We normally ignore all key release events, but we will make an exception for an Alt key
   // release if it carries a u_char value, as this indicates an Alt code.
@@ -114,12 +96,12 @@ fn decode_key_record<F: FnMut(InternalTermEvent)>(
         // values.
         let ch = std::char::from_u32(unicode_scalar_value as u32).unwrap();
         let key_code = KeyCode::Char(ch);
-        let kind = if record.bKeyDown != 0 {
+        let kind = if record.bKeyDown.as_bool() {
           KeyEventKind::Press
         } else {
           KeyEventKind::Release
         };
-        let key_event = KeyEvent::new_with_kind(key_code, modifiers, kind);
+        let key_event = Key::new_with_kind(key_code, modifiers, kind);
         f(InternalTermEvent::Key(key_event));
         return;
       }
@@ -128,19 +110,21 @@ fn decode_key_record<F: FnMut(InternalTermEvent)>(
 
   // Don't generate events for numpad key presses when they're producing Alt codes.
   let is_numpad_numeric_key =
-    (VK_NUMPAD0..=VK_NUMPAD9).contains(&virtual_key_code);
-  let is_only_alt_modifier = modifiers.contains(KeyModifiers::ALT)
-    && !modifiers.contains(KeyModifiers::SHIFT | KeyModifiers::CONTROL);
+    (VK_NUMPAD0.0..=VK_NUMPAD9.0).contains(&virtual_key_code);
+  let is_only_alt_modifier = modifiers.contains(KeyMods::ALT)
+    && !modifiers.contains(KeyMods::SHIFT | KeyMods::CONTROL);
   if is_only_alt_modifier && is_numpad_numeric_key {
     return;
   }
 
-  let parse_result = match virtual_key_code {
+  let parse_result = match VIRTUAL_KEY(virtual_key_code) {
     VK_SHIFT | VK_CONTROL | VK_MENU => None,
     VK_BACK => Some(KeyCode::Backspace),
     VK_ESCAPE => Some(KeyCode::Esc),
     VK_RETURN => Some(KeyCode::Enter),
-    VK_F1..=VK_F24 => Some(KeyCode::F((record.wVirtualKeyCode - 111) as u8)),
+    vk if (VK_F1.0..=VK_F24.0).contains(&vk.0) => {
+      Some(KeyCode::F((record.wVirtualKeyCode - 111) as u8))
+    }
     VK_LEFT => Some(KeyCode::Left),
     VK_UP => Some(KeyCode::Up),
     VK_RIGHT => Some(KeyCode::Right),
@@ -151,7 +135,6 @@ fn decode_key_record<F: FnMut(InternalTermEvent)>(
     VK_END => Some(KeyCode::End),
     VK_DELETE => Some(KeyCode::Delete),
     VK_INSERT => Some(KeyCode::Insert),
-    VK_TAB if modifiers.contains(KeyModifiers::SHIFT) => Some(KeyCode::BackTab),
     VK_TAB => Some(KeyCode::Tab),
     _ => {
       match uchar {
@@ -179,20 +162,20 @@ fn decode_key_record<F: FnMut(InternalTermEvent)>(
   };
 
   if let Some(key_code) = parse_result {
-    let kind = if record.bKeyDown != 0 {
+    let kind = if record.bKeyDown.as_bool() {
       KeyEventKind::Press
     } else {
       KeyEventKind::Release
     };
-    let key_event = KeyEvent::new_with_kind(key_code, modifiers, kind);
+    let key_event = Key::new_with_kind(key_code, modifiers, kind);
     f(InternalTermEvent::Key(key_event));
   }
 }
 
 fn is_alt_code(record: &KEY_EVENT_RECORD) -> bool {
-  record.wVirtualKeyCode as i32 == winapi::um::winuser::VK_MENU
-    && record.bKeyDown == 0
-    && unsafe { *record.uChar.UnicodeChar() } != 0
+  record.wVirtualKeyCode == VK_MENU.0
+    && !record.bKeyDown.as_bool()
+    && unsafe { record.uChar.UnicodeChar } != 0
 }
 
 enum CharCase {
@@ -258,8 +241,7 @@ fn get_char_for_key(record: &KEY_EVENT_RECORD) -> Option<char> {
   // keyboard layout in the terminal, but it's what we get.
   let active_keyboard_layout = unsafe {
     let foreground_window = GetForegroundWindow();
-    let foreground_thread =
-      GetWindowThreadProcessId(foreground_window, std::ptr::null_mut());
+    let foreground_thread = GetWindowThreadProcessId(foreground_window, None);
     GetKeyboardLayout(foreground_thread)
   };
 
@@ -267,11 +249,10 @@ fn get_char_for_key(record: &KEY_EVENT_RECORD) -> Option<char> {
     ToUnicodeEx(
       virtual_key_code,
       virtual_scan_code,
-      key_state.as_ptr(),
-      utf16_buf.as_mut_ptr(),
-      utf16_buf.len() as i32,
+      &key_state,
+      &mut utf16_buf,
       dont_change_kernel_keyboard_state,
-      active_keyboard_layout,
+      Some(active_keyboard_layout),
     )
   };
 
@@ -372,13 +353,13 @@ fn decode_mouse_record<F: FnMut(InternalTermEvent)>(
     }
   };
 
-  let modifiers = modifiers_from_ctrl_key_state(event.dwControlKeyState);
+  let mods = modifiers_from_ctrl_key_state(event.dwControlKeyState);
 
   f(InternalTermEvent::Mouse(MouseEvent {
     kind,
-    column: event.dwMousePosition.X as u16,
-    row: event.dwMousePosition.Y as u16,
-    modifiers,
+    x: event.dwMousePosition.X as i32,
+    y: event.dwMousePosition.Y as i32,
+    mods,
   }))
 }
 
@@ -398,12 +379,12 @@ pub fn decode_input_records<F: FnMut(InternalTermEvent)>(
   f: &mut F,
 ) {
   for record in records {
-    match record.EventType {
+    match record.EventType as u32 {
       KEY_EVENT => {
-        let record = unsafe { record.Event.KeyEvent() };
-        let uchar = unsafe { *record.uChar.UnicodeChar() };
+        let record = unsafe { &record.Event.KeyEvent };
+        let uchar = unsafe { record.uChar.UnicodeChar };
 
-        if record.bKeyDown == 0 && !is_alt_code(record) {
+        if !record.bKeyDown.as_bool() && !is_alt_code(record) {
           // Ignore release events.
           //
           // If we want to support release key events on Windows we need to
@@ -413,7 +394,7 @@ pub fn decode_input_records<F: FnMut(InternalTermEvent)>(
           // - otherwise emit both press and release
         } else if (1..=0x7f).contains(&uchar)
           && record.dwControlKeyState == 0
-          && record.bKeyDown == 1
+          && record.bKeyDown.as_bool()
         {
           let ch = uchar as u8 as char;
           let mut buf = [0u8; 4];
@@ -427,11 +408,11 @@ pub fn decode_input_records<F: FnMut(InternalTermEvent)>(
       }
       MOUSE_EVENT => decode_mouse_record(
         input_parser,
-        unsafe { record.Event.MouseEvent() },
+        unsafe { &record.Event.MouseEvent },
         f,
       ),
       WINDOW_BUFFER_SIZE_EVENT => {
-        decode_resize_record(unsafe { record.Event.WindowBufferSizeEvent() }, f)
+        decode_resize_record(unsafe { &record.Event.WindowBufferSizeEvent }, f)
       }
       _ => {}
     }
@@ -441,21 +422,21 @@ pub fn decode_input_records<F: FnMut(InternalTermEvent)>(
   input_parser.parse_input(b"", true, false, f);
 }
 
-fn modifiers_from_ctrl_key_state(state: u32) -> KeyModifiers {
-  use winapi::um::wincon::*;
+fn modifiers_from_ctrl_key_state(state: u32) -> KeyMods {
+  use windows::Win32::System::Console::*;
 
-  let mut mods = KeyModifiers::NONE;
+  let mut mods = KeyMods::NONE;
 
   if (state & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) != 0 {
-    mods |= KeyModifiers::ALT;
+    mods |= KeyMods::ALT;
   }
 
   if (state & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0 {
-    mods |= KeyModifiers::CONTROL;
+    mods |= KeyMods::CONTROL;
   }
 
   if (state & SHIFT_PRESSED) != 0 {
-    mods |= KeyModifiers::SHIFT;
+    mods |= KeyMods::SHIFT;
   }
 
   // TODO: we could report caps lock, numlock and scrolllock

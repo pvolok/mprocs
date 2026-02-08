@@ -66,17 +66,19 @@ mod unix {
 mod windows {
   use std::path::PathBuf;
 
+  use windows::Win32::System::Threading::{
+    CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS,
+  };
+
   pub fn spawn_impl(path: PathBuf) -> anyhow::Result<()> {
     use std::{os::windows::process::CommandExt, process::Stdio};
-
-    use winapi::um::winbase::{CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS};
 
     std::process::Command::new(path)
       .arg("server")
       .stdin(Stdio::null())
       .stdout(Stdio::null())
       .stdout(Stdio::null())
-      .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS)
+      .creation_flags(CREATE_NEW_PROCESS_GROUP.0 | DETACHED_PROCESS.0)
       .spawn()?;
 
     Ok(())

@@ -257,7 +257,10 @@ impl Proc {
     .await;
     let inst = match spawned {
       Ok(inst) => ProcState::Some(inst),
-      Err(err) => ProcState::Error(err.to_string()),
+      Err(err) => {
+        log::error!("Process spawn error: {}", err);
+        ProcState::Error(err.to_string())
+      }
     };
     self.inst = inst;
   }
@@ -342,14 +345,14 @@ impl Proc {
   pub async fn stop(&mut self) {
     match self.stop_signal.clone() {
       StopSignal::SIGINT => log::warn!("SIGINT signal is ignored on Windows"),
-      StopSignal::SIGTERM => self.kill(),
-      StopSignal::SIGKILL => self.kill(),
+      StopSignal::SIGTERM => self.kill().await,
+      StopSignal::SIGKILL => self.kill().await,
       StopSignal::SendKeys(keys) => {
         for key in keys {
           self.send_key(&key).await;
         }
       }
-      StopSignal::HardKill => self.kill(),
+      StopSignal::HardKill => self.kill().await,
     }
   }
 

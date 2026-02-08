@@ -73,6 +73,8 @@ impl Inst {
 
     #[cfg(windows)]
     let process = {
+      use anyhow::Context as _;
+
       crate::process::win_process::WinProcess::spawn(
         id,
         spec,
@@ -89,7 +91,8 @@ impl Inst {
             let _result = tx.send(ProcEvent::Exited(exit_code as u32));
           })
         },
-      )?
+      )
+      .context("WinProcess::spawn")?
     };
     #[cfg(windows)]
     let pid: i32 = process.pid;

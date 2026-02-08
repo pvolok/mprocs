@@ -164,7 +164,11 @@ impl WinProcess {
       startup_info_ex.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
 
       let mut attr_list_size: usize = 0;
-      InitializeProcThreadAttributeList(None, 1, None, &mut attr_list_size)?;
+      // Note: This initial call will return an error by design. This is
+      // expected behavior.
+      // https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-initializeprocthreadattributelist#remarks
+      let _: Result<(), windows::core::Error> =
+        InitializeProcThreadAttributeList(None, 1, None, &mut attr_list_size);
 
       let mut attr_list: Vec<u8> = vec![0; attr_list_size];
       startup_info_ex.lpAttributeList =

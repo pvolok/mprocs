@@ -36,7 +36,6 @@ assert_matches = "1.5.0"
 base64 = "0.22.0"
 clap = { version = "4.3.19", features = ["cargo"] }
 clipboard-win = "5.3.1"
-crossterm = { version = "0.29", features = ["serde"] }
 dunce = "1.0.4"
 # Excluded "textfilter" feature that depends on regex (~0.7 MiB).
 flexi_logger = { version = "0.31.2", default-features = false, features = [
@@ -60,9 +59,7 @@ serde_json = "1.0.138"
 serde_yaml = "0.9.25"
 tokio = { version = "1", features = ["full"] }
 triggered = "0.1.2"
-tui-input = { version = "0.15.0", default-features = false, features = [
-  "crossterm",
-] }
+tui-input = { version = "0.15.0", default-features = false }
 unicode-segmentation = "1.12.0"
 unicode-width = "0.2.2"
 which = "8.0.0"
@@ -82,7 +79,6 @@ signal-hook = "0.3"
 daemonize = "0.5.0"
 
 [target."cfg(windows)".dependencies]
-winapi = { version = "0.3", features = ["consoleapi", "winuser"] }
 windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_Security",
@@ -91,4 +87,6 @@ windows = { version = "0.62", features = [
   "Win32_System_Console",
   "Win32_System_Pipes",
   "Win32_System_Threading",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
 ] }

@@ -380,13 +380,13 @@ pub fn encode_key_win32(
   let mut control_key_state = 0;
 
   if key.mods().contains(KeyMods::SHIFT) {
-    control_key_state |= winapi::um::wincon::SHIFT_PRESSED;
+    control_key_state |= windows::Win32::System::Console::SHIFT_PRESSED;
   }
   if key.mods().contains(KeyMods::ALT) {
-    control_key_state |= winapi::um::wincon::LEFT_ALT_PRESSED;
+    control_key_state |= windows::Win32::System::Console::LEFT_ALT_PRESSED;
   }
   if key.mods().contains(KeyMods::CONTROL) {
-    control_key_state |= winapi::um::wincon::LEFT_CTRL_PRESSED;
+    control_key_state |= windows::Win32::System::Console::LEFT_CTRL_PRESSED;
   }
 
   let vkey = virtual_key_code(&key.code())?;
@@ -433,7 +433,6 @@ pub fn encode_key_win32(
     KeyCode::PageUp => 0,
     KeyCode::PageDown => 0,
     KeyCode::Tab => 0x9,
-    KeyCode::BackTab => 0,
     KeyCode::Delete => 0x7f,
     KeyCode::Insert => 0,
     KeyCode::F(_) => 0,
@@ -455,55 +454,58 @@ pub fn encode_key_win32(
   let repeat_count = 1;
   Some(format!(
     "\u{1b}[{};{};{};{};{};{}_",
-    vkey, scan_code, uni, key_down, control_key_state, repeat_count
+    vkey.0, scan_code, uni, key_down, control_key_state, repeat_count
   ))
 }
 
 /// <https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes>
 #[cfg(windows)]
-fn virtual_key_code(code: &KeyCode) -> Option<i32> {
+fn virtual_key_code(
+  code: &KeyCode,
+) -> Option<windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY> {
+  use windows::Win32::UI::Input::KeyboardAndMouse::*;
+
   let code = match code {
     KeyCode::Char(c) => match c {
-      '0'..='9' => *c as i32,
-      'a'..='z' => c.to_ascii_uppercase() as i32,
-      ' ' => winapi::um::winuser::VK_SPACE,
-      '*' => winapi::um::winuser::VK_MULTIPLY,
-      '+' => winapi::um::winuser::VK_ADD,
-      ',' => winapi::um::winuser::VK_SEPARATOR,
-      '-' => winapi::um::winuser::VK_SUBTRACT,
-      '.' => winapi::um::winuser::VK_DECIMAL,
-      '/' => winapi::um::winuser::VK_DIVIDE,
+      '0'..='9' => VIRTUAL_KEY(*c as u16),
+      'a'..='z' => VIRTUAL_KEY(c.to_ascii_uppercase() as u16),
+      ' ' => VK_SPACE,
+      '*' => VK_MULTIPLY,
+      '+' => VK_ADD,
+      ',' => VK_SEPARATOR,
+      '-' => VK_SUBTRACT,
+      '.' => VK_DECIMAL,
+      '/' => VK_DIVIDE,
       _ => return None,
     },
-    KeyCode::Backspace => winapi::um::winuser::VK_BACK,
-    KeyCode::Enter => winapi::um::winuser::VK_RETURN,
-    KeyCode::Left => winapi::um::winuser::VK_LEFT,
-    KeyCode::Right => winapi::um::winuser::VK_RIGHT,
-    KeyCode::Up => winapi::um::winuser::VK_UP,
-    KeyCode::Down => winapi::um::winuser::VK_DOWN,
-    KeyCode::Home => winapi::um::winuser::VK_HOME,
-    KeyCode::End => winapi::um::winuser::VK_END,
-    KeyCode::PageUp => winapi::um::winuser::VK_PRIOR,
-    KeyCode::PageDown => winapi::um::winuser::VK_NEXT,
-    KeyCode::Tab => winapi::um::winuser::VK_TAB,
-    KeyCode::BackTab => return None,
-    KeyCode::Delete => winapi::um::winuser::VK_DELETE,
-    KeyCode::Insert => winapi::um::winuser::VK_INSERT,
+    KeyCode::Backspace => VK_BACK,
+    KeyCode::Enter => VK_RETURN,
+    KeyCode::Left => VK_LEFT,
+    KeyCode::Right => VK_RIGHT,
+    KeyCode::Up => VK_UP,
+    KeyCode::Down => VK_DOWN,
+    KeyCode::Home => VK_HOME,
+    KeyCode::End => VK_END,
+    KeyCode::PageUp => VK_PRIOR,
+    KeyCode::PageDown => VK_NEXT,
+    KeyCode::Tab => VK_TAB,
+    KeyCode::Delete => VK_DELETE,
+    KeyCode::Insert => VK_INSERT,
     KeyCode::F(n) => match n {
-      1..=24 => winapi::um::winuser::VK_F1 - 1 + *n as i32,
+      1..=24 => VIRTUAL_KEY(VK_F1.0 - 1 + *n as u16),
       _ => return None,
     },
-    KeyCode::Null => 0,
-    KeyCode::Esc => winapi::um::winuser::VK_ESCAPE,
-    KeyCode::CapsLock => 0,
-    KeyCode::ScrollLock => 0,
-    KeyCode::NumLock => 0,
-    KeyCode::PrintScreen => 0,
-    KeyCode::Pause => 0,
-    KeyCode::Menu => 0,
-    KeyCode::KeypadBegin => 0,
-    KeyCode::Media(_) => 0,
-    KeyCode::Modifier(_) => 0,
+    KeyCode::Null => VIRTUAL_KEY(0),
+    KeyCode::Esc => VK_ESCAPE,
+    KeyCode::CapsLock => VIRTUAL_KEY(0),
+    KeyCode::ScrollLock => VIRTUAL_KEY(0),
+    KeyCode::NumLock => VIRTUAL_KEY(0),
+    KeyCode::PrintScreen => VIRTUAL_KEY(0),
+    KeyCode::Pause => VIRTUAL_KEY(0),
+    KeyCode::Menu => VIRTUAL_KEY(0),
+    KeyCode::KeypadBegin => VIRTUAL_KEY(0),
+    KeyCode::Media(_) => VIRTUAL_KEY(0),
+    KeyCode::Modifier(_) => VIRTUAL_KEY(0),
   };
 
   Some(code)

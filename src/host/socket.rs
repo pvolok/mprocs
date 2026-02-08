@@ -111,7 +111,7 @@ mod windows {
 
   use serde::{de::DeserializeOwned, Serialize};
   use tokio::net::{TcpListener, TcpStream};
-  use winapi::um::winbase::FILE_FLAG_DELETE_ON_CLOSE;
+  use windows::Win32::Storage::FileSystem::FILE_FLAG_DELETE_ON_CLOSE;
 
   use crate::host::{
     daemon::spawn_server_daemon, receiver::MsgReceiver, sender::MsgSender,
@@ -143,7 +143,7 @@ mod windows {
           .write(true)
           .truncate(true)
           .create(true)
-          .custom_flags(FILE_FLAG_DELETE_ON_CLOSE);
+          .custom_flags(FILE_FLAG_DELETE_ON_CLOSE.0);
         let mut file = file_opts.open(&path)?;
         file.write_all(addr.as_bytes())?;
         log::info!("Wrote socket address into {}", path.to_string_lossy());
