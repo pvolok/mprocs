@@ -1,7 +1,9 @@
+use std::path::Path;
+
 use anyhow::anyhow;
 use clap::{Arg, Command};
 
-use crate::lualib::init_std;
+use crate::{js::js_vm::JsVm, lualib::init_std};
 
 pub async fn dekit_main() -> anyhow::Result<()> {
   println!("* Welcome to dekit — playground for future features *\n");
@@ -59,6 +61,7 @@ pub async fn dekit_main() -> anyhow::Result<()> {
 
       #[allow(clippy::collapsible_if)]
       if let Some(first) = paths.first() {
+        // .lua
         if first.ends_with(".lua") {
           println!("Running the script.");
 
@@ -81,6 +84,36 @@ pub async fn dekit_main() -> anyhow::Result<()> {
             .map_err(|e| anyhow!("{}", e))?;
           println!("-> {:?}", r);
           cancel.cancel();
+        }
+        // .js
+        else if first.ends_with(".js") {
+          println!("Running the script.");
+
+          let src = std::fs::read_to_string(first)?;
+
+          let vm = JsVm::new()?;
+          let root = vm.eval_file(Path::new("dekit.js"), src.as_bytes())?;
+
+          let r: anyhow::Result<()> = vm.context.with(|ctx| {
+            let m = root.restore(&ctx)?;
+            let r = m.get::<_, rquickjs::Value>("main")?;
+            let r = match r.type_of() {
+              rquickjs::Type::Constructor => {
+                r.into_constructor().unwrap().call::<_, rquickjs::Value>(())
+              }
+              rquickjs::Type::Function => r.into_function().unwrap().call(()),
+              t => {
+                println!("Exported `main` is not a function ({}).", t.as_str());
+                Ok(rquickjs::Value::new_undefined(ctx.clone()))
+              }
+            };
+            println!("-> {:?}", r);
+            if let Err(rquickjs::Error::Exception) = r {
+              println!("Exc: {:?}", ctx.catch());
+            }
+            Ok(())
+          });
+          r?;
         }
       }
     }

@@ -9,6 +9,7 @@ mod encode_term;
 mod error;
 mod event;
 mod host;
+mod js;
 mod just;
 mod kernel;
 mod key;

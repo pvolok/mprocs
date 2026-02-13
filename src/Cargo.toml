@@ -72,6 +72,7 @@ bytes = "1.5.0"
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 scopeguard = "1.2.0"
 itoa = "1"
+rquickjs = { version = "0.11", features = ["full-async"] }
 rustix = { version = "1", features = ["all-apis"] }
 signal-hook = "0.3"
 
