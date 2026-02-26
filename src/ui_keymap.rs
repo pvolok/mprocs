@@ -27,6 +27,38 @@ pub fn render_keymap(
     Attrs::default(),
   );
 
+  let in_copy_mode = state
+    .get_current_proc()
+    .is_some_and(|p| matches!(p.copy_mode, crate::proc::CopyMode::Active(..)));
+  let search_confirmed = !in_copy_mode
+    && state
+      .get_current_proc()
+      .and_then(|p| p.search.as_ref())
+      .is_some_and(|s| s.confirmed);
+
+  let area: crate::vt100::grid::Rect = area.into();
+  let mut line = Rect {
+    x: area.x + 1,
+    y: area.y + 1,
+    width: area.width.saturating_sub(2),
+    height: area.height,
+  };
+
+  if search_confirmed {
+    let hints = [("n", "Next match"), ("N", "Prev match"), ("Ctrl+f", "New search"), ("Esc", "Close")];
+    let a = Attrs::default();
+    for (key, desc) in hints {
+      line.x = grid.draw_text(line, " <", a).right();
+      line.x = grid
+        .draw_text(line, key, Attrs::default().fg(Color::YELLOW))
+        .right();
+      line.x = grid.draw_text(line, ": ", a).right();
+      line.x = grid.draw_text(line, desc, a).right();
+      line.x = grid.draw_text(line, "> ", a).right();
+    }
+    return;
+  }
+
   let group = state.get_keymap_group();
   let items = match group {
     KeymapGroup::Procs => &[
@@ -47,13 +79,6 @@ pub fn render_keymap(
     ][..],
   };
 
-  let area: crate::vt100::grid::Rect = area.into();
-  let mut line = Rect {
-    x: area.x + 1,
-    y: area.y + 1,
-    width: area.width.saturating_sub(2),
-    height: area.height,
-  };
   for event in items {
     if let Some(key) = keymap.resolve_key(group, &event) {
       let a = Attrs::default();

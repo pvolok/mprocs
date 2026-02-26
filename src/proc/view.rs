@@ -17,6 +17,7 @@ pub struct SearchState {
   pub input: Input,
   pub matches: Vec<(usize, usize)>, // (abs_row_index, col_offset)
   pub current: usize,
+  pub confirmed: bool,
 }
 
 impl SearchState {
@@ -25,6 +26,23 @@ impl SearchState {
       input: Input::default(),
       matches: Vec::new(),
       current: 0,
+      confirmed: false,
+    }
+  }
+
+  pub fn next_match(&mut self) {
+    if !self.matches.is_empty() {
+      self.current = (self.current + 1) % self.matches.len();
+    }
+  }
+
+  pub fn prev_match(&mut self) {
+    if !self.matches.is_empty() {
+      self.current = if self.current == 0 {
+        self.matches.len() - 1
+      } else {
+        self.current - 1
+      };
     }
   }
 

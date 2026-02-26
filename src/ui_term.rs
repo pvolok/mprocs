@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use crate::{
   proc::{
@@ -36,25 +36,35 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
     let r =
       grid.draw_text(top_line, "Terminal", Attrs::default().set_bold(active));
     top_line = top_line.move_left(r.width as i32);
-    match proc.copy_mode() {
-      CopyMode::None(_) => (),
-      CopyMode::Active(_, _, _) => {
-        let r = grid.draw_text(top_line, " ", Attrs::default());
-        top_line = top_line.move_left(r.width as i32);
-        let _r = grid.draw_text(
-          top_line,
-          "COPY MODE",
-          Attrs::default()
-            .fg(Color::BLACK)
-            .bg(Color::YELLOW)
-            .set_bold(true),
-        );
-        // top_line = top_line.move_left(r.width as i32);
-      }
-    };
+    if matches!(proc.copy_mode(), CopyMode::Active(..)) {
+      let r = grid.draw_text(top_line, " ", Attrs::default());
+      top_line = top_line.move_left(r.width as i32);
+      let _r = grid.draw_text(
+        top_line,
+        "COPY MODE",
+        Attrs::default()
+          .fg(Color::BLACK)
+          .bg(Color::YELLOW)
+          .set_bold(true),
+      );
+      top_line = top_line.move_left(_r.width as i32);
+    } else if proc.search.is_some() {
+      let r = grid.draw_text(top_line, " ", Attrs::default());
+      top_line = top_line.move_left(r.width as i32);
+      let _r = grid.draw_text(
+        top_line,
+        "SEARCH",
+        Attrs::default()
+          .fg(Color::BLACK)
+          .bg(Color::BRIGHT_BLUE)
+          .set_bold(true),
+      );
+      top_line = top_line.move_left(_r.width as i32);
+    }
 
     // Determine if search is active and compute areas
     let search_active = proc.search.is_some();
+    let search_editing = proc.search.as_ref().is_some_and(|s| !s.confirmed);
     let inner = area.inner(1);
     let (screen_area, search_bar_area) = if search_active && inner.height > 1 {
       let screen = Rect {
@@ -109,8 +119,16 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
         );
 
         if active {
-          if search_active {
-            // Place cursor in search bar instead of terminal
+          if matches!(proc.copy_mode(), CopyMode::Active(..)) {
+            if let Some(cursor) = cursor {
+              grid.cursor_pos = Some(crate::vt100::grid::Pos {
+                col: cursor.0,
+                row: cursor.1,
+              });
+              grid.cursor_style = crate::protocol::CursorStyle::SteadyBlock;
+            }
+          } else if search_editing {
+            // Cursor placed by search bar renderer below
           } else if let Some(cursor) = cursor {
             grid.cursor_pos = Some(crate::vt100::grid::Pos {
               col: cursor.0,
@@ -129,8 +147,9 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
     if let Some(bar_area) = search_bar_area {
       if let Some(proc) = state.get_current_proc_mut() {
         if let Some(search) = &mut proc.search {
-          render_search_bar(search, bar_area, grid);
-          if active {
+          let editing = !search.confirmed;
+          render_search_bar(search, editing, bar_area, grid);
+          if active && editing {
             grid.cursor_style = crate::protocol::CursorStyle::SteadyBar;
           }
         }
@@ -139,11 +158,12 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
   }
 }
 
+/// Maps (row, col) -> true if current match, false otherwise
 fn build_search_highlights(
   search: Option<&SearchState>,
   proc: &crate::proc::view::ProcView,
-) -> HashSet<(u16, u16)> {
-  let mut highlights = HashSet::new();
+) -> HashMap<(u16, u16), bool> {
+  let mut highlights = HashMap::new();
   let search = match search {
     Some(s) if !s.matches.is_empty() => s,
     _ => return highlights,
@@ -162,11 +182,12 @@ fn build_search_highlights(
   let height = screen.size().height as usize;
   let query_len = search.query_len();
 
-  for &(abs_row, col_offset) in &search.matches {
+  for (i, &(abs_row, col_offset)) in search.matches.iter().enumerate() {
     if abs_row >= abs_start && abs_row < abs_start + height {
       let visible_row = (abs_row - abs_start) as u16;
+      let is_current = i == search.current;
       for c in 0..query_len {
-        highlights.insert((visible_row, (col_offset + c) as u16));
+        highlights.insert((visible_row, (col_offset + c) as u16), is_current);
       }
     }
   }
@@ -176,14 +197,19 @@ fn build_search_highlights(
 
 fn render_search_bar(
   search: &mut SearchState,
+  editing: bool,
   area: Rect,
   grid: &mut Grid,
 ) {
-  // Draw "/ " prefix
   let prefix = "/ ";
   let prefix_len = prefix.len() as u16;
+  let prefix_attrs = if editing {
+    Attrs::default().fg(Color::BRIGHT_YELLOW).set_bold(true)
+  } else {
+    Attrs::default().fg(Color::BRIGHT_BLUE).set_bold(true)
+  };
   grid.fill_area(area, ' ', Attrs::default());
-  grid.draw_text(area, prefix, Attrs::default().set_bold(true));
+  grid.draw_text(area, prefix, prefix_attrs);
 
   let input_area = Rect {
     x: area.x + prefix_len,
@@ -225,16 +251,18 @@ fn render_search_bar(
 
   let mut cursor_pos = (0u16, 0u16);
   render_text_input(&mut search.input, text_input_area, grid, &mut cursor_pos);
-  grid.cursor_pos = Some(crate::vt100::grid::Pos {
-    col: cursor_pos.0,
-    row: cursor_pos.1,
-  });
+  if editing {
+    grid.cursor_pos = Some(crate::vt100::grid::Pos {
+      col: cursor_pos.0,
+      row: cursor_pos.1,
+    });
+  }
 }
 
 fn render_screen(
   screen: &Screen,
   copy_mode: &CopyMode,
-  search_highlights: &HashSet<(u16, u16)>,
+  search_highlights: &HashMap<(u16, u16), bool>,
   area: Rect,
   grid: &mut Grid,
 ) {
@@ -279,11 +307,14 @@ fn render_screen(
         }
 
         // Search highlighting
-        if search_highlights.contains(&(row, col)) {
+        if let Some(&is_current) = search_highlights.get(&(row, col)) {
+          let bg = if is_current {
+            Color::BRIGHT_RED
+          } else {
+            Color::YELLOW
+          };
           to_cell.set_attrs(
-            Attrs::default()
-              .fg(Color::BLACK)
-              .bg(Color::YELLOW),
+            Attrs::default().fg(Color::BLACK).bg(bg),
           );
         }
       } else {

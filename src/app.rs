@@ -572,13 +572,15 @@ impl App {
     loop_action: &mut LoopAction,
     event: &TermEvent,
   ) -> bool {
-    let search_active = self
+    let proc_state = self
       .state
       .get_current_proc()
-      .is_some_and(|p| p.search.is_some());
-    if !search_active {
-      return false;
-    }
+      .and_then(|p| p.search.as_ref().map(|s| (s.confirmed, &p.copy_mode)));
+    let confirmed = match proc_state {
+      Some((_, CopyMode::Active(..))) => return false,
+      Some((confirmed, _)) => confirmed,
+      None => return false,
+    };
 
     match event {
       TermEvent::Key(Key {
@@ -586,66 +588,90 @@ impl App {
         kind,
         ..
       }) if *kind == KeyEventKind::Press || *kind == KeyEventKind::Repeat => {
-        match code {
-        crate::key::KeyCode::Esc => {
-          self.handle_event(loop_action, &AppEvent::SearchLeave);
-        }
-        crate::key::KeyCode::Enter => {
-          if let Some(proc) = self.state.get_current_proc_mut() {
-            if let Some(search) = &mut proc.search {
-              if !search.matches.is_empty() {
-                search.current =
-                  (search.current + 1) % search.matches.len();
-                // Scroll to current match
-                let (match_row, _) = search.matches[search.current];
-                if let Some(vt_ref) = proc.vt.clone() {
-                  if let Ok(vt) = vt_ref.read() {
-                    let screen = vt.screen();
-                    let abs_start = screen.visible_row_abs_start();
-                    let height = screen.size().height as usize;
-                    if match_row < abs_start
-                      || match_row >= abs_start + height
-                    {
-                      let total = screen.total_rows();
-                      let row0 = total - height;
-                      let target_scrollback =
-                        row0.saturating_sub(match_row);
-                      drop(vt);
-                      if let Ok(mut vt) = vt_ref.write() {
-                        vt.screen.set_scrollback(target_scrollback);
+        if confirmed {
+          match code {
+            crate::key::KeyCode::Esc => {
+              self.handle_event(loop_action, &AppEvent::SearchLeave);
+            }
+            crate::key::KeyCode::Char('n') => {
+              self.scroll_to_search_match(true);
+              loop_action.render();
+            }
+            crate::key::KeyCode::Char('N') => {
+              self.scroll_to_search_match(false);
+              loop_action.render();
+            }
+            _ => return false,
+          }
+        } else {
+          match code {
+            crate::key::KeyCode::Esc => {
+              self.handle_event(loop_action, &AppEvent::SearchLeave);
+            }
+            crate::key::KeyCode::Enter => {
+              if let Some(proc) = self.state.get_current_proc_mut() {
+                if let Some(search) = &mut proc.search {
+                  search.confirmed = true;
+                }
+              }
+              loop_action.render();
+            }
+            _ => {
+              if let Some(req) = to_input_request(event) {
+                let vt_clone = self
+                  .state
+                  .get_current_proc_mut()
+                  .and_then(|p| p.vt.clone());
+                if let Some(proc) = self.state.get_current_proc_mut() {
+                  if let Some(search) = &mut proc.search {
+                    search.input.handle(req);
+                    if let Some(vt_ref) = &vt_clone {
+                      if let Ok(vt) = vt_ref.read() {
+                        search.run_search(vt.screen());
                       }
                     }
                   }
                 }
               }
+              loop_action.render();
             }
           }
-          loop_action.render();
-        }
-        _ => {
-          if let Some(req) = to_input_request(event) {
-            let vt_clone = self
-              .state
-              .get_current_proc_mut()
-              .and_then(|p| p.vt.clone());
-            if let Some(proc) = self.state.get_current_proc_mut() {
-              if let Some(search) = &mut proc.search {
-                search.input.handle(req);
-                if let Some(vt_ref) = &vt_clone {
-                  if let Ok(vt) = vt_ref.read() {
-                    search.run_search(vt.screen());
-                  }
-                }
-              }
-            }
-          }
-          loop_action.render();
-        }
         }
       },
       _ => return false,
     }
     true
+  }
+
+  fn scroll_to_search_match(&mut self, forward: bool) {
+    if let Some(proc) = self.state.get_current_proc_mut() {
+      if let Some(search) = &mut proc.search {
+        if forward {
+          search.next_match();
+        } else {
+          search.prev_match();
+        }
+        if !search.matches.is_empty() {
+          let (match_row, _) = search.matches[search.current];
+          if let Some(vt_ref) = proc.vt.clone() {
+            if let Ok(vt) = vt_ref.read() {
+              let screen = vt.screen();
+              let abs_start = screen.visible_row_abs_start();
+              let height = screen.size().height as usize;
+              if match_row < abs_start || match_row >= abs_start + height {
+                let total = screen.total_rows();
+                let row0 = total - height;
+                let target_scrollback = row0.saturating_sub(match_row);
+                drop(vt);
+                if let Ok(mut vt) = vt_ref.write() {
+                  vt.screen.set_scrollback(target_scrollback);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   fn handle_event(&mut self, loop_action: &mut LoopAction, event: &AppEvent) {
@@ -924,6 +950,7 @@ impl App {
 
       AppEvent::CopyModeEnter => {
         if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.copy_mode = CopyMode::None(None);
           if let Some(vt_ref) = proc.vt.as_ref() {
             let screen = vt_ref.read().unwrap().screen().clone();
             let y = (screen.size().height - 1) as i32;
@@ -1002,6 +1029,7 @@ impl App {
 
       AppEvent::SearchEnter => {
         if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.copy_mode = CopyMode::None(None);
           proc.search = Some(SearchState::new());
           self.state.scope = Scope::Term;
           loop_action.render();
