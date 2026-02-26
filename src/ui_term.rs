@@ -1,7 +1,13 @@
+use std::collections::HashSet;
+
 use crate::{
-  proc::{view::ProcViewFrame, CopyMode, Pos},
+  proc::{
+    view::{ProcViewFrame, SearchState},
+    CopyMode, Pos,
+  },
   state::{Scope, State},
   vt100::{attrs::Attrs, grid::Rect, Color, Grid, Screen},
+  widgets::text_input::render_text_input,
 };
 
 pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
@@ -47,6 +53,27 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
       }
     };
 
+    // Determine if search is active and compute areas
+    let search_active = proc.search.is_some();
+    let inner = area.inner(1);
+    let (screen_area, search_bar_area) = if search_active && inner.height > 1 {
+      let screen = Rect {
+        height: inner.height - 1,
+        ..inner
+      };
+      let bar = Rect {
+        y: inner.y + inner.height - 1,
+        height: 1,
+        ..inner
+      };
+      (screen, Some(bar))
+    } else {
+      (inner, None)
+    };
+
+    // Build search highlight set
+    let search_highlights = build_search_highlights(proc.search.as_ref(), proc);
+
     match &proc.lock_view() {
       ProcViewFrame::Empty => (),
       ProcViewFrame::Vt(vt) => {
@@ -73,10 +100,18 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
           }
         };
 
-        render_screen(screen, proc.copy_mode(), area.inner(1), grid);
+        render_screen(
+          screen,
+          proc.copy_mode(),
+          &search_highlights,
+          screen_area,
+          grid,
+        );
 
         if active {
-          if let Some(cursor) = cursor {
+          if search_active {
+            // Place cursor in search bar instead of terminal
+          } else if let Some(cursor) = cursor {
             grid.cursor_pos = Some(crate::vt100::grid::Pos {
               col: cursor.0,
               row: cursor.1,
@@ -89,12 +124,117 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
         grid.draw_text(area.inner(1), *err, Attrs::default().fg(Color::RED));
       }
     }
+
+    // Render search bar
+    if let Some(bar_area) = search_bar_area {
+      if let Some(proc) = state.get_current_proc_mut() {
+        if let Some(search) = &mut proc.search {
+          render_search_bar(search, bar_area, grid);
+          if active {
+            grid.cursor_style = crate::protocol::CursorStyle::SteadyBar;
+          }
+        }
+      }
+    }
   }
+}
+
+fn build_search_highlights(
+  search: Option<&SearchState>,
+  proc: &crate::proc::view::ProcView,
+) -> HashSet<(u16, u16)> {
+  let mut highlights = HashSet::new();
+  let search = match search {
+    Some(s) if !s.matches.is_empty() => s,
+    _ => return highlights,
+  };
+
+  let vt_ref = match &proc.vt {
+    Some(vt) => vt,
+    None => return highlights,
+  };
+  let vt = match vt_ref.read() {
+    Ok(vt) => vt,
+    Err(_) => return highlights,
+  };
+  let screen = vt.screen();
+  let abs_start = screen.visible_row_abs_start();
+  let height = screen.size().height as usize;
+  let query_len = search.query_len();
+
+  for &(abs_row, col_offset) in &search.matches {
+    if abs_row >= abs_start && abs_row < abs_start + height {
+      let visible_row = (abs_row - abs_start) as u16;
+      for c in 0..query_len {
+        highlights.insert((visible_row, (col_offset + c) as u16));
+      }
+    }
+  }
+
+  highlights
+}
+
+fn render_search_bar(
+  search: &mut SearchState,
+  area: Rect,
+  grid: &mut Grid,
+) {
+  // Draw "/ " prefix
+  let prefix = "/ ";
+  let prefix_len = prefix.len() as u16;
+  grid.fill_area(area, ' ', Attrs::default());
+  grid.draw_text(area, prefix, Attrs::default().set_bold(true));
+
+  let input_area = Rect {
+    x: area.x + prefix_len,
+    width: area.width.saturating_sub(prefix_len),
+    ..area
+  };
+
+  // Draw match count on the right side
+  let match_info = if search.matches.is_empty() {
+    if search.input.value().is_empty() {
+      String::new()
+    } else {
+      " 0/0 ".to_string()
+    }
+  } else {
+    format!(" {}/{} ", search.current + 1, search.matches.len())
+  };
+
+  let info_len = match_info.len() as u16;
+  let text_input_area = if !match_info.is_empty() && input_area.width > info_len
+  {
+    let info_area = Rect {
+      x: input_area.x + input_area.width - info_len,
+      width: info_len,
+      ..input_area
+    };
+    grid.draw_text(
+      info_area,
+      &match_info,
+      Attrs::default().fg(Color::BLACK).bg(Color::BRIGHT_YELLOW),
+    );
+    Rect {
+      width: input_area.width - info_len,
+      ..input_area
+    }
+  } else {
+    input_area
+  };
+
+  let mut cursor_pos = (0u16, 0u16);
+  render_text_input(&mut search.input, text_input_area, grid, &mut cursor_pos);
+  grid.cursor_pos = Some(crate::vt100::grid::Pos {
+    col: cursor_pos.0,
+    row: cursor_pos.1,
+  });
 }
 
 fn render_screen(
   screen: &Screen,
   copy_mode: &CopyMode,
+  search_highlights: &HashSet<(u16, u16)>,
   area: Rect,
   grid: &mut Grid,
 ) {
@@ -136,6 +276,15 @@ fn render_screen(
                 .bg(crate::vt100::Color::CYAN),
             );
           }
+        }
+
+        // Search highlighting
+        if search_highlights.contains(&(row, col)) {
+          to_cell.set_attrs(
+            Attrs::default()
+              .fg(Color::BLACK)
+              .bg(Color::YELLOW),
+          );
         }
       } else {
         // Out of bounds.

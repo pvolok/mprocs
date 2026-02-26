@@ -39,7 +39,7 @@ pub fn render_keymap(
       AppEvent::RestartProc,
       AppEvent::ToggleKeymapWindow,
     ][..],
-    KeymapGroup::Term => &[AppEvent::ToggleFocus][..],
+    KeymapGroup::Term => &[AppEvent::ToggleFocus, AppEvent::SearchEnter][..],
     KeymapGroup::Copy => &[
       AppEvent::CopyModeEnd,
       AppEvent::CopyModeCopy,

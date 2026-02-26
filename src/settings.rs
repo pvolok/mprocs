@@ -265,6 +265,11 @@ impl Settings {
       AppEvent::ToggleKeymapWindow,
     );
 
+    s.keymap_add_t(
+      Key::new(KeyCode::Char('f'), KeyMods::CONTROL),
+      AppEvent::SearchEnter,
+    );
+
     s.keymap_add_p(
       Key::new(KeyCode::Char('v'), KeyMods::NONE),
       AppEvent::CopyModeEnter,

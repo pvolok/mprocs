@@ -25,7 +25,7 @@ use crate::{
   proc::{
     msg::{ProcCmd, ProcUpdate},
     proc::launch_proc,
-    view::{TargetState, RESTART_THRESHOLD_SECONDS},
+    view::{SearchState, TargetState, RESTART_THRESHOLD_SECONDS},
     CopyMode, Pos, StopSignal,
   },
   protocol::{CltToSrv, SrvToClt},
@@ -36,6 +36,7 @@ use crate::{
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
   ui_term::{render_term, term_check_hit},
   ui_zoom_tip::render_zoom_tip,
+  widgets::text_input::to_input_request,
   vt100::{
     attrs::Attrs, grid::Rect, Grid, MouseProtocolMode, ScreenDiffer, Size,
   },
@@ -334,12 +335,16 @@ impl App {
       }
     }
 
+    if self.handle_search_input(loop_action, &event) {
+      return;
+    }
+
     match event {
       TermEvent::Key(Key {
         code,
         mods,
         kind: KeyEventKind::Press | KeyEventKind::Repeat,
-        state: _,
+        ..
       }) => {
         let key = Key::new(code, mods);
         let group = self.state.get_keymap_group();
@@ -560,6 +565,87 @@ impl App {
         log::warn!("Ignore input event: {:?}", event);
       }
     }
+  }
+
+  fn handle_search_input(
+    &mut self,
+    loop_action: &mut LoopAction,
+    event: &TermEvent,
+  ) -> bool {
+    let search_active = self
+      .state
+      .get_current_proc()
+      .is_some_and(|p| p.search.is_some());
+    if !search_active {
+      return false;
+    }
+
+    match event {
+      TermEvent::Key(Key {
+        code,
+        kind,
+        ..
+      }) if *kind == KeyEventKind::Press || *kind == KeyEventKind::Repeat => {
+        match code {
+        crate::key::KeyCode::Esc => {
+          self.handle_event(loop_action, &AppEvent::SearchLeave);
+        }
+        crate::key::KeyCode::Enter => {
+          if let Some(proc) = self.state.get_current_proc_mut() {
+            if let Some(search) = &mut proc.search {
+              if !search.matches.is_empty() {
+                search.current =
+                  (search.current + 1) % search.matches.len();
+                // Scroll to current match
+                let (match_row, _) = search.matches[search.current];
+                if let Some(vt_ref) = proc.vt.clone() {
+                  if let Ok(vt) = vt_ref.read() {
+                    let screen = vt.screen();
+                    let abs_start = screen.visible_row_abs_start();
+                    let height = screen.size().height as usize;
+                    if match_row < abs_start
+                      || match_row >= abs_start + height
+                    {
+                      let total = screen.total_rows();
+                      let row0 = total - height;
+                      let target_scrollback =
+                        row0.saturating_sub(match_row);
+                      drop(vt);
+                      if let Ok(mut vt) = vt_ref.write() {
+                        vt.screen.set_scrollback(target_scrollback);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          loop_action.render();
+        }
+        _ => {
+          if let Some(req) = to_input_request(event) {
+            let vt_clone = self
+              .state
+              .get_current_proc_mut()
+              .and_then(|p| p.vt.clone());
+            if let Some(proc) = self.state.get_current_proc_mut() {
+              if let Some(search) = &mut proc.search {
+                search.input.handle(req);
+                if let Some(vt_ref) = &vt_clone {
+                  if let Ok(vt) = vt_ref.read() {
+                    search.run_search(vt.screen());
+                  }
+                }
+              }
+            }
+          }
+          loop_action.render();
+        }
+        }
+      },
+      _ => return false,
+    }
+    true
   }
 
   fn handle_event(&mut self, loop_action: &mut LoopAction, event: &AppEvent) {
@@ -912,6 +998,20 @@ impl App {
       AppEvent::ToggleKeymapWindow => {
         self.state.toggle_keymap_window();
         loop_action.render();
+      }
+
+      AppEvent::SearchEnter => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.search = Some(SearchState::new());
+          self.state.scope = Scope::Term;
+          loop_action.render();
+        }
+      }
+      AppEvent::SearchLeave => {
+        if let Some(proc) = self.state.get_current_proc_mut() {
+          proc.search = None;
+          loop_action.render();
+        }
       }
 
       AppEvent::SendKey { key } => {

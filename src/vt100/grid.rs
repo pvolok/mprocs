@@ -584,6 +584,22 @@ impl Grid {
       .get(self.row0() + pos.row as usize)
       .is_some_and(|r| r.is_wide_continuation(pos.col))
   }
+
+  pub fn total_rows(&self) -> usize {
+    self.rows.len()
+  }
+
+  pub fn row_text(&self, abs_index: usize) -> String {
+    let mut contents = String::new();
+    if let Some(row) = self.rows.get(abs_index) {
+      row.write_contents(&mut contents, 0, row.cols(), false);
+    }
+    contents
+  }
+
+  pub fn visible_row_abs_start(&self) -> usize {
+    self.row0() - self.scrollback_offset
+  }
 }
 
 pub enum BorderType {

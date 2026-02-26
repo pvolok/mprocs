@@ -64,7 +64,19 @@ async fn client_main_loop(
         _ => break,
       },
       LocalEvent::TermEvent(event) => match event? {
-        Some(event) => sender.send(CltToSrv::Key(event)).await?,
+        Some(event) => {
+          // Filter out Release events: the server-side Key
+          // serialization loses the `kind` field (defaults to Press),
+          // so Release events would be misinterpreted as Press.
+          if let TermEvent::Key(crate::key::Key {
+            kind: crate::key::KeyEventKind::Release,
+            ..
+          }) = &event
+          {
+            continue;
+          }
+          sender.send(CltToSrv::Key(event)).await?
+        }
         _ => break,
       },
     }

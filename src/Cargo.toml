@@ -6,6 +6,7 @@ repository = "https://github.com/pvolok/mprocs"
 authors = ["Pavel Volokitin <pavelvolokitin@gmail.com>"]
 license = "MIT"
 edition = "2024"
+rust-version = "1.93.1"
 categories = [
   "command-line-interface",
   "command-line-utilities",
