@@ -194,7 +194,7 @@ fn render_search_bar(
   area: Rect,
   grid: &mut Grid,
 ) {
-  let prefix = "/ ";
+  let prefix = "? ";
   let prefix_len = prefix.len() as u16;
   let prefix_attrs = if editing {
     Attrs::default().fg(Color::BRIGHT_YELLOW).set_bold(true)

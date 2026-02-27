@@ -594,11 +594,11 @@ impl App {
               self.handle_event(loop_action, &AppEvent::SearchLeave);
             }
             KeyCode::Char('n') => {
-              self.scroll_to_search_match(true);
+              self.scroll_to_search_match(false);
               loop_action.render();
             }
             KeyCode::Char('N') => {
-              self.scroll_to_search_match(false);
+              self.scroll_to_search_match(true);
               loop_action.render();
             }
             _ => return false,

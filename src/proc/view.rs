@@ -64,7 +64,7 @@ impl SearchState {
       }
     }
     if !self.matches.is_empty() {
-      self.current = self.current.min(self.matches.len() - 1);
+      self.current = self.matches.len() - 1;
     } else {
       self.current = 0;
     }

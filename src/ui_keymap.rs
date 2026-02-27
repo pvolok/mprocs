@@ -50,8 +50,8 @@ pub fn render_keymap(
       .map(|k| print_key(k))
       .unwrap_or_else(|| "Ctrl+f".to_string());
     let hints = [
-      ("n", "Next match"),
-      ("N", "Prev match"),
+      ("n", "Older match"),
+      ("N", "Newer match"),
       (&search_key, "New search"),
       ("Esc", "Close"),
     ];
