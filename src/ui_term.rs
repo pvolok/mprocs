@@ -62,7 +62,6 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
       top_line = top_line.move_left(r.width as i32);
     }
 
-    // Determine if search is active and compute areas
     let search_active = proc.search.is_some();
     let search_editing = proc.search.as_ref().is_some_and(|s| !s.confirmed);
     let inner = area.inner(1);
@@ -81,7 +80,6 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
       (inner, None)
     };
 
-    // Build search highlight set
     let search_highlights = build_search_highlights(proc.search.as_ref(), proc);
 
     match &proc.lock_view() {
@@ -143,7 +141,6 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
       }
     }
 
-    // Render search bar
     if let Some(bar_area) = search_bar_area {
       if let Some(proc) = state.get_current_proc_mut() {
         if let Some(search) = &mut proc.search {
@@ -158,7 +155,6 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
   }
 }
 
-/// Maps (row, col) -> true if current match, false otherwise
 fn build_search_highlights(
   search: Option<&SearchState>,
   proc: &crate::proc::view::ProcView,
@@ -214,7 +210,6 @@ fn render_search_bar(
     ..area
   };
 
-  // Draw match count on the right side
   let match_info = if search.matches.is_empty() {
     if search.input.value().is_empty() {
       String::new()
@@ -303,7 +298,6 @@ fn render_screen(
           }
         }
 
-        // Search highlighting
         if let Some(&is_current) = search_highlights.get(&(row, col)) {
           let bg = if is_current {
             Color::BRIGHT_RED
