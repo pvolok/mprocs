@@ -45,7 +45,16 @@ pub fn render_keymap(
   };
 
   if search_confirmed {
-    let hints = [("n", "Next match"), ("N", "Prev match"), ("Ctrl+f", "New search"), ("Esc", "Close")];
+    let search_key = keymap
+      .resolve_key(KeymapGroup::Term, &AppEvent::SearchEnter)
+      .map(|k| print_key(k))
+      .unwrap_or_else(|| "Ctrl+f".to_string());
+    let hints = [
+      ("n", "Next match"),
+      ("N", "Prev match"),
+      (&search_key, "New search"),
+      ("Esc", "Close"),
+    ];
     let a = Attrs::default();
     for (key, desc) in hints {
       line.x = grid.draw_text(line, " <", a).right();
