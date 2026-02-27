@@ -39,7 +39,7 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
     if matches!(proc.copy_mode(), CopyMode::Active(..)) {
       let r = grid.draw_text(top_line, " ", Attrs::default());
       top_line = top_line.move_left(r.width as i32);
-      let _r = grid.draw_text(
+      let r = grid.draw_text(
         top_line,
         "COPY MODE",
         Attrs::default()
@@ -47,11 +47,11 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
           .bg(Color::YELLOW)
           .set_bold(true),
       );
-      top_line = top_line.move_left(_r.width as i32);
+      top_line = top_line.move_left(r.width as i32);
     } else if proc.search.is_some() {
       let r = grid.draw_text(top_line, " ", Attrs::default());
       top_line = top_line.move_left(r.width as i32);
-      let _r = grid.draw_text(
+      let r = grid.draw_text(
         top_line,
         "SEARCH",
         Attrs::default()
@@ -59,7 +59,7 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
           .bg(Color::BRIGHT_BLUE)
           .set_bold(true),
       );
-      top_line = top_line.move_left(_r.width as i32);
+      top_line = top_line.move_left(r.width as i32);
     }
 
     // Determine if search is active and compute areas
