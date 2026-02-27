@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use tui_input::Input;
 
 use crate::{
@@ -7,8 +9,6 @@ use crate::{
 };
 
 use super::CopyMode;
-
-use std::time::Instant;
 
 /// Amount of time a process has to stay up for autorestart to trigger
 pub const RESTART_THRESHOLD_SECONDS: f64 = 1.0;

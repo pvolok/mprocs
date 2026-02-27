@@ -39,7 +39,7 @@ pub fn to_input_request(evt: &TermEvent) -> Option<InputRequest> {
       code,
       mods,
       kind,
-      state: _,
+      ..
     }) if *kind == KeyEventKind::Press || *kind == KeyEventKind::Repeat => {
       match (*code, *mods) {
         (Backspace, KeyMods::NONE) | (Char('h'), KeyMods::CONTROL) => {
