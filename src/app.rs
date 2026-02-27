@@ -14,7 +14,7 @@ use crate::{
     kernel_message::{KernelCommand, ProcContext, ProcSender},
     proc::{ProcId, ProcInit, ProcStatus},
   },
-  key::{Key, KeyEventKind},
+  key::{Key, KeyCode, KeyEventKind},
   keymap::Keymap,
   modal::{
     add_proc::AddProcModal, commands_menu::CommandsMenuModal, modal::Modal,
@@ -590,14 +590,14 @@ impl App {
       }) if *kind == KeyEventKind::Press || *kind == KeyEventKind::Repeat => {
         if confirmed {
           match code {
-            crate::key::KeyCode::Esc => {
+            KeyCode::Esc => {
               self.handle_event(loop_action, &AppEvent::SearchLeave);
             }
-            crate::key::KeyCode::Char('n') => {
+            KeyCode::Char('n') => {
               self.scroll_to_search_match(true);
               loop_action.render();
             }
-            crate::key::KeyCode::Char('N') => {
+            KeyCode::Char('N') => {
               self.scroll_to_search_match(false);
               loop_action.render();
             }
@@ -605,10 +605,10 @@ impl App {
           }
         } else {
           match code {
-            crate::key::KeyCode::Esc => {
+            KeyCode::Esc => {
               self.handle_event(loop_action, &AppEvent::SearchLeave);
             }
-            crate::key::KeyCode::Enter => {
+            KeyCode::Enter => {
               if let Some(proc) = self.state.get_current_proc_mut() {
                 if let Some(search) = &mut proc.search {
                   search.confirmed = true;
