@@ -631,6 +631,7 @@ impl App {
                     }
                   }
                 }
+                self.scroll_to_current_match();
               }
               loop_action.render();
             }
@@ -650,6 +651,14 @@ impl App {
         } else {
           search.prev_match();
         }
+      }
+    }
+    self.scroll_to_current_match();
+  }
+
+  fn scroll_to_current_match(&mut self) {
+    if let Some(proc) = self.state.get_current_proc_mut() {
+      if let Some(search) = &proc.search {
         if !search.matches.is_empty() {
           let (match_row, _) = search.matches[search.current];
           if let Some(vt_ref) = proc.vt.clone() {
@@ -660,7 +669,8 @@ impl App {
             if match_row < abs_start || match_row >= abs_start + height {
               let total = screen.total_rows();
               let row0 = total - height;
-              let target_scrollback = row0.saturating_sub(match_row);
+              let centered = match_row.saturating_sub(height / 2);
+              let target_scrollback = row0.saturating_sub(centered);
               drop(vt);
               let mut vt = vt_ref.write().unwrap();
               vt.screen.set_scrollback(target_scrollback);
