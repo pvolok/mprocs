@@ -173,10 +173,7 @@ fn build_search_highlights(
     Some(vt) => vt,
     None => return highlights,
   };
-  let vt = match vt_ref.read() {
-    Ok(vt) => vt,
-    Err(_) => return highlights,
-  };
+  let vt = vt_ref.read().unwrap();
   let screen = vt.screen();
   let abs_start = screen.visible_row_abs_start();
   let height = screen.size().height as usize;

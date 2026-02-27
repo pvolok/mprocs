@@ -626,9 +626,8 @@ impl App {
                   if let Some(search) = &mut proc.search {
                     search.input.handle(req);
                     if let Some(vt_ref) = &vt_clone {
-                      if let Ok(vt) = vt_ref.read() {
-                        search.run_search(vt.screen());
-                      }
+                      let vt = vt_ref.read().unwrap();
+                      search.run_search(vt.screen());
                     }
                   }
                 }
@@ -654,19 +653,17 @@ impl App {
         if !search.matches.is_empty() {
           let (match_row, _) = search.matches[search.current];
           if let Some(vt_ref) = proc.vt.clone() {
-            if let Ok(vt) = vt_ref.read() {
-              let screen = vt.screen();
-              let abs_start = screen.visible_row_abs_start();
-              let height = screen.size().height as usize;
-              if match_row < abs_start || match_row >= abs_start + height {
-                let total = screen.total_rows();
-                let row0 = total - height;
-                let target_scrollback = row0.saturating_sub(match_row);
-                drop(vt);
-                if let Ok(mut vt) = vt_ref.write() {
-                  vt.screen.set_scrollback(target_scrollback);
-                }
-              }
+            let vt = vt_ref.read().unwrap();
+            let screen = vt.screen();
+            let abs_start = screen.visible_row_abs_start();
+            let height = screen.size().height as usize;
+            if match_row < abs_start || match_row >= abs_start + height {
+              let total = screen.total_rows();
+              let row0 = total - height;
+              let target_scrollback = row0.saturating_sub(match_row);
+              drop(vt);
+              let mut vt = vt_ref.write().unwrap();
+              vt.screen.set_scrollback(target_scrollback);
             }
           }
         }
