@@ -1273,8 +1273,10 @@ impl Screen {
       ("", _, "", b'r') => {
         // DECSTBM - Set Top and Bottom Margins
         // https://terminalguide.namepad.de/seq/csi_sr/
-        let top = params.parse().unwrap_or(1).max(1) - 1;
-        let bottom = params.parse().unwrap_or(1).max(1) - 1;
+        let mut params = params.split(';');
+        let top = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
+        let bottom =
+          params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
         self.grid_mut().set_scroll_region(top, bottom);
       }
       _ => csi_todo(full_params, intermediate, final_),
