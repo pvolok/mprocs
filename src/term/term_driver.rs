@@ -360,7 +360,7 @@ impl TermDriver {
           }
         } => {
           self.init_timeout = None;
-          self.activate_keyboard()?;
+          self.activate_keyboard_fallback()?;
         }
       }
     }
