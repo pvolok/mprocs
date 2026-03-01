@@ -1038,97 +1038,103 @@ impl Screen {
       }
       ("", _, "", b'm') => {
         let mut params = params.split(';');
-        match params.next().unwrap_or("0").parse().unwrap_or(0) {
-          0 => {
-            // Reset
-            self.attrs = Attrs::default();
-          }
-          1 => {
-            // Bold
-            self.attrs.set_bold(true);
-          }
-          2 => {
-            // Dim
-            self.attrs.set_bold(false);
-          }
-          3 => {
-            // Italic
-            self.attrs.set_italic(true);
-          }
-          4 => {
-            // Underline
-            self.attrs.set_underline(true);
-          }
-          5 => {
-            // Slow blink
-            // TODO
-          }
-          6 => {
-            // Rapid blink
-            // TODO
-          }
-          7 => {
-            // Invert
-            self.attrs.set_inverse(true);
-          }
-          9 => {
-            // Crossed-out
-            // TODO
-          }
-          21 => {
-            // Doubly underlined
-            self.attrs.set_underline(true);
-          }
-          22 => {
-            // Normal intensity
-            self.attrs.set_bold(false);
-          }
-          23 => {
-            // Not italic
-            self.attrs.set_italic(false);
-          }
-          24 => {
-            // Not underlined
-            self.attrs.set_underline(false);
-          }
-          25 => {
-            // Not blinking
-            // TODO
-          }
-          27 => {
-            // Not reversed
-            self.attrs.set_inverse(false);
-          }
-          29 => {
-            // Not crossed-out
-            // TODO
-          }
-          n @ 30..=37 => {
-            self.attrs.fgcolor = Color::Idx(n - 30);
-          }
-          38 => {
-            self.attrs.fgcolor = parse_sgr_color(params);
-          }
-          39 => {
-            self.attrs.fgcolor = Color::Default;
-          }
-          n @ 40..=47 => {
-            self.attrs.bgcolor = Color::Idx(n - 40);
-          }
-          48 => {
-            self.attrs.bgcolor = parse_sgr_color(params);
-          }
-          49 => {
-            self.attrs.bgcolor = Color::Default;
-          }
-          n @ 90..=97 => {
-            self.attrs.fgcolor = Color::Idx(n - 90 + 8);
-          }
-          n @ 100..=107 => {
-            self.attrs.bgcolor = Color::Idx(n - 100 + 8);
-          }
-          n => {
-            log::warn!("Ignored SGR: {}", n);
+        loop {
+          let p = match params.next() {
+            Some(p) => p,
+            None => break,
+          };
+          match p.parse().unwrap_or(0) {
+            0 => {
+              // Reset
+              self.attrs = Attrs::default();
+            }
+            1 => {
+              // Bold
+              self.attrs.set_bold(true);
+            }
+            2 => {
+              // Dim
+              self.attrs.set_bold(false);
+            }
+            3 => {
+              // Italic
+              self.attrs.set_italic(true);
+            }
+            4 => {
+              // Underline
+              self.attrs.set_underline(true);
+            }
+            5 => {
+              // Slow blink
+              // TODO
+            }
+            6 => {
+              // Rapid blink
+              // TODO
+            }
+            7 => {
+              // Invert
+              self.attrs.set_inverse(true);
+            }
+            9 => {
+              // Crossed-out
+              // TODO
+            }
+            21 => {
+              // Doubly underlined
+              self.attrs.set_underline(true);
+            }
+            22 => {
+              // Normal intensity
+              self.attrs.set_bold(false);
+            }
+            23 => {
+              // Not italic
+              self.attrs.set_italic(false);
+            }
+            24 => {
+              // Not underlined
+              self.attrs.set_underline(false);
+            }
+            25 => {
+              // Not blinking
+              // TODO
+            }
+            27 => {
+              // Not reversed
+              self.attrs.set_inverse(false);
+            }
+            29 => {
+              // Not crossed-out
+              // TODO
+            }
+            n @ 30..=37 => {
+              self.attrs.fgcolor = Color::Idx(n - 30);
+            }
+            38 => {
+              self.attrs.fgcolor = parse_sgr_color(&mut params);
+            }
+            39 => {
+              self.attrs.fgcolor = Color::Default;
+            }
+            n @ 40..=47 => {
+              self.attrs.bgcolor = Color::Idx(n - 40);
+            }
+            48 => {
+              self.attrs.bgcolor = parse_sgr_color(&mut params);
+            }
+            49 => {
+              self.attrs.bgcolor = Color::Default;
+            }
+            n @ 90..=97 => {
+              self.attrs.fgcolor = Color::Idx(n - 90 + 8);
+            }
+            n @ 100..=107 => {
+              self.attrs.bgcolor = Color::Idx(n - 100 + 8);
+            }
+            n => {
+              log::warn!("Ignored SGR: {}", n);
+            }
           }
         }
       }
@@ -1293,7 +1299,7 @@ fn csi_todo(params: &str, intermediate: &str, final_: u8) {
   );
 }
 
-fn parse_sgr_color(mut params: std::str::Split<'_, char>) -> Color {
+fn parse_sgr_color(params: &mut std::str::Split<'_, char>) -> Color {
   match params.next().unwrap_or("2") {
     "2" => {
       let r = params.next().unwrap_or("0").parse().unwrap_or(0);
