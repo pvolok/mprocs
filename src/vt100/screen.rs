@@ -95,6 +95,8 @@ pub struct Screen {
 
   /// If true, writing a character inserts a new cell
   insert: bool,
+
+  title: String,
 }
 
 impl Screen {
@@ -129,6 +131,8 @@ impl Screen {
       shift_out: false,
 
       insert: false,
+
+      title: String::new(),
     }
   }
 
@@ -200,6 +204,11 @@ impl Screen {
   #[must_use]
   pub fn cursor_style(&self) -> CursorStyle {
     self.grid.cursor_style
+  }
+
+  #[must_use]
+  pub fn title(&self) -> &str {
+    &self.title
   }
 
   /// Returns whether the terminal should be in application cursor mode.
@@ -787,8 +796,8 @@ impl Screen {
                   s = Some(&buf[start..pos]);
                   pos += 2;
                 }
-                if let Some(_s) = s {
-                  // TODO: Handle OSC
+                if let Some(s) = s {
+                  self.process_osc(s);
                   break 'osc;
                 }
 
@@ -1286,6 +1295,30 @@ impl Screen {
         self.grid_mut().set_scroll_region(top, bottom);
       }
       _ => csi_todo(full_params, intermediate, final_),
+    }
+  }
+
+  fn process_osc(&mut self, data: &[u8]) {
+    let s = match str::from_utf8(data) {
+      Ok(s) => s,
+      Err(_) => return,
+    };
+    // OSC Ps ; Pt ST
+    // Ps = 0: Set icon name and window title
+    // Ps = 1: Set icon name
+    // Ps = 2: Set window title
+    if let Some((ps, pt)) = s.split_once(';') {
+      match ps {
+        "0" | "2" => {
+          self.title = pt.to_string();
+        }
+        "1" => {
+          // Icon name
+        }
+        _ => {
+          log::debug!("Unhandled OSC: {ps}");
+        }
+      }
     }
   }
 }

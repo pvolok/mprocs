@@ -35,7 +35,7 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
       CopyMode::Active(_, _, _) => {
         let r = grid.draw_text(top_line, " ", Attrs::default());
         top_line = top_line.move_left(r.width as i32);
-        let _r = grid.draw_text(
+        let r = grid.draw_text(
           top_line,
           "COPY MODE",
           Attrs::default()
@@ -43,13 +43,25 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
             .bg(Color::YELLOW)
             .set_bold(true),
         );
-        // top_line = top_line.move_left(r.width as i32);
+        top_line = top_line.move_left(r.width as i32);
       }
     };
 
     match &proc.lock_view() {
       ProcViewFrame::Empty => (),
       ProcViewFrame::Vt(vt) => {
+        let title = vt.screen().title();
+        if !title.is_empty() {
+          let r = grid.draw_text(top_line, " ", Attrs::default());
+          top_line = top_line.move_left(r.width as i32);
+          let r = grid.draw_text(
+            top_line,
+            title,
+            Attrs::default().fg(Color::BRIGHT_BLACK),
+          );
+          top_line = top_line.move_left(r.width as i32);
+          let _r = grid.draw_text(top_line, " ", Attrs::default());
+        }
         let (screen, cursor) = match proc.copy_mode() {
           CopyMode::None(_) => {
             let screen = vt.screen();
