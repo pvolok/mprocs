@@ -407,6 +407,9 @@ impl Screen {
         }
       }
     } else {
+      if self.insert {
+        self.grid_mut().insert_cells(width);
+      }
       if self.grid().is_wide_continuation(pos) {
         let prev_cell = self
           .grid_mut()
@@ -721,11 +724,7 @@ impl Screen {
               self.clear_mode(MODE_APPLICATION_KEYPAD);
             }
             b'@' => {
-              if pos >= buf.len() {
-                break;
-              }
-              // Consume one byte
-              pos += 1;
+              // PAD - ignored
             }
             b'M' => {
               // RI - Reverse Index
@@ -885,13 +884,13 @@ impl Screen {
       ("?", _, "", b'J') => {
         // DECSED - Selective Erase Display
         // https://terminalguide.namepad.de/seq/csi_cj__p/
-        let mode = params.parse().unwrap_or(0);
+        let mode = bare_params.parse().unwrap_or(0);
         self.decsed(mode);
       }
       ("?", _, "", b'K') => {
         // DECSEL - Selective Erase Line
         // https://terminalguide.namepad.de/seq/csi_ck__p/
-        let mode = params.parse().unwrap_or(0);
+        let mode = bare_params.parse().unwrap_or(0);
         self.decsel(mode);
       }
       ("", _, "", b'@') => {
@@ -1289,9 +1288,20 @@ impl Screen {
         // DECSTBM - Set Top and Bottom Margins
         // https://terminalguide.namepad.de/seq/csi_sr/
         let mut params = params.split(';');
-        let top = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
-        let bottom =
-          params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
+        let top_param = params.next().unwrap_or("");
+        let top = if top_param.is_empty() {
+          1
+        } else {
+          top_param.parse().unwrap_or(1).max(1)
+        };
+        let bottom_param = params.next().unwrap_or("");
+        let bottom = if bottom_param.is_empty() {
+          self.grid().size().height
+        } else {
+          bottom_param.parse().unwrap_or(1).max(1)
+        };
+        let top = top - 1;
+        let bottom = bottom - 1;
         self.grid_mut().set_scroll_region(top, bottom);
       }
       _ => csi_todo(full_params, intermediate, final_),
