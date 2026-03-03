@@ -15,13 +15,10 @@ use crate::config_lua::load_lua_config;
 use crate::ctl::run_ctl;
 #[cfg(unix)]
 use crate::error::ResultLogger;
-use crate::host::{
-  receiver::MsgReceiver, sender::MsgSender, socket::bind_server_socket,
-};
+use crate::host::{receiver::MsgReceiver, sender::MsgSender};
 use crate::just::load_just_procs;
 use crate::kernel::{
   kernel::Kernel,
-  kernel_message::KernelCommand,
   proc::{ProcInit, ProcStatus},
 };
 use crate::keymap::Keymap;
@@ -34,24 +31,16 @@ use clap::{arg, command, ArgMatches};
 use flexi_logger::{FileSpec, LoggerHandle};
 use serde_yaml::Value;
 
-enum LogTarget {
-  File,
-  Stderr,
-}
-
-fn setup_logger(target: LogTarget) -> LoggerHandle {
+fn setup_logger() -> LoggerHandle {
   let logger_str = if cfg!(debug_assertions) {
     "debug"
   } else {
     "warn"
   };
-  let logger = flexi_logger::Logger::try_with_str(logger_str).unwrap();
-  let logger = match target {
-    LogTarget::File => logger
-      .log_to_file(FileSpec::default().suppress_timestamp())
-      .append(),
-    LogTarget::Stderr => logger.log_to_stderr(),
-  };
+  let logger = flexi_logger::Logger::try_with_str(logger_str)
+    .unwrap()
+    .log_to_file(FileSpec::default().suppress_timestamp())
+    .append();
 
   std::panic::set_hook(Box::new(|info| {
     let stacktrace = std::backtrace::Backtrace::capture();
@@ -190,77 +179,11 @@ async fn run_app() -> anyhow::Result<()> {
   };
 
   match matches.subcommand() {
-    // Some(("attach", _args)) => {
-    //   let logger = setup_logger(LogTarget::File);
-    //   let ret = client_main(false).await;
-    //   drop(logger);
-    //   ret
-    // }
-    Some(("server", _args)) => {
-      let logger = setup_logger(LogTarget::Stderr);
-
-      #[cfg(unix)]
-      crate::process::unix_processes_waiter::UnixProcessesWaiter::init()?;
-      let mut kernel = Kernel::new();
-      kernel.spawn_proc(|pc| {
-        let app_proc_id = create_app_proc(config, keymap, &pc);
-        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-
-        let app_sender = pc.get_proc_sender(app_proc_id);
-
-        tokio::spawn(async move {
-          let mut last_client_id = 0;
-
-          let mut server_socket = match bind_server_socket().await {
-            Ok(server_socket) => {
-              log::info!("Server is listening.");
-              server_socket
-            }
-            Err(err) => {
-              log::error!("Failed to bind the server: {:?}", err);
-              pc.send(KernelCommand::Quit);
-              return;
-            }
-          };
-          log::debug!("Waiting for clients...");
-          loop {
-            match server_socket.accept().await {
-              Ok(socket) => {
-                last_client_id += 1;
-                let client_id = ClientId(last_client_id);
-                let app_sender = app_sender.clone();
-                tokio::spawn(async move {
-                  client_loop(client_id, app_sender, socket).await;
-                });
-              }
-              Err(err) => {
-                log::info!("Server socket accept error: {}", err);
-                break;
-              }
-            }
-          }
-        });
-
-        ProcInit {
-          sender,
-          stop_on_quit: false,
-          status: ProcStatus::Down,
-          deps: Vec::new(),
-        }
-      });
-
-      kernel.run().await;
-      #[cfg(unix)]
-      crate::process::unix_processes_waiter::UnixProcessesWaiter::uninit()?;
-
-      drop(logger);
-      Ok(())
-    }
     Some((cmd, _args)) => {
       bail!("Unexpected command: {}", cmd);
     }
     None => {
-      let logger = setup_logger(LogTarget::File);
+      let logger = setup_logger();
 
       let (srv_to_clt_sender, srv_to_clt_receiver) = {
         let (reader, writer) = tokio::io::simplex(8 * 1024);

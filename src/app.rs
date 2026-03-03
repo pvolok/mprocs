@@ -597,10 +597,9 @@ impl App {
         }
         loop_action.force_quit();
       }
-      AppEvent::Detach { client_id: _ } => {
-        // TODO: Client-server mode is disabled for mprocs 0.7
-        // self.clients.retain_mut(|c| c.id != *client_id);
-        // self.update_screen_size();
+      AppEvent::Detach { client_id } => {
+        self.clients.retain_mut(|c| c.id != *client_id);
+        self.update_screen_size();
         loop_action.render();
       }
 
@@ -1199,11 +1198,13 @@ pub fn create_app_proc(
     log::debug!("Creating app proc (id: {})", pc.proc_id.0);
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(async {
-      let r = server_main(config, keymap, receiver, pc).await;
+      let pc = pc;
+      let r = server_main(config, keymap, receiver, pc.clone()).await;
       match r {
         Ok(()) => (),
         Err(err) => log::error!("App proc finished with error: {:?}", err),
-      }
+      };
+      pc.send(KernelCommand::Quit);
     });
     ProcInit {
       sender,
