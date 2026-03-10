@@ -37,6 +37,8 @@ pub fn render_keymap(
       AppEvent::StartProc,
       AppEvent::TermProc,
       AppEvent::RestartProc,
+      AppEvent::Zoom,
+      AppEvent::ShowCommandsMenu,
       AppEvent::ToggleKeymapWindow,
     ][..],
     KeymapGroup::Term => &[AppEvent::ToggleFocus][..],
