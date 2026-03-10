@@ -276,6 +276,7 @@ Process list focused:
 
 - `q` - Quit (soft kill processes and wait then to exit)
 - `Q` - Force quit (terminate processes)
+- `p` - All commands
 - `C-a` - Focus output pane
 - `x` - Soft kill selected process (send SIGTERM signal, hard kill on Windows)
 - `X` - Hard kill selected process (send SIGKILL)
@@ -315,6 +316,14 @@ Copy mode:
 - `j` or `↓` - Move cursor down
 - `h` or `←` - Move cursor left
 
+#### How to copy text
+
+1. Press `v` to enter copy mode.
+2. Move cursor to the beginning of the text you want to copy.
+3. Press `v` to start selection.
+4. Move cursor to the end of the text.
+5. Press `c` to copy selected text to the clipboard.
+
 ### Remote control
 
 Optionally, _mprocs_ can listen on TCP port for remote commands.
@@ -342,6 +351,7 @@ Commands are encoded as yaml. Available commands:
 - `{c: restart-all}` - Restart all processes
 - `{c: force-restart-proc}` - Restart selected process by sending SIGKILL
 - `{c: force-restart-all}`
+- `{c: show-commands-menu}` - All commands
 - `{c: show-add-proc}`
 - `{c: add-proc, cmd: "<SHELL COMMAND>", name: "<PROC NAME>"}` - Add proccess. `name` field is optional.
 - `{c: duplicate-proc}`
