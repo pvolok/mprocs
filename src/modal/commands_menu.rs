@@ -72,35 +72,37 @@ impl Modal for CommandsMenuModal {
         loop_action.render();
         return true;
       }
-      // List bindings
-      TermEvent::Key(Key {
-        code: KeyCode::Char('n'),
-        mods,
-        ..
-      }) if mods == &KeyMods::CONTROL => {
-        let index = self.list_state.selected();
-        let index = if index >= self.items.len() - 1 {
-          0
-        } else {
-          index + 1
-        };
-        self.list_state.select(index);
-        loop_action.render();
+      // List navigation
+      TermEvent::Key(Key { code, mods, .. })
+        if (code == &KeyCode::Up && mods.is_empty())
+          || (code == &KeyCode::Char('p') && mods == &KeyMods::CONTROL) =>
+      {
+        if !self.items.is_empty() {
+          let index = self.list_state.selected();
+          let index = if index == 0 {
+            self.items.len() - 1
+          } else {
+            index - 1
+          };
+          self.list_state.select(index);
+          loop_action.render();
+        }
         return true;
       }
-      TermEvent::Key(Key {
-        code: KeyCode::Char('p'),
-        mods,
-        ..
-      }) if mods == &KeyMods::CONTROL => {
-        let index = self.list_state.selected();
-        let index = if index == 0 {
-          self.items.len() - 1
-        } else {
-          index - 1
-        };
-        self.list_state.select(index);
-        loop_action.render();
+      TermEvent::Key(Key { code, mods, .. })
+        if (code == &KeyCode::Down && mods.is_empty())
+          || (code == &KeyCode::Char('n') && mods == &KeyMods::CONTROL) =>
+      {
+        if !self.items.is_empty() {
+          let index = self.list_state.selected();
+          let index = if index >= self.items.len() - 1 {
+            0
+          } else {
+            index + 1
+          };
+          self.list_state.select(index);
+          loop_action.render();
+        }
         return true;
       }
       _ => (),
@@ -156,6 +158,8 @@ impl Modal for CommandsMenuModal {
       width: inner.width,
       height: inner.height.saturating_sub(2),
     };
+    self.list_state.fit(list_area, self.items.len());
+
     let above_input = Rect {
       x: inner.x,
       y: (inner.y + inner.height).saturating_sub(2),
@@ -165,10 +169,12 @@ impl Modal for CommandsMenuModal {
 
     grid.fill_area(inner.into(), ' ', Attrs::default());
 
-    for (i, (cmd, desc, _event)) in self.items.iter().enumerate() {
+    let range = self.list_state.visible_range();
+    for (row, i) in range.enumerate() {
+      let (cmd, desc, _event) = &self.items[i];
       let mut row_area = Rect {
         x: list_area.x,
-        y: list_area.y + i as u16,
+        y: list_area.y + row as u16,
         width: list_area.width,
         height: 1,
       };
@@ -191,7 +197,7 @@ impl Modal for CommandsMenuModal {
       row_area.x = grid
         .draw_text(
           row_area,
-          &desc,
+          desc,
           Attrs::default().fg(Color::BRIGHT_BLACK).set_italic(true),
         )
         .right();
