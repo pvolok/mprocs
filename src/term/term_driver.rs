@@ -1,9 +1,11 @@
-#[cfg(unix)]
-use std::os::fd::AsRawFd;
-use std::{io::Write, time::Duration};
+use std::collections::VecDeque;
+use std::io::Write;
+use std::pin::Pin;
+use std::time::Duration;
+
+use tokio::io::AsyncReadExt;
 
 use crate::{
-  error::ResultLogger,
   term::{
     input_parser::InputParser,
     internal::{InternalTermEvent, KeyboardMode},
@@ -14,32 +16,33 @@ use crate::{
 
 pub struct TermDriver {
   #[cfg(unix)]
-  stdin: rustix::fd::BorrowedFd<'static>,
+  stdin_fd: rustix::fd::BorrowedFd<'static>,
   #[cfg(unix)]
   orig_termios: rustix::termios::Termios,
   #[cfg(unix)]
-  exit_write: std::os::unix::net::UnixStream,
+  async_stdin: tokio::io::Stdin,
+  #[cfg(unix)]
+  sigwinch: tokio::signal::unix::Signal,
 
   #[cfg(windows)]
   win_vt: super::windows::WinVt,
+  #[cfg(windows)]
+  events: tokio::sync::mpsc::UnboundedReceiver<InternalTermEvent>,
 
   stdout: std::io::Stdout,
 
-  events: tokio::sync::mpsc::UnboundedReceiver<InternalTermEvent>,
-
-  init_timeout: Option<tokio::task::JoinHandle<()>>,
+  input_parser: InputParser,
+  pending: VecDeque<InternalTermEvent>,
+  init_timeout: Option<Pin<Box<tokio::time::Sleep>>>,
   keyboard: KeyboardMode,
 }
-
-#[cfg(unix)]
-const WAKE_BYTE_QUIT: u8 = b'q';
 
 impl TermDriver {
   pub fn create() -> anyhow::Result<Self> {
     #[cfg(unix)]
-    let stdin = rustix::stdio::stdin();
+    let stdin_fd = rustix::stdio::stdin();
     #[cfg(unix)]
-    if !rustix::termios::isatty(stdin) {
+    if !rustix::termios::isatty(stdin_fd) {
       anyhow::bail!("Stdin is not a tty.");
     }
 
@@ -48,17 +51,15 @@ impl TermDriver {
 
     let mut stdout = std::io::stdout();
 
-    let (sender, events) = tokio::sync::mpsc::unbounded_channel();
-
     #[cfg(unix)]
-    let orig_termios = rustix::termios::tcgetattr(stdin)?;
+    let orig_termios = rustix::termios::tcgetattr(stdin_fd)?;
     #[cfg(unix)]
     let mut termios = orig_termios.clone();
     #[cfg(unix)]
     termios.make_raw();
     #[cfg(unix)]
     rustix::termios::tcsetattr(
-      stdin,
+      stdin_fd,
       rustix::termios::OptionalActions::Now,
       &termios,
     )?;
@@ -88,135 +89,76 @@ impl TermDriver {
     // Query device.
     stdout.write_all(b"\x1B[c")?;
 
-    let init_timeout = {
-      let sender = sender.clone();
-      tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        sender.send(InternalTermEvent::InitTimeout).log_ignore();
-      })
-    };
-
     #[cfg(unix)]
-    let (exit_read, exit_write) =
-      std::os::unix::net::UnixStream::pair().unwrap();
-    #[cfg(unix)]
-    {
-      exit_read.set_nonblocking(true).unwrap();
-      exit_write.set_nonblocking(true).unwrap();
-      std::thread::spawn(move || {
-        let (mut sig_read, sig_write) =
-          std::os::unix::net::UnixStream::pair().unwrap();
-        sig_read.set_nonblocking(true).unwrap();
-        sig_write.set_nonblocking(true).unwrap();
-        signal_hook::low_level::pipe::register(
-          signal_hook::consts::SIGWINCH,
-          sig_write,
-        )
-        .unwrap();
-
-        let mut read_buf = unsafe { Box::new_uninit_slice(1024).assume_init() };
-        let mut input_parser = InputParser::new();
-
-        'thread: loop {
-          let fds = [
-            stdin.as_raw_fd(),
-            sig_read.as_raw_fd(),
-            exit_read.as_raw_fd(),
-          ];
-          let nfds = fds.iter().copied().max().unwrap_or(0) + 1;
-          let mut fdset =
-            vec![
-              rustix::event::FdSetElement::default();
-              rustix::event::fd_set_num_elements(fds.len(), nfds)
-            ];
-
-          for fd in fds {
-            rustix::event::fd_set_insert(&mut fdset, fd);
-          }
-          unsafe {
-            rustix::event::select(nfds, Some(&mut fdset), None, None, None)
-              .unwrap()
-          };
-
-          for fd in rustix::event::FdSetIter::new(&fdset) {
-            if fd == stdin.as_raw_fd() {
-              match rustix::io::read(stdin, Box::as_mut(&mut read_buf)) {
-                Ok(read_count) => {
-                  let slice = &read_buf[..read_count];
-                  input_parser.parse_input(slice, true, false, |e| {
-                    sender.send(e).log_ignore()
-                  });
-                }
-                Err(err) => log::error!("stdin(err): {:?}", err),
-              }
-            } else if fd == sig_read.as_raw_fd() {
-              std::io::Read::read_exact(&mut sig_read, &mut [0]).unwrap();
-              let winsize = rustix::termios::tcgetwinsize(stdin).unwrap();
-              sender
-                .send(InternalTermEvent::Resize(winsize.ws_col, winsize.ws_row))
-                .log_ignore();
-            } else if fd == exit_read.as_raw_fd() {
-              break 'thread;
-            }
-          }
-        }
-      });
-    }
+    let sigwinch = tokio::signal::unix::signal(
+      tokio::signal::unix::SignalKind::window_change(),
+    )
+    .expect("Failed to register SIGWINCH handler");
 
     #[cfg(windows)]
-    unsafe {
-      std::thread::spawn(move || {
-        let stdin = match windows::Win32::System::Console::GetStdHandle(
-          windows::Win32::System::Console::STD_INPUT_HANDLE,
-        ) {
-          Ok(stdin) => stdin,
-          Err(err) => {
-            log::error!("GetStdHandle error: {}", err);
-            return;
-          }
-        };
-        let mut input_parser = InputParser::new();
-        let mut buf =
-          [windows::Win32::System::Console::INPUT_RECORD::default(); 128];
-        loop {
-          let mut count = 0;
-          match windows::Win32::System::Console::ReadConsoleInputA(
-            stdin, &mut buf, &mut count,
+    let events = {
+      let (sender, events) = tokio::sync::mpsc::unbounded_channel();
+      unsafe {
+        std::thread::spawn(move || {
+          let stdin = match windows::Win32::System::Console::GetStdHandle(
+            windows::Win32::System::Console::STD_INPUT_HANDLE,
           ) {
-            Ok(()) => (),
+            Ok(stdin) => stdin,
             Err(err) => {
-              log::error!("ReadConsoleInputA error: {}", err);
-              break;
+              log::error!("GetStdHandle error: {}", err);
+              return;
             }
           };
+          let mut input_parser = InputParser::new();
+          let mut buf =
+            [windows::Win32::System::Console::INPUT_RECORD::default(); 128];
+          loop {
+            let mut count = 0;
+            match windows::Win32::System::Console::ReadConsoleInputA(
+              stdin, &mut buf, &mut count,
+            ) {
+              Ok(()) => (),
+              Err(err) => {
+                log::error!("ReadConsoleInputA error: {}", err);
+                break;
+              }
+            };
 
-          super::windows::decode_input_records(
-            &mut input_parser,
-            &buf[..count as usize],
-            &mut |event| {
-              let _ = sender.send(event);
-            },
-          );
-        }
-      });
+            super::windows::decode_input_records(
+              &mut input_parser,
+              &buf[..count as usize],
+              &mut |event| {
+                let _ = sender.send(event);
+              },
+            );
+          }
+        });
+      };
+      events
     };
 
     Ok(Self {
       #[cfg(unix)]
-      stdin,
+      stdin_fd,
       #[cfg(unix)]
       orig_termios,
       #[cfg(unix)]
-      exit_write,
+      async_stdin: tokio::io::stdin(),
+      #[cfg(unix)]
+      sigwinch,
 
       #[cfg(windows)]
       win_vt,
+      #[cfg(windows)]
+      events,
 
       stdout,
 
-      events,
-
-      init_timeout: Some(init_timeout),
+      input_parser: InputParser::new(),
+      pending: VecDeque::new(),
+      init_timeout: Some(Box::pin(tokio::time::sleep(
+        Duration::from_millis(200),
+      ))),
       keyboard: KeyboardMode::Unknown,
     })
   }
@@ -253,13 +195,10 @@ impl TermDriver {
 
     #[cfg(unix)]
     rustix::termios::tcsetattr(
-      self.stdin,
+      self.stdin_fd,
       rustix::termios::OptionalActions::Now,
       &self.orig_termios,
     )?;
-
-    #[cfg(unix)]
-    self.exit_write.write_all(&[WAKE_BYTE_QUIT])?;
 
     #[cfg(windows)]
     self.win_vt.disable();
@@ -267,79 +206,138 @@ impl TermDriver {
     Ok(())
   }
 
+  fn handle_internal(
+    &mut self,
+    event: InternalTermEvent,
+  ) -> std::io::Result<Option<TermEvent>> {
+    match event {
+      InternalTermEvent::Key(key_event) => {
+        return Ok(Some(TermEvent::Key(key_event)));
+      }
+      InternalTermEvent::Mouse(mouse_event) => {
+        return Ok(Some(TermEvent::Mouse(mouse_event)));
+      }
+      InternalTermEvent::Resize(cols, rows) => {
+        return Ok(Some(TermEvent::Resize(cols, rows)));
+      }
+      InternalTermEvent::FocusGained => {
+        return Ok(Some(TermEvent::FocusGained));
+      }
+      InternalTermEvent::FocusLost => return Ok(Some(TermEvent::FocusLost)),
+      InternalTermEvent::CursorPos(_x, _y) => (),
+      InternalTermEvent::PrimaryDeviceAttributes => {
+        self.init_timeout = None;
+        self.activate_keyboard_fallback()?;
+      }
+      InternalTermEvent::ReplyKittyKeyboard(_flags) => {
+        self.keyboard = KeyboardMode::Kitty;
+        // 0b1 (1) - Disambiguate escape codes
+        // 0b10 (2) - Report event types
+        // 0b100 (4) - Report alternate keys
+        // 0b1000 (8) - Report all keys as escape codes
+        // 0b10000 (16) - Report associated text
+        // 0b1111 = 15
+        self.stdout.write_all(b"\x1b[>15u")?;
+      }
+    };
+    Ok(None)
+  }
+
+  fn activate_keyboard_fallback(&mut self) -> std::io::Result<()> {
+    if matches!(self.keyboard, KeyboardMode::Unknown) {
+      #[cfg(unix)]
+      {
+        self.keyboard = KeyboardMode::ModifyOtherKeys;
+        self.stdout.write_all(b"\x1b[>4;2m")?;
+      }
+      #[cfg(windows)]
+      {
+        self.keyboard = KeyboardMode::Win32;
+        self.stdout.write_all(b"\x1b[?9001h")?;
+      }
+    }
+    Ok(())
+  }
+
+  #[cfg(unix)]
+  pub async fn input(&mut self) -> std::io::Result<Option<TermEvent>> {
+    let mut read_buf = [0u8; 1024];
+
+    loop {
+      // Drain buffered events first.
+      while let Some(event) = self.pending.pop_front() {
+        if let Some(term_event) = self.handle_internal(event)? {
+          return Ok(Some(term_event));
+        }
+      }
+
+      tokio::select! {
+        result = self.async_stdin.read(&mut read_buf) => {
+          match result {
+            Ok(0) => return Ok(None),
+            Ok(n) => {
+              self.input_parser.parse_input(
+                &read_buf[..n], true, false,
+                |e| self.pending.push_back(e),
+              );
+            }
+            Err(err) => return Err(err),
+          }
+        }
+        _ = self.sigwinch.recv() => {
+          let winsize = rustix::termios::tcgetwinsize(self.stdin_fd)?;
+          return Ok(Some(TermEvent::Resize(winsize.ws_col, winsize.ws_row)));
+        }
+        _ = async {
+          match &mut self.init_timeout {
+            Some(sleep) => sleep.await,
+            None => std::future::pending().await,
+          }
+        } => {
+          self.init_timeout = None;
+          self.activate_keyboard_fallback()?;
+        }
+      }
+    }
+  }
+
+  #[cfg(windows)]
   pub async fn input(&mut self) -> std::io::Result<Option<TermEvent>> {
     loop {
-      let event = if let Some(event) = self.events.recv().await {
-        event
-      } else {
-        return Ok(None);
-      };
-      match event {
-        InternalTermEvent::Key(key_event) => {
-          return Ok(Some(TermEvent::Key(key_event)));
+      // Drain buffered events first.
+      while let Some(event) = self.pending.pop_front() {
+        if let Some(term_event) = self.handle_internal(event)? {
+          return Ok(Some(term_event));
         }
-        InternalTermEvent::Mouse(mouse_event) => {
-          return Ok(Some(TermEvent::Mouse(mouse_event)));
-        }
-        InternalTermEvent::Resize(cols, rows) => {
-          return Ok(Some(TermEvent::Resize(cols, rows)))
-        }
-        InternalTermEvent::FocusGained => {
-          return Ok(Some(TermEvent::FocusGained))
-        }
-        InternalTermEvent::FocusLost => return Ok(Some(TermEvent::FocusLost)),
-        InternalTermEvent::CursorPos(_x, _y) => (),
-        InternalTermEvent::PrimaryDeviceAttributes => {
-          if let Some(timeout) = &self.init_timeout {
-            timeout.abort();
-          }
-          self.init_timeout = None;
-          if matches!(self.keyboard, KeyboardMode::Unknown) {
-            #[cfg(unix)]
-            {
-              self.keyboard = KeyboardMode::ModifyOtherKeys;
-              self.stdout.write_all(b"\x1b[>4;2m")?;
-            }
-            #[cfg(windows)]
-            {
-              self.keyboard = KeyboardMode::Win32;
-              self.stdout.write_all(b"\x1b[?9001h")?;
-            }
-          }
-        }
+      }
 
-        InternalTermEvent::InitTimeout => {
-          self.init_timeout = None;
-          if matches!(self.keyboard, KeyboardMode::Unknown) {
-            #[cfg(unix)]
-            {
-              self.keyboard = KeyboardMode::ModifyOtherKeys;
-              self.stdout.write_all(b"\x1b[>4;2m")?;
+      tokio::select! {
+        event = self.events.recv() => {
+          match event {
+            Some(event) => {
+              if let Some(term_event) = self.handle_internal(event)? {
+                return Ok(Some(term_event));
+              }
             }
-            #[cfg(windows)]
-            {
-              self.keyboard = KeyboardMode::Win32;
-              self.stdout.write_all(b"\x1b[?9001h")?;
-            }
+            None => return Ok(None),
           }
         }
-        InternalTermEvent::ReplyKittyKeyboard(_flags) => {
-          self.keyboard = KeyboardMode::Kitty;
-          // 0b1 (1) - Disambiguate escape codes
-          // 0b10 (2) - Report event types
-          // 0b100 (4) - Report alternate keys
-          // 0b1000 (8) - Report all keys as escape codes
-          // 0b10000 (16) - Report associated text
-          // 0b1111 = 15
-          self.stdout.write_all(b"\x1b[>15u")?;
+        _ = async {
+          match &mut self.init_timeout {
+            Some(sleep) => sleep.await,
+            None => std::future::pending().await,
+          }
+        } => {
+          self.init_timeout = None;
+          self.activate_keyboard()?;
         }
-      };
+      }
     }
   }
 
   #[cfg(unix)]
   pub fn size(&self) -> std::io::Result<Size> {
-    let winsize = rustix::termios::tcgetwinsize(self.stdin)?;
+    let winsize = rustix::termios::tcgetwinsize(self.stdin_fd)?;
     Ok(Size {
       height: winsize.ws_row,
       width: winsize.ws_col,

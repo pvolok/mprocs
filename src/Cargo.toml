@@ -74,7 +74,6 @@ scopeguard = "1.2.0"
 itoa = "1"
 rquickjs = { version = "0.11", features = ["full-async"] }
 rustix = { version = "1", features = ["all-apis"] }
-signal-hook = "0.3"
 
 [target."cfg(unix)".dependencies]
 daemonize = "0.5.0"

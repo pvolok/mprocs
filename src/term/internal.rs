@@ -1,6 +1,7 @@
 use crate::{key::Key, mouse::MouseEvent};
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub enum InternalTermEvent {
   Key(Key),
   Mouse(MouseEvent),
@@ -10,7 +11,6 @@ pub enum InternalTermEvent {
   CursorPos(u16, u16),
   PrimaryDeviceAttributes,
 
-  InitTimeout,
   ReplyKittyKeyboard(u8),
 }
 
