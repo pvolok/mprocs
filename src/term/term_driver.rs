@@ -156,9 +156,9 @@ impl TermDriver {
 
       input_parser: InputParser::new(),
       pending: VecDeque::new(),
-      init_timeout: Some(Box::pin(tokio::time::sleep(
-        Duration::from_millis(200),
-      ))),
+      init_timeout: Some(Box::pin(tokio::time::sleep(Duration::from_millis(
+        200,
+      )))),
       keyboard: KeyboardMode::Unknown,
     })
   }

@@ -24,6 +24,7 @@ use crate::kernel::{
 use crate::keymap::Keymap;
 use crate::package_json::load_npm_procs;
 use crate::proc::StopSignal;
+use crate::proc_log_config::{LogConfig, LogMode};
 use crate::settings::Settings;
 use crate::yaml_val::Val;
 use anyhow::{bail, Result};
@@ -76,9 +77,12 @@ async fn run_app() -> anyhow::Result<()> {
     .arg(arg!(--just "Run recipes from justfile. Recipes are not started by default. Requires just to be installed."))
     .arg(arg!(--"on-all-finished" [YAML] "Event to trigger when all processes are finished"))
     .arg(arg!(--"log-dir" [DIR] "Directory for process log files. Each process logs to <DIR>/<name>.log"))
+    .arg(arg!(--"log-file" [PATH] "Process log file path or template. Supports {name}, {id}, {pid}, {ts}. Relative paths are resolved inside --log-dir when present."))
+    .arg(
+      arg!(--"log-mode" [MODE] "Process log file mode: append or truncate")
+        .value_parser(["append", "truncate"]),
+    )
     .arg(arg!([COMMANDS]... "Commands to run (if omitted, commands from config will be run)"))
-    // .subcommand(Command::new("server"))
-    // .subcommand(Command::new("attach"))
     .get_matches();
 
   let config_value = load_config_value(&matches)
@@ -125,7 +129,40 @@ async fn run_app() -> anyhow::Result<()> {
     }
 
     if let Some(log_dir) = matches.get_one::<String>("log-dir") {
-      config.log_dir = Some(PathBuf::from(log_dir));
+      let log = config.proc_log.get_or_insert(LogConfig {
+        enabled: Some(true),
+        dir: None,
+        file: None,
+        mode: None,
+      });
+      log.enabled = Some(true);
+      log.dir = Some(PathBuf::from(log_dir));
+    }
+
+    if let Some(log_file) = matches.get_one::<String>("log-file") {
+      let log = config.proc_log.get_or_insert(LogConfig {
+        enabled: Some(true),
+        dir: None,
+        file: None,
+        mode: None,
+      });
+      log.enabled = Some(true);
+      log.file = Some(PathBuf::from(log_file));
+    }
+
+    if let Some(log_mode) = matches.get_one::<String>("log-mode") {
+      let log = config.proc_log.get_or_insert(LogConfig {
+        enabled: Some(true),
+        dir: None,
+        file: None,
+        mode: None,
+      });
+      log.enabled = Some(true);
+      log.mode = Some(match log_mode.as_str() {
+        "append" => LogMode::Append,
+        "truncate" => LogMode::Truncate,
+        _ => unreachable!(),
+      });
     }
 
     if let Some(cmds) = matches.get_many::<String>("COMMANDS") {
@@ -150,7 +187,7 @@ async fn run_app() -> anyhow::Result<()> {
           deps: Vec::new(),
           mouse_scroll_speed: settings.mouse_scroll_speed,
           scrollback_len: settings.scrollback_len,
-          log_dir: config.log_dir.clone(),
+          log: config.proc_log.clone(),
         })
         .collect::<Vec<_>>();
 
@@ -166,12 +203,13 @@ async fn run_app() -> anyhow::Result<()> {
       config.procs = procs;
     }
 
-    // Propagate log_dir to all procs (for yaml/npm/just loaded procs)
-    if config.log_dir.is_some() {
+    // Propagate top-level log settings to all procs unless they override them.
+    if let Some(global_log) = config.proc_log.clone() {
       for proc in &mut config.procs {
-        if proc.log_dir.is_none() {
-          proc.log_dir = config.log_dir.clone();
-        }
+        proc.log = Some(match proc.log.take() {
+          Some(proc_log) => global_log.merged(&proc_log),
+          None => global_log.clone(),
+        });
       }
     }
 
@@ -267,7 +305,7 @@ fn load_procfile_procs(
         deps: Vec::new(),
         mouse_scroll_speed: settings.mouse_scroll_speed,
         scrollback_len: settings.scrollback_len,
-        log_dir: None,
+        log: None,
       });
     }
   }

@@ -162,21 +162,28 @@ settings in the _global_ config.
     environment variable.
   - **autostart**: _bool_ - Start process when mprocs starts. Default: _true_.
   - **autorestart**: _bool_ - Restart process when it exits. Default: false. Note: If process exits within 1 second of starting, it will not be restarted.
-  - **stop**: _"SIGINT"|"SIGTERM"|"SIGKILL"|{send-keys:
-    array<key>}|"hard-kill"_ -
+  - **stop**: _"SIGINT"|"SIGTERM"|"SIGKILL"|{send-keys: array<key>}|"hard-kill"_ -
     A way to stop a process (using `x` key or when quitting mprocs).
-  - **log_dir**: _string|null_ - Directory for process log files. Each process
-    logs to `<log_dir>/<name>.log`. Prefix `<CONFIG_DIR>` will be replaced with
-    the path of the directory where the config is located.
+  - **log**: _bool|string|object|null_ - Process logging config. A string is a
+    shorthand for `{ dir: ... }`. `true` enables logging with defaults.
+    - **dir**: _string|null_ - Directory for per-process log files.
+    - **file**: _string|null_ - Log file path relative to **dir**.
+      Supports `{name}`, `{id}`, `{pid}`, and `{ts}` placeholders.
+      Default: _"{name}.log"_.
+    - **enabled**: _bool_ - Enable or disable logging. Default: _true_.
+    - **mode**: _"append"|"truncate"_ - Whether append to or replace an existing
+      log file. Default: _"append"_.
+    Prefix `<CONFIG_DIR>` will be replaced with the path of the directory where
+    the config is located. Per-process **log** values merge with the top-level
+    **proc_log** config.
 - **hide_keymap_window**: _bool_ - Hide the pane at the bottom of the screen
   showing key bindings.
 - **mouse_scroll_speed**: _integer_ - Number of lines to scroll per one mouse
   scroll.
 - **scrollback**: _integer_ - Scrollback size. Default: _1000_.
 - **proc_list_width**: _integer_ - Process list window width.
-- **log_dir**: _string|null_ - Default directory for process log files. Each
-  process logs to `<log_dir>/<name>.log`. Prefix `<CONFIG_DIR>` will be replaced
-  with the path of the directory where the config is located.
+- **proc_log**: _bool|string|object|null_ - Default logging config for
+  processes. Accepts the same shape as per-process **log**.
 - **keymap_procs**: _object_ - Key bindings for process list. See
   [Keymap](#keymap).
 - **keymap_term**: _object_ - Key bindings for terminal window. See

@@ -13,7 +13,10 @@ impl Parser {
   pub fn new(rows: u16, cols: u16, scrollback_len: usize) -> Self {
     Self {
       screen: crate::vt100::screen::Screen::new(
-        Size { height: rows, width: cols },
+        Size {
+          height: rows,
+          width: cols,
+        },
         scrollback_len,
       ),
     }

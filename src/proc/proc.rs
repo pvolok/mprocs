@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 use std::future::pending;
-use std::path::PathBuf;
 
 use assert_matches::assert_matches;
 use tokio::io::AsyncWriteExt;
@@ -14,6 +13,7 @@ use crate::kernel::kernel_message::{KernelCommand, ProcContext};
 use crate::kernel::proc::{ProcId, ProcInit, ProcStatus};
 use crate::key::Key;
 use crate::mouse::{MouseEvent, MouseEventKind};
+use crate::proc_log_config::LogConfig;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
 use crate::vt100::grid::Rect;
@@ -25,25 +25,6 @@ use super::view::ProcView;
 use super::Size;
 use super::StopSignal;
 
-fn sanitize_log_filename(name: &str) -> String {
-  let mut out = String::new();
-  for ch in name.chars() {
-    let is_safe = ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.');
-    if is_safe {
-      out.push(ch);
-    } else {
-      out.push('_');
-    }
-  }
-
-  let trimmed = out.trim_matches(|c| c == '.' || c == ' ').to_string();
-  if trimmed.is_empty() {
-    "process".to_string()
-  } else {
-    trimmed
-  }
-}
-
 pub struct Proc {
   pub id: ProcId,
   pub spec: ProcessSpec,
@@ -52,7 +33,7 @@ pub struct Proc {
   name: String,
   stop_signal: StopSignal,
   scrollback_len: usize,
-  log_dir: Option<PathBuf>,
+  log: Option<LogConfig>,
 
   pub tx: UnboundedSender<ProcEvent>,
 
@@ -223,7 +204,7 @@ impl Proc {
       name: cfg.name.clone(),
       stop_signal: cfg.stop.clone(),
       scrollback_len: cfg.scrollback_len,
-      log_dir: cfg.log_dir.clone(),
+      log: cfg.log.clone(),
 
       tx,
 
@@ -240,18 +221,14 @@ impl Proc {
   async fn spawn_new_inst(&mut self) {
     assert_matches!(self.inst, ProcState::None);
 
-    let log_file = self.log_dir.as_ref().map(|dir| {
-      let filename = sanitize_log_filename(&self.name);
-      dir.join(format!("{}.log", filename))
-    });
-
     let spawned = Inst::spawn(
       self.id,
+      &self.name,
       &self.spec,
       self.tx.clone(),
       &self.size,
       self.scrollback_len,
-      log_file,
+      self.log.as_ref(),
     )
     .await;
     let inst = match spawned {

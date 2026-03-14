@@ -1,11 +1,11 @@
 use std::fmt::Debug;
-use std::path::PathBuf;
 
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::SharedVt;
 use crate::kernel::proc::ProcId;
+use crate::proc_log_config::{LogConfig, LogMode};
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
 use crate::process::NativeProcess;
@@ -37,11 +37,12 @@ impl Debug for Inst {
 impl Inst {
   pub async fn spawn(
     id: ProcId,
+    name: &str,
     spec: &ProcessSpec,
     tx: UnboundedSender<ProcEvent>,
     size: &Size,
     scrollback_len: usize,
-    log_file: Option<PathBuf>,
+    log: Option<&LogConfig>,
   ) -> anyhow::Result<Self> {
     let vt = crate::vt100::Parser::new(size.height, size.width, scrollback_len);
     let vt = SharedVt::new(vt);
@@ -97,16 +98,20 @@ impl Inst {
     #[cfg(windows)]
     let pid: i32 = process.pid;
 
+    let log_file = log.and_then(|log| log.file_path(name, id.0, pid as u32));
     let log_writer = match log_file {
       Some(path) => {
         // Create parent directories if needed
         if let Some(parent) = path.parent() {
           std::fs::create_dir_all(parent).log_ignore();
         }
-        tokio::fs::OpenOptions::new()
-          .create(true)
-          .write(true)
-          .truncate(true)
+        let append = log.is_some_and(|log| log.mode() == LogMode::Append);
+        let mut options = tokio::fs::OpenOptions::new();
+        options.create(true).write(true).append(append);
+        if !append {
+          options.truncate(true);
+        }
+        options
           .open(&path)
           .await
           .map_err(|e| log::warn!("Failed to open log file {:?}: {}", path, e))

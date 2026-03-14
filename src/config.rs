@@ -8,6 +8,7 @@ use serde_yaml::Value;
 use crate::{
   event::AppEvent,
   proc::StopSignal,
+  proc_log_config::LogConfig,
   process::process_spec::ProcessSpec,
   settings::Settings,
   yaml_val::{value_to_string, Val},
@@ -40,7 +41,7 @@ pub struct Config {
   pub proc_list_width: usize,
   pub proc_list_title: String,
   pub on_all_finished: Option<AppEvent>,
-  pub log_dir: Option<PathBuf>,
+  pub proc_log: Option<LogConfig>,
 }
 
 impl Config {
@@ -94,16 +95,13 @@ impl Config {
         settings.on_all_finished.clone()
       };
 
-    let log_dir = match config.get(&Value::from("log_dir")) {
-      Some(val) => match val.raw() {
-        Value::Null => None,
-        Value::String(log_dir) => Some(resolve_config_path(log_dir, ctx)?),
-        _ => return Err(val.error_at("Expected string or null")),
-      },
-      None => match &settings.log_dir {
-        Some(log_dir) => Some(resolve_config_path(log_dir, ctx)?),
-        None => None,
-      },
+    let proc_log = {
+      match config.get(&Value::from("proc_log")) {
+        Some(val) => crate::proc_log_config::parse_log_config(val, |path| {
+          resolve_config_path(path, ctx)
+        })?,
+        None => settings.proc_log.clone(),
+      }
     };
 
     let config = Config {
@@ -115,7 +113,7 @@ impl Config {
       proc_list_width: settings.proc_list_width,
       proc_list_title,
       on_all_finished,
-      log_dir,
+      proc_log,
     };
 
     Ok(config)
@@ -131,7 +129,7 @@ impl Config {
       proc_list_width: settings.proc_list_width,
       proc_list_title: settings.proc_list_title.clone(),
       on_all_finished: settings.on_all_finished.clone(),
-      log_dir: settings.log_dir.as_ref().map(PathBuf::from),
+      proc_log: settings.proc_log.clone(),
     })
   }
 }
@@ -151,7 +149,7 @@ pub struct ProcConfig {
 
   pub mouse_scroll_speed: usize,
   pub scrollback_len: usize,
-  pub log_dir: Option<PathBuf>,
+  pub log: Option<LogConfig>,
 }
 
 impl ProcConfig {
@@ -180,7 +178,7 @@ impl ProcConfig {
 
         mouse_scroll_speed,
         scrollback_len,
-        log_dir: None,
+        log: None,
       })),
       Value::Sequence(_) => {
         let cmd = val.as_array()?;
@@ -200,7 +198,7 @@ impl ProcConfig {
           deps: Vec::new(),
           mouse_scroll_speed,
           scrollback_len,
-          log_dir: None,
+          log: None,
         }))
       }
       Value::Mapping(_) => {
@@ -243,13 +241,15 @@ impl ProcConfig {
           None => None,
         };
 
-        let log_dir = match map.get(&Value::from("log_dir")) {
-          Some(val) => match val.raw() {
-            Value::Null => None,
-            Value::String(_) => Some(resolve_config_path(val.as_str()?, ctx)?),
-            _ => return Err(val.error_at("Expected string or null")),
-          },
-          None => None,
+        let log = {
+          match map.get(&Value::from("log")) {
+            Some(val) => {
+              crate::proc_log_config::parse_log_config(val, |path| {
+                resolve_config_path(path, ctx)
+              })?
+            }
+            None => None,
+          }
         };
 
         let env = match map.get(&Value::from("env")) {
@@ -347,7 +347,7 @@ impl ProcConfig {
           deps,
           mouse_scroll_speed,
           scrollback_len,
-          log_dir,
+          log,
         }))
       }
       Value::Tagged(_) => anyhow::bail!("Yaml tags are not supported"),

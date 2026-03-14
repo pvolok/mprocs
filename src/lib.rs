@@ -20,6 +20,7 @@ mod mouse;
 pub mod mprocs;
 mod package_json;
 mod proc;
+mod proc_log_config;
 mod process;
 mod protocol;
 mod server;

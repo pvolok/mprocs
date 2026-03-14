@@ -8,6 +8,7 @@ use crate::{
   event::{AppEvent, CopyMove},
   key::{Key, KeyCode, KeyMods},
   keymap::Keymap,
+  proc_log_config::LogConfig,
   yaml_val::{value_to_string, Val},
 };
 
@@ -22,7 +23,7 @@ pub struct Settings {
   pub proc_list_width: usize,
   pub proc_list_title: String,
   pub on_all_finished: Option<AppEvent>,
-  pub log_dir: Option<String>,
+  pub proc_log: Option<LogConfig>,
 }
 
 impl Default for Settings {
@@ -37,7 +38,7 @@ impl Default for Settings {
       proc_list_width: 30,
       proc_list_title: "Processes".to_string(),
       on_all_finished: None,
-      log_dir: None,
+      proc_log: None,
     };
     settings.add_defaults();
     settings
@@ -156,14 +157,11 @@ impl Settings {
         Some(serde_yaml::from_value(on_all_finished.raw().clone())?);
     }
 
-    if let Some(log_dir) = obj.get(&Value::from("log_dir")) {
-      self.log_dir = match log_dir.raw() {
-        Value::Null => None,
-        Value::String(log_dir) => Some(log_dir.clone()),
-        _ => {
-          return Err(log_dir.error_at("Expected string or null"));
-        }
-      };
+    if let Some(proc_log) = obj.get(&Value::from("proc_log")) {
+      self.proc_log =
+        crate::proc_log_config::parse_log_config(proc_log, |path| {
+          Ok(PathBuf::from(path))
+        })?;
     }
 
     Ok(())
