@@ -6,6 +6,7 @@ use std::time::Duration;
 use tokio::io::AsyncReadExt;
 
 use crate::{
+  error::ResultLogger,
   term::{
     input_parser::InputParser,
     internal::{InternalTermEvent, KeyboardMode},
@@ -161,49 +162,6 @@ impl TermDriver {
       )))),
       keyboard: KeyboardMode::Unknown,
     })
-  }
-
-  pub fn destroy(&mut self) -> anyhow::Result<()> {
-    match self.keyboard {
-      KeyboardMode::Unknown => (),
-      KeyboardMode::ModifyOtherKeys => {
-        self.stdout.write_all(b"\x1b[>4;0m")?;
-      }
-      KeyboardMode::Kitty => {
-        self.stdout.write_all(b"\x1b[<1u")?;
-      }
-      KeyboardMode::Win32 => {
-        self.stdout.write_all(b"\x1b[?9001l")?;
-      }
-    }
-
-    // Mouse
-    {
-      self.stdout.write_all(b"\x1B[?1006l")?;
-      self.stdout.write_all(b"\x1B[?1015l")?;
-      self.stdout.write_all(b"\x1B[?1003l")?;
-      self.stdout.write_all(b"\x1B[?1002l")?;
-      self.stdout.write_all(b"\x1B[?1000l")?;
-    }
-    // Leave alternate screen.
-    self.stdout.write_all(b"\x1B[?1049l")?;
-
-    // Save/Restore does not work on tmux. So we just show cursor.
-    self.stdout.write_all(b"\x1b[?25h")?;
-    // Restore Cursor (DECRC)
-    self.stdout.write_all(b"\x1b8")?;
-
-    #[cfg(unix)]
-    rustix::termios::tcsetattr(
-      self.stdin_fd,
-      rustix::termios::OptionalActions::Now,
-      &self.orig_termios,
-    )?;
-
-    #[cfg(windows)]
-    self.win_vt.disable();
-
-    Ok(())
   }
 
   fn handle_internal(
@@ -368,5 +326,49 @@ impl TermDriver {
         width: (csbi.srWindow.Right - csbi.srWindow.Left + 1) as u16,
       })
     }
+  }
+}
+
+impl Drop for TermDriver {
+  fn drop(&mut self) {
+    match self.keyboard {
+      KeyboardMode::Unknown => (),
+      KeyboardMode::ModifyOtherKeys => {
+        self.stdout.write_all(b"\x1b[>4;0m").log_ignore();
+      }
+      KeyboardMode::Kitty => {
+        self.stdout.write_all(b"\x1b[<1u").log_ignore();
+      }
+      KeyboardMode::Win32 => {
+        self.stdout.write_all(b"\x1b[?9001l").log_ignore();
+      }
+    }
+
+    // Mouse
+    {
+      self.stdout.write_all(b"\x1B[?1006l").log_ignore();
+      self.stdout.write_all(b"\x1B[?1015l").log_ignore();
+      self.stdout.write_all(b"\x1B[?1003l").log_ignore();
+      self.stdout.write_all(b"\x1B[?1002l").log_ignore();
+      self.stdout.write_all(b"\x1B[?1000l").log_ignore();
+    }
+    // Leave alternate screen.
+    self.stdout.write_all(b"\x1B[?1049l").log_ignore();
+
+    // Save/Restore does not work on tmux. So we just show cursor.
+    self.stdout.write_all(b"\x1b[?25h").log_ignore();
+    // Restore Cursor (DECRC)
+    self.stdout.write_all(b"\x1b8").log_ignore();
+
+    #[cfg(unix)]
+    rustix::termios::tcsetattr(
+      self.stdin_fd,
+      rustix::termios::OptionalActions::Now,
+      &self.orig_termios,
+    )
+    .log_ignore();
+
+    #[cfg(windows)]
+    self.win_vt.disable();
   }
 }

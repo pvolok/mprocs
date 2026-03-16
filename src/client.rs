@@ -15,10 +15,6 @@ pub async fn client_main(
 
   let result = client_main_loop(&mut term_driver, sender, receiver).await;
 
-  if let Err(err) = term_driver.destroy() {
-    log::error!("Term driver destroy error: {:?}", err);
-  }
-
   result
 }
 
