@@ -27,19 +27,55 @@ impl UnixProcess {
     size: Winsize,
     on_wait_returned: Box<dyn Fn(WaitStatus) + Send + Sync>,
   ) -> std::io::Result<Self> {
-    unsafe {
-      let mut set = std::mem::zeroed();
-      libc::sigfillset(&mut set);
-      let mut old_set = std::mem::zeroed();
-      libc::sigprocmask(libc::SIG_SETMASK, &set, &mut old_set);
+    let prog = CString::new(spec.prog.as_str()).unwrap_or_default();
 
-      let mut master = -1;
-      // Some args are *mut on some BSD vaiants.
+    let mut argv: Vec<CString> = Vec::new();
+    argv.push(prog.clone());
+    for arg in &spec.args {
+      argv.push(CString::new(arg.as_str()).unwrap_or_default());
+    }
+    let argv_ptrs = {
+      let mut v: Vec<*const libc::c_char> =
+        argv.iter().map(|a| a.as_ptr()).collect();
+      v.push(null());
+      v
+    };
+
+    let cwd_c = spec
+      .get_cwd()
+      .as_ref()
+      .map(|cwd| CString::new(cwd.as_str()).unwrap_or_default());
+
+    let env_c: Vec<(CString, Option<CString>)> = spec
+      .env
+      .iter()
+      .filter_map(|(k, v)| {
+        let k_c = CString::new(k.as_str()).ok()?;
+        let v_c = v.as_ref().and_then(|v| CString::new(v.as_str()).ok());
+        Some((k_c, v_c))
+      })
+      .collect();
+
+    unsafe {
+      let mut block_set: libc::sigset_t = std::mem::zeroed();
+      let mut old_set: libc::sigset_t = std::mem::zeroed();
+      libc::sigfillset(&mut block_set);
+      libc::pthread_sigmask(libc::SIG_SETMASK, &block_set, &mut old_set);
+
+      let mut empty_set: libc::sigset_t = std::mem::zeroed();
+      libc::sigemptyset(&mut empty_set);
+
+      let mut master_fd = -1;
+      // Some args are *mut on some BSD variants.
       #[allow(clippy::unnecessary_mut_passed)]
-      let pid =
-        libc::forkpty(&mut master, null_mut(), null_mut(), &mut size.into());
+      let pid = libc::forkpty(
+        &mut master_fd,
+        null_mut(),
+        null_mut(),
+        &mut size.into(),
+      );
       if pid < 0 {
-        libc::sigprocmask(libc::SIG_SETMASK, &old_set, null_mut());
+        libc::pthread_sigmask(libc::SIG_SETMASK, &old_set, null_mut());
         return Err(std::io::Error::last_os_error());
       }
 
@@ -54,56 +90,50 @@ impl UnixProcess {
         ] {
           libc::signal(*signo, libc::SIG_DFL);
         }
-        libc::sigemptyset(&mut set);
-        libc::sigprocmask(libc::SIG_SETMASK, &set, null_mut());
+        libc::pthread_sigmask(libc::SIG_SETMASK, &empty_set, null_mut());
 
-        if let Some(cwd) = spec.get_cwd() {
-          if rustix::process::chdir(cwd).is_err() {
+        if let Some(cwd) = &cwd_c {
+          if libc::chdir(cwd.as_ptr()) != 0 {
             libc::_exit(1);
           }
         }
 
-        for (key, value) in &spec.env {
-          if let Some(value) = value.as_ref() {
-            std::env::set_var(key, value);
-          } else {
-            std::env::remove_var(key);
+        for (key, value) in &env_c {
+          match value {
+            Some(v) => {
+              libc::setenv(key.as_ptr(), v.as_ptr(), 1);
+            }
+            None => {
+              libc::unsetenv(key.as_ptr());
+            }
           }
         }
 
-        let prog = CString::new(spec.prog.as_str()).unwrap_or_default();
-        let mut argv = Vec::new();
-        argv.push(prog.clone());
-        for arg in &spec.args {
-          argv.push(CString::new(arg.as_str()).unwrap_or_default());
-        }
-        let mut argv_ptrs = argv.iter().map(|a| a.as_ptr()).collect::<Vec<_>>();
-        argv_ptrs.push(null());
         libc::execvp(prog.as_ptr(), argv_ptrs.as_ptr());
         libc::perror(null());
         libc::_exit(1);
       }
 
-      libc::sigprocmask(libc::SIG_SETMASK, &old_set, null_mut());
+      libc::pthread_sigmask(libc::SIG_SETMASK, &old_set, null_mut());
 
-      let flags = libc::fcntl(master, libc::F_GETFD, 0);
+      let flags = libc::fcntl(master_fd, libc::F_GETFD, 0);
       if flags < 0 {
         return Err(std::io::Error::last_os_error());
       }
-      if libc::fcntl(master, libc::F_SETFD, flags | libc::FD_CLOEXEC) < 0 {
+      if libc::fcntl(master_fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) < 0 {
         return Err(std::io::Error::last_os_error());
       }
 
-      let flags = libc::fcntl(master, libc::F_GETFL, 0);
+      let flags = libc::fcntl(master_fd, libc::F_GETFL, 0);
       if flags < 0 {
         return Err(std::io::Error::last_os_error());
       }
-      if libc::fcntl(master, libc::F_SETFL, flags | libc::O_NONBLOCK) < 0 {
+      if libc::fcntl(master_fd, libc::F_SETFL, flags | libc::O_NONBLOCK) < 0 {
         return Err(std::io::Error::last_os_error());
       }
 
       let pid = Pid::from_raw_unchecked(pid);
-      let master = OwnedFd::from_raw_fd(master);
+      let master = OwnedFd::from_raw_fd(master_fd);
 
       UnixProcessesWaiter::wait_for(pid, on_wait_returned);
 
