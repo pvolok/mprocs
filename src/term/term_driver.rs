@@ -3,8 +3,6 @@ use std::io::Write;
 use std::pin::Pin;
 use std::time::Duration;
 
-use tokio::io::AsyncReadExt;
-
 use crate::{
   error::ResultLogger,
   term::{
@@ -21,18 +19,20 @@ pub struct TermDriver {
   #[cfg(unix)]
   orig_termios: rustix::termios::Termios,
   #[cfg(unix)]
-  async_stdin: tokio::io::Stdin,
+  stdin_thread: Option<std::thread::JoinHandle<()>>,
+  #[cfg(unix)]
+  stdin_wakeup: std::os::fd::OwnedFd,
   #[cfg(unix)]
   sigwinch: tokio::signal::unix::Signal,
 
   #[cfg(windows)]
   win_vt: super::windows::WinVt,
-  #[cfg(windows)]
-  events: tokio::sync::mpsc::UnboundedReceiver<InternalTermEvent>,
+
+  events:
+    tokio::sync::mpsc::UnboundedReceiver<std::io::Result<InternalTermEvent>>,
 
   stdout: std::io::Stdout,
 
-  input_parser: InputParser,
   pending: VecDeque<InternalTermEvent>,
   init_timeout: Option<Pin<Box<tokio::time::Sleep>>>,
   keyboard: KeyboardMode,
@@ -96,6 +96,81 @@ impl TermDriver {
     )
     .expect("Failed to register SIGWINCH handler");
 
+    #[cfg(unix)]
+    let (events, stdin_thread, stdin_wakeup) = {
+      use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+
+      let (sender, events) = tokio::sync::mpsc::unbounded_channel();
+      let mut pipe_fds = [0; 2];
+      unsafe {
+        if libc::pipe(pipe_fds.as_mut_ptr()) < 0 {
+          return Err(std::io::Error::last_os_error().into());
+        }
+      }
+
+      let wake_read = unsafe { OwnedFd::from_raw_fd(pipe_fds[0]) };
+      let wake_write = unsafe { OwnedFd::from_raw_fd(pipe_fds[1]) };
+      let stdin_raw = stdin_fd.as_raw_fd();
+
+      let stdin_thread = std::thread::spawn(move || {
+        let mut input_parser = InputParser::new();
+        let mut read_buf = [0u8; 1024];
+
+        loop {
+          let mut poll_fds = [
+            libc::pollfd {
+              fd: stdin_raw,
+              events: libc::POLLIN,
+              revents: 0,
+            },
+            libc::pollfd {
+              fd: wake_read.as_raw_fd(),
+              events: libc::POLLIN,
+              revents: 0,
+            },
+          ];
+
+          // Note: tty stdin can only be awaited with select/poll on Macos.
+          let poll_result = unsafe { libc::poll(poll_fds.as_mut_ptr(), 2, -1) };
+          if poll_result < 0 {
+            let err = std::io::Error::last_os_error();
+            if err.kind() == std::io::ErrorKind::Interrupted {
+              continue;
+            }
+            let _ = sender.send(Err(err));
+            break;
+          }
+
+          if (poll_fds[1].revents & libc::POLLIN) != 0 {
+            break;
+          }
+
+          if (poll_fds[0].revents & (libc::POLLIN | libc::POLLHUP)) != 0 {
+            let n = match rustix::io::read(stdin_fd, &mut read_buf) {
+              Ok(n) => n,
+              Err(err) => {
+                let io_err = std::io::Error::from(err);
+                if io_err.kind() == std::io::ErrorKind::Interrupted {
+                  continue;
+                }
+                let _ = sender.send(Err(io_err));
+                break;
+              }
+            };
+
+            if n == 0 {
+              break;
+            }
+
+            input_parser.parse_input(&read_buf[..n], true, false, |event| {
+              let _ = sender.send(Ok(event));
+            });
+          }
+        }
+      });
+      (events, Some(stdin_thread), wake_write)
+    };
+
     #[cfg(windows)]
     let events = {
       let (sender, events) = tokio::sync::mpsc::unbounded_channel();
@@ -129,7 +204,7 @@ impl TermDriver {
               &mut input_parser,
               &buf[..count as usize],
               &mut |event| {
-                let _ = sender.send(event);
+                let _ = sender.send(Ok(event));
               },
             );
           }
@@ -144,18 +219,18 @@ impl TermDriver {
       #[cfg(unix)]
       orig_termios,
       #[cfg(unix)]
-      async_stdin: tokio::io::stdin(),
+      stdin_thread,
+      #[cfg(unix)]
+      stdin_wakeup,
       #[cfg(unix)]
       sigwinch,
 
       #[cfg(windows)]
       win_vt,
-      #[cfg(windows)]
+
       events,
 
       stdout,
-
-      input_parser: InputParser::new(),
       pending: VecDeque::new(),
       init_timeout: Some(Box::pin(tokio::time::sleep(Duration::from_millis(
         200,
@@ -219,8 +294,6 @@ impl TermDriver {
 
   #[cfg(unix)]
   pub async fn input(&mut self) -> std::io::Result<Option<TermEvent>> {
-    let mut read_buf = [0u8; 1024];
-
     loop {
       // Drain buffered events first.
       while let Some(event) = self.pending.pop_front() {
@@ -230,16 +303,15 @@ impl TermDriver {
       }
 
       tokio::select! {
-        result = self.async_stdin.read(&mut read_buf) => {
-          match result {
-            Ok(0) => return Ok(None),
-            Ok(n) => {
-              self.input_parser.parse_input(
-                &read_buf[..n], true, false,
-                |e| self.pending.push_back(e),
-              );
+        event = self.events.recv() => {
+          match event {
+            Some(Ok(event)) => {
+              if let Some(term_event) = self.handle_internal(event)? {
+                return Ok(Some(term_event));
+              }
             }
-            Err(err) => return Err(err),
+            Some(Err(err)) => return Err(err),
+            None => return Ok(None),
           }
         }
         _ = self.sigwinch.recv() => {
@@ -272,11 +344,12 @@ impl TermDriver {
       tokio::select! {
         event = self.events.recv() => {
           match event {
-            Some(event) => {
+            Some(Ok(event)) => {
               if let Some(term_event) = self.handle_internal(event)? {
                 return Ok(Some(term_event));
               }
             }
+            Some(Err(err)) => return Err(err),
             None => return Ok(None),
           }
         }
@@ -359,6 +432,16 @@ impl Drop for TermDriver {
     self.stdout.write_all(b"\x1b[?25h").log_ignore();
     // Restore Cursor (DECRC)
     self.stdout.write_all(b"\x1b8").log_ignore();
+
+    self.stdout.flush().log_ignore();
+
+    #[cfg(unix)]
+    rustix::io::write(&self.stdin_wakeup, &[0]).log_ignore();
+
+    #[cfg(unix)]
+    if let Some(stdin_thread) = self.stdin_thread.take() {
+      stdin_thread.join().ok();
+    }
 
     #[cfg(unix)]
     rustix::termios::tcsetattr(

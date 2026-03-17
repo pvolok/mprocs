@@ -13,9 +13,7 @@ pub async fn client_main(
 ) -> anyhow::Result<()> {
   let mut term_driver = TermDriver::create()?;
 
-  let result = client_main_loop(&mut term_driver, sender, receiver).await;
-
-  result
+  client_main_loop(&mut term_driver, sender, receiver).await
 }
 
 async fn client_main_loop(
