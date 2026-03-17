@@ -589,6 +589,7 @@ impl Grid {
 pub enum BorderType {
   Thick,
   Plain,
+  Rounded,
 }
 
 struct BorderChars {
@@ -633,6 +634,14 @@ impl Grid {
         hor: '─',
         ver: '│',
       },
+      BorderType::Rounded => BorderChars {
+        tl: '╭',
+        tr: '╮',
+        br: '╯',
+        bl: '╰',
+        hor: '─',
+        ver: '│',
+      },
     };
 
     for y in [area.y, area.y + area.height - 1] {
@@ -645,7 +654,7 @@ impl Grid {
     for x in [area.x, area.x + area.width - 1] {
       for y in area.y + 1..area.y + area.height - 1 {
         if let Some(cell) = self.drawing_cell_mut(Pos { col: x, row: y }) {
-          cell.set(chars.ver, Attrs::default());
+          cell.set(chars.ver, attrs);
         }
       }
     }
@@ -653,25 +662,25 @@ impl Grid {
       col: area.x,
       row: area.y,
     }) {
-      cell.set(chars.tl, Attrs::default());
+      cell.set(chars.tl, attrs);
     }
     if let Some(cell) = self.drawing_cell_mut(Pos {
       col: area.x + area.width - 1,
       row: area.y,
     }) {
-      cell.set(chars.tr, Attrs::default());
+      cell.set(chars.tr, attrs);
     }
     if let Some(cell) = self.drawing_cell_mut(Pos {
       col: area.x + area.width - 1,
       row: area.y + area.height - 1,
     }) {
-      cell.set(chars.br, Attrs::default());
+      cell.set(chars.br, attrs);
     }
     if let Some(cell) = self.drawing_cell_mut(Pos {
       col: area.x,
       row: area.y + area.height - 1,
     }) {
-      cell.set(chars.bl, Attrs::default());
+      cell.set(chars.bl, attrs);
     }
   }
 

@@ -1,11 +1,14 @@
+use std::collections::HashMap;
+
 use tui_input::Input;
-use unicode_width::UnicodeWidthStr;
 
 use crate::{
   app::LoopAction,
+  encode_term::print_key,
   event::AppEvent,
   kernel::kernel_message::ProcContext,
   key::{Key, KeyCode, KeyMods},
+  keymap::Keymap,
   state::State,
   term::{
     line_symbols::{HORIZONTAL, VERTICAL_LEFT, VERTICAL_RIGHT},
@@ -13,7 +16,7 @@ use crate::{
   },
   vt100::{
     attrs::Attrs,
-    grid::{Pos, Rect},
+    grid::{BorderType, Pos, Rect},
     Color, Grid,
   },
   widgets::{
@@ -29,15 +32,24 @@ pub struct CommandsMenuModal {
   input: Input,
   list_state: ListState,
   items: Vec<CommandInfo>,
+  key_bindings: HashMap<AppEvent, String>,
 }
 
 impl CommandsMenuModal {
-  pub fn new(pc: ProcContext) -> Self {
+  pub fn new(pc: ProcContext, keymap: &Keymap) -> Self {
+    let mut key_bindings = HashMap::new();
+    for (event, key) in &keymap.rev_procs {
+      key_bindings
+        .entry(event.clone())
+        .or_insert_with(|| print_key(key));
+    }
+
     CommandsMenuModal {
       pc,
       input: Input::default(),
       list_state: ListState::default(),
       items: get_commands(""),
+      key_bindings,
     }
   }
 }
@@ -56,9 +68,8 @@ impl Modal for CommandsMenuModal {
         ..
       }) if mods.is_empty() => {
         self.pc.send_self_custom(AppEvent::CloseCurrentModal);
-        if let Some((_, _, event)) = self.items.get(self.list_state.selected())
-        {
-          self.pc.send_self_custom(event.clone());
+        if let Some(item) = self.items.get(self.list_state.selected()) {
+          self.pc.send_self_custom(item.event.clone());
         }
         // Skip because AddProc event will immediately rerender.
         return true;
@@ -145,106 +156,232 @@ impl Modal for CommandsMenuModal {
       height: grid.size().height,
     });
 
-    grid.draw_block(
-      area.into(),
-      crate::vt100::grid::BorderType::Plain,
-      Attrs::default(),
-    );
+    grid.draw_block(area.into(), BorderType::Rounded, Attrs::default());
 
     let inner = area.inner(1);
+
+    // Fill inner
+    grid.fill_area(inner.into(), ' ', Attrs::default());
+
+    // Title
+    let title = " Commands ";
+    let title_attrs = Attrs::default().set_bold(true);
+    grid.draw_text(
+      Rect::new(area.x + 2, area.y, inner.x + 1, 1),
+      title,
+      title_attrs,
+    );
+
     let list_area = Rect {
       x: inner.x,
-      y: inner.y,
+      y: inner.y + 2,
       width: inner.width,
       height: inner.height.saturating_sub(2),
     };
+    let sep_y = inner.y + 1;
+
     self.list_state.fit(list_area, self.items.len());
 
-    let above_input = Rect {
-      x: inner.x,
-      y: (inner.y + inner.height).saturating_sub(2),
-      width: inner.width,
-      height: 1,
+    let desc_col = 22u16;
+
+    // "/ "
+    grid.draw_text(
+      Rect::new(inner.x, inner.y, 2, 1),
+      "/ ",
+      Attrs::default().fg(Color::YELLOW),
+    );
+
+    // Counter (selected/total)
+    let total = self.items.len();
+    let counter_width = if total > 0 {
+      let counter_text =
+        format!("{}/{}", self.list_state.selected() + 1, total);
+      let counter_width = counter_text.len() as u16;
+      grid
+        .draw_text(
+          Rect::new(
+            inner.x + inner.width.saturating_sub(counter_width),
+            inner.y,
+            counter_width,
+            1,
+          ),
+          &counter_text,
+          Attrs::default().fg(Color::BRIGHT_BLACK),
+        )
+        .width
+    } else {
+      0
     };
 
-    grid.fill_area(inner.into(), ' ', Attrs::default());
+    // Input
+    let input_area = Rect::new(
+      inner.x + 2,
+      inner.y,
+      inner.width.saturating_sub(2 + counter_width + 1),
+      1,
+    );
+    let mut cursor = (0u16, 0u16);
+    render_text_input(&mut self.input, input_area, grid, &mut cursor);
 
-    let range = self.list_state.visible_range();
-    for (row, i) in range.enumerate() {
-      let (cmd, desc, _event) = &self.items[i];
-      let mut row_area = Rect {
-        x: list_area.x,
-        y: list_area.y + row as u16,
-        width: list_area.width,
-        height: 1,
-      };
-      row_area.x = grid
-        .draw_text(
-          row_area,
-          if self.list_state.selected() == i {
-            ">"
-          } else {
-            " "
-          },
-          Attrs::default(),
-        )
-        .right();
-      row_area.x = grid
-        .draw_text(row_area, *cmd, Attrs::default().fg(Color::WHITE))
-        .right();
-      row_area.x = grid.draw_text(row_area, " ", Attrs::default()).right();
-      row_area.x = grid.draw_text(row_area, " ", Attrs::default()).right();
-      row_area.x = grid
-        .draw_text(
-          row_area,
-          desc,
-          Attrs::default().fg(Color::BRIGHT_BLACK).set_italic(true),
-        )
-        .right();
-    }
-
-    let input_label = "Run command";
-    grid.draw_text(above_input, input_label, Attrs::default());
-
+    // Separator
     grid.draw_text(
-      Rect::new(area.x, above_input.y, 1, 1),
+      Rect::new(area.x, sep_y, 1, 1),
       VERTICAL_RIGHT,
       Attrs::default(),
     );
     grid.draw_text(
-      Rect::new(above_input.right(), above_input.y, 1, 1),
+      Rect::new(area.x + area.width - 1, sep_y, 1, 1),
       VERTICAL_LEFT,
       Attrs::default(),
     );
-    let line_width =
-      above_input.width.saturating_sub(input_label.width() as u16);
     grid.draw_text(
-      Rect::new(
-        above_input.x + above_input.width - line_width,
-        above_input.y,
-        line_width,
-        1,
-      ),
-      HORIZONTAL.repeat(line_width as usize).as_str(),
+      Rect::new(inner.x, sep_y, inner.width, 1),
+      HORIZONTAL.repeat(inner.width as usize).as_str(),
       Attrs::default(),
     );
 
-    let mut cursor = (0u16, 0u16);
-    render_text_input(
-      &mut self.input,
-      Rect::new(inner.x, inner.y + inner.height - 1, inner.width, 1),
-      grid,
-      &mut cursor,
-    );
+    // List
+    let selected_bg = Color::Rgb(100, 100, 100);
+    let search = self.input.value().to_lowercase();
+    let range = self.list_state.visible_range();
+    for (row, i) in range.enumerate() {
+      let item = &self.items[i];
+      let selected = self.list_state.selected() == i;
+
+      let row_y = list_area.y + row as u16;
+      let row_rect = Rect::new(list_area.x, row_y, list_area.width, 1);
+
+      if selected {
+        grid.fill_area(row_rect, ' ', Attrs::default().bg(selected_bg));
+
+        // Accent bar on left edge
+        grid.draw_text(
+          Rect::new(list_area.x, row_y, 1, 1),
+          "\u{258e}", // ▎
+          Attrs::default().fg(Color::YELLOW).bg(selected_bg),
+        );
+      }
+
+      let name_attrs = if selected {
+        Attrs::default().bg(selected_bg).set_bold(true)
+      } else {
+        Attrs::default()
+      };
+      let name_hl = if selected {
+        Attrs::default()
+          .fg(Color::YELLOW)
+          .bg(selected_bg)
+          .set_bold(true)
+      } else {
+        Attrs::default().fg(Color::YELLOW).set_bold(true)
+      };
+
+      // Description attrs
+      let desc_attrs = if selected {
+        Attrs::default()
+          .fg(Color::Rgb(170, 170, 170))
+          .bg(selected_bg)
+      } else {
+        Attrs::default().fg(Color::Rgb(150, 150, 150))
+      };
+      let desc_hl = if selected {
+        Attrs::default().fg(Color::YELLOW).bg(selected_bg)
+      } else {
+        Attrs::default().fg(Color::YELLOW)
+      };
+
+      let key_attrs = if selected {
+        Attrs::default().fg(Color::YELLOW).bg(selected_bg)
+      } else {
+        Attrs::default().fg(Color::YELLOW)
+      };
+
+      // Column 1: Command
+      draw_highlighted_text(
+        grid,
+        list_area.x + 2,
+        row_y,
+        item.cmd,
+        &search,
+        name_attrs,
+        name_hl,
+      );
+
+      // Column 2: Description
+      let desc_x = list_area.x + desc_col;
+      draw_highlighted_text(
+        grid, desc_x, row_y, &item.desc, &search, desc_attrs, desc_hl,
+      );
+
+      // Column 3: Key
+      if let Some(binding) = self.key_bindings.get(&item.event) {
+        let binding_width = binding.len() as u16;
+        let bind_x = list_area.right().saturating_sub(binding_width + 1);
+        grid.draw_text(
+          Rect::new(bind_x, row_y, binding_width, 1),
+          binding,
+          key_attrs,
+        );
+      }
+    }
 
     grid.cursor_pos = Some(Pos {
       col: cursor.0,
       row: cursor.1,
     });
+    grid.cursor_style = crate::protocol::CursorStyle::BlinkingBar;
   }
 }
 
-type CommandInfo = (&'static str, String, AppEvent);
+fn draw_highlighted_text(
+  grid: &mut Grid,
+  start_x: u16,
+  y: u16,
+  text: &str,
+  search: &str,
+  base_attrs: Attrs,
+  highlight_attrs: Attrs,
+) -> u16 {
+  let max_w = 200u16;
+  if search.is_empty() {
+    let r = grid.draw_text(Rect::new(start_x, y, max_w, 1), text, base_attrs);
+    return start_x + r.width;
+  }
+
+  let text_lower = text.to_lowercase();
+  let mut x = start_x;
+  let mut last_end = 0usize;
+
+  for (match_start, _) in text_lower.match_indices(search) {
+    let match_end = match_start + search.len();
+
+    if match_start > last_end {
+      let segment = &text[last_end..match_start];
+      let r = grid.draw_text(Rect::new(x, y, max_w, 1), segment, base_attrs);
+      x += r.width;
+    }
+
+    let matched = &text[match_start..match_end];
+    let r = grid.draw_text(Rect::new(x, y, max_w, 1), matched, highlight_attrs);
+    x += r.width;
+
+    last_end = match_end;
+  }
+
+  if last_end < text.len() {
+    let segment = &text[last_end..];
+    let r = grid.draw_text(Rect::new(x, y, max_w, 1), segment, base_attrs);
+    x += r.width;
+  }
+
+  x
+}
+
+struct CommandInfo {
+  cmd: &'static str,
+  desc: String,
+  event: AppEvent,
+}
 
 fn get_commands(search: &str) -> Vec<CommandInfo> {
   let events = [
@@ -281,7 +418,7 @@ fn get_commands(search: &str) -> Vec<CommandInfo> {
   for (cmd, event) in events {
     let desc = event.desc();
     if cmd.contains(search) || desc.contains(search) {
-      result.push((cmd, desc, event));
+      result.push(CommandInfo { cmd, desc, event });
     }
   }
 

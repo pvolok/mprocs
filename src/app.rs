@@ -621,7 +621,8 @@ impl App {
       }
 
       AppEvent::ShowCommandsMenu => {
-        self.modal = Some(CommandsMenuModal::new(self.pc.clone()).boxed());
+        self.modal =
+          Some(CommandsMenuModal::new(self.pc.clone(), &self.keymap).boxed());
         loop_action.render();
       }
       AppEvent::NextProc => {
