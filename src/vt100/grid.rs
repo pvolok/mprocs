@@ -187,7 +187,9 @@ impl Grid {
     if scrollback > self.scrollback_len {
       let excess = scrollback - self.scrollback_len;
       self.rows.drain(..excess);
+      self.rows.shrink_to_fit();
       abs_pos_row = abs_pos_row.saturating_sub(excess);
+      self.scrollback_offset = self.scrollback_offset.saturating_sub(excess);
     }
 
     if self.scroll_bottom == self.size.height - 1 {
