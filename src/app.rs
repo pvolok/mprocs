@@ -1251,6 +1251,11 @@ pub async fn server_main(
     screen_size: size,
     clients: Vec::new(),
   };
+
+  if let Some(event) = app.config.exec.clone() {
+    app.pc.send_self_custom(event);
+  }
+
   app.run().await?;
 
   Ok(())
