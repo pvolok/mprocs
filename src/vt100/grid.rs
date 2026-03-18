@@ -181,6 +181,15 @@ impl Grid {
     drop(rows);
     self.rows = acc;
 
+    // Trim scrollback to prevent unbounded growth when line-wrapping
+    // expands rows (e.g., resizing to a very narrow width).
+    let scrollback = self.rows.len().saturating_sub(size.height as usize);
+    if scrollback > self.scrollback_len {
+      let excess = scrollback - self.scrollback_len;
+      self.rows.drain(..excess);
+      abs_pos_row = abs_pos_row.saturating_sub(excess);
+    }
+
     if self.scroll_bottom == self.size.height - 1 {
       self.scroll_bottom = size.height - 1;
     }
