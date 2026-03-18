@@ -54,7 +54,6 @@ impl ScreenDiffer {
     if target_len != prev.len() {
       full_rerender = true;
       prev.resize(target_len, Cell::default());
-      // Reclaim excess capacity when terminal shrinks
       if prev.capacity() > target_len * 2 {
         prev.shrink_to(target_len);
       }

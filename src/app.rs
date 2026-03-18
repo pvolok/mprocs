@@ -194,23 +194,13 @@ impl App {
         }
 
         for client_handle in &mut self.clients {
-          client_handle.out_buf.clear();
-          client_handle
-            .differ
-            .diff(&mut client_handle.out_buf, grid)
-            .log_ignore();
+          let mut out = String::new();
+          client_handle.differ.diff(&mut out, grid).log_ignore();
           client_handle
             .sender
-            .send(SrvToClt::Print(client_handle.out_buf.clone()))
+            .send(SrvToClt::Print(out))
             .await
             .unwrap();
-          // Reclaim excess capacity from large diffs to prevent long-term growth
-          const OUT_BUF_SHRINK_THRESHOLD: usize = 8 * 1024;
-          if client_handle.out_buf.capacity() > OUT_BUF_SHRINK_THRESHOLD
-            && client_handle.out_buf.len() < client_handle.out_buf.capacity() / 4
-          {
-            client_handle.out_buf.shrink_to(OUT_BUF_SHRINK_THRESHOLD);
-          }
           client_handle.sender.send(SrvToClt::Flush).await.unwrap();
         }
       }
@@ -1167,7 +1157,6 @@ pub struct ClientHandle {
   sender: MsgSender<SrvToClt>,
   screen_size: Size,
   differ: ScreenDiffer,
-  out_buf: String,
 }
 
 impl Debug for ClientHandle {
@@ -1189,7 +1178,6 @@ impl ClientHandle {
       sender: client_sender,
       screen_size: size,
       differ: ScreenDiffer::new(),
-      out_buf: String::new(),
     })
   }
 

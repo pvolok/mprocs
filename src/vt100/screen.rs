@@ -865,13 +865,6 @@ impl Screen {
 
     self.feed_buf = buf;
     self.feed_buf.drain(0..consumed);
-    // Reclaim excess capacity from burst output to prevent long-term growth
-    const FEED_BUF_SHRINK_THRESHOLD: usize = 8 * 1024;
-    if self.feed_buf.capacity() > FEED_BUF_SHRINK_THRESHOLD
-      && self.feed_buf.len() < self.feed_buf.capacity() / 4
-    {
-      self.feed_buf.shrink_to(FEED_BUF_SHRINK_THRESHOLD);
-    }
   }
 
   fn process_csi(
