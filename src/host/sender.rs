@@ -51,6 +51,7 @@ impl<T: Serialize + Debug> tokio_util::codec::Encoder<T> for MsgEncoder<T> {
     dst.put_u32(self.buf.len() as u32);
     dst.extend_from_slice(&self.buf);
     self.buf.clear();
+    self.buf.shrink_to(8 * 1024);
     Ok(())
   }
 }

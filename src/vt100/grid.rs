@@ -181,6 +181,13 @@ impl Grid {
     drop(rows);
     self.rows = acc;
 
+    self
+      .rows
+      .truncate_front(self.scrollback_len + size.height as usize);
+    self.scrollback_offset =
+      (self.rows.len().saturating_sub(size.height as usize))
+        .min(self.scrollback_offset);
+
     if self.scroll_bottom == self.size.height - 1 {
       self.scroll_bottom = size.height - 1;
     }
@@ -241,7 +248,10 @@ impl Grid {
   }
 
   pub fn visible_rows(&self) -> impl Iterator<Item = &Row> {
-    self.rows.iter().skip(self.row0() - self.scrollback_offset)
+    self
+      .rows
+      .iter()
+      .skip(self.row0().saturating_sub(self.scrollback_offset))
   }
 
   pub fn drawing_rows(&self) -> impl Iterator<Item = &Row> {
@@ -410,10 +420,9 @@ impl Grid {
         if let Some(removed) = removed {
           self.rows.insert(row0, removed);
         }
-        while self.rows.len() - self.size.height as usize > self.scrollback_len
-        {
-          self.rows.pop_front();
-        }
+        self
+          .rows
+          .truncate_front(self.scrollback_len + self.size.height as usize);
         if self.scrollback_offset > 0 {
           self.scrollback_offset = (self.rows.len()
             - self.size.height as usize)
