@@ -204,6 +204,13 @@ impl App {
             .send(SrvToClt::Print(client_handle.out_buf.clone()))
             .await
             .unwrap();
+          // Reclaim excess capacity from large diffs to prevent long-term growth
+          const OUT_BUF_SHRINK_THRESHOLD: usize = 8 * 1024;
+          if client_handle.out_buf.capacity() > OUT_BUF_SHRINK_THRESHOLD
+            && client_handle.out_buf.len() < client_handle.out_buf.capacity() / 4
+          {
+            client_handle.out_buf.shrink_to(OUT_BUF_SHRINK_THRESHOLD);
+          }
           client_handle.sender.send(SrvToClt::Flush).await.unwrap();
         }
       }

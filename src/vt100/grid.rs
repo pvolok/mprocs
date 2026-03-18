@@ -187,9 +187,16 @@ impl Grid {
     if scrollback > self.scrollback_len {
       let excess = scrollback - self.scrollback_len;
       self.rows.drain(..excess);
-      self.rows.shrink_to_fit();
-      abs_pos_row = abs_pos_row.saturating_sub(excess);
+      // Place cursor at first visible row if it was in the trimmed region
+      if abs_pos_row < excess {
+        abs_pos_row = self.rows.len().saturating_sub(size.height as usize);
+      } else {
+        abs_pos_row -= excess;
+      }
       self.scrollback_offset = self.scrollback_offset.saturating_sub(excess);
+      // Clamp to the new maximum scrollback
+      let max_scrollback = self.rows.len().saturating_sub(size.height as usize);
+      self.scrollback_offset = self.scrollback_offset.min(max_scrollback);
     }
 
     if self.scroll_bottom == self.size.height - 1 {
