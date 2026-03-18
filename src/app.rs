@@ -194,11 +194,14 @@ impl App {
         }
 
         for client_handle in &mut self.clients {
-          let mut out = String::new();
-          client_handle.differ.diff(&mut out, grid).log_ignore();
+          client_handle.out_buf.clear();
+          client_handle
+            .differ
+            .diff(&mut client_handle.out_buf, grid)
+            .log_ignore();
           client_handle
             .sender
-            .send(SrvToClt::Print(out))
+            .send(SrvToClt::Print(client_handle.out_buf.clone()))
             .await
             .unwrap();
           client_handle.sender.send(SrvToClt::Flush).await.unwrap();
@@ -1157,6 +1160,7 @@ pub struct ClientHandle {
   sender: MsgSender<SrvToClt>,
   screen_size: Size,
   differ: ScreenDiffer,
+  out_buf: String,
 }
 
 impl Debug for ClientHandle {
@@ -1178,6 +1182,7 @@ impl ClientHandle {
       sender: client_sender,
       screen_size: size,
       differ: ScreenDiffer::new(),
+      out_buf: String::new(),
     })
   }
 

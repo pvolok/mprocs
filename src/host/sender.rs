@@ -51,6 +51,11 @@ impl<T: Serialize + Debug> tokio_util::codec::Encoder<T> for MsgEncoder<T> {
     dst.put_u32(self.buf.len() as u32);
     dst.extend_from_slice(&self.buf);
     self.buf.clear();
+    // Reclaim excess capacity from large messages to prevent long-term growth
+    const ENCODE_BUF_SHRINK_THRESHOLD: usize = 8 * 1024;
+    if self.buf.capacity() > ENCODE_BUF_SHRINK_THRESHOLD {
+      self.buf.shrink_to(ENCODE_BUF_SHRINK_THRESHOLD);
+    }
     Ok(())
   }
 }

@@ -50,9 +50,14 @@ impl ScreenDiffer {
 
     let size = view.size();
     let mut full_rerender = false;
-    if (size.height * size.width) as usize != prev.len() {
+    let target_len = (size.height * size.width) as usize;
+    if target_len != prev.len() {
       full_rerender = true;
-      prev.resize((size.height * size.width) as usize, Cell::default());
+      prev.resize(target_len, Cell::default());
+      // Reclaim excess capacity when terminal shrinks
+      if prev.capacity() > target_len * 2 {
+        prev.shrink_to(target_len);
+      }
     }
     for y in 0..size.height {
       for x in 0..size.width {
