@@ -35,6 +35,7 @@ fn resolve_config_path(path: &str, ctx: &ConfigContext) -> Result<PathBuf> {
 pub struct Config {
   pub procs: Vec<ProcConfig>,
   pub server: Option<ServerConfig>,
+  pub exec: Option<AppEvent>,
   pub hide_keymap_window: bool,
   pub mouse_scroll_speed: usize,
   pub scrollback_len: usize,
@@ -107,6 +108,7 @@ impl Config {
     let config = Config {
       procs,
       server,
+      exec: None,
       hide_keymap_window: settings.hide_keymap_window,
       mouse_scroll_speed: settings.mouse_scroll_speed,
       scrollback_len: settings.scrollback_len,
@@ -123,6 +125,7 @@ impl Config {
     Ok(Self {
       procs: Vec::new(),
       server: None,
+      exec: None,
       hide_keymap_window: settings.hide_keymap_window,
       mouse_scroll_speed: settings.mouse_scroll_speed,
       scrollback_len: settings.scrollback_len,
