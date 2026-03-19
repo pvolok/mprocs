@@ -277,6 +277,12 @@ mprocs --procfile ./Procfile.dev
 mprocs --procfile
 ```
 
+By default, processes from `Procfile` are not started automatically. To start all of them on startup, you can use the `--exec` argument:
+
+```sh
+mprocs --procfile --exec '{c: restart-all}'
+```
+
 ### Default keymap
 
 Process list focused:
@@ -337,6 +343,8 @@ Optionally, _mprocs_ can listen on TCP port for remote commands.
 You have to define remote control server address in `mprocs.yaml`
 (`server: 127.0.0.1:4050`) or via cli argument (`mprocs --server 127.0.0.1:4050`). To send a command to running _mprocs_ instance
 use the **ctl** argument: `mprocs --ctl '{c: quit}'` or `mprocs --ctl '{c: send-key, key: <C-c>}'`.
+
+Alternatively, you can use the **exec** argument to send an initial command to the current foreground process on startup: `mprocs --exec '{c: restart-all}'`.
 
 Commands are encoded as yaml. Available commands:
 
