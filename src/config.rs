@@ -35,12 +35,12 @@ fn resolve_config_path(path: &str, ctx: &ConfigContext) -> Result<PathBuf> {
 pub struct Config {
   pub procs: Vec<ProcConfig>,
   pub server: Option<ServerConfig>,
-  pub exec: Option<AppEvent>,
   pub hide_keymap_window: bool,
   pub mouse_scroll_speed: usize,
   pub scrollback_len: usize,
   pub proc_list_width: usize,
   pub proc_list_title: String,
+  pub on_init: Option<AppEvent>,
   pub on_all_finished: Option<AppEvent>,
   pub proc_log: Option<LogConfig>,
 }
@@ -108,12 +108,12 @@ impl Config {
     let config = Config {
       procs,
       server,
-      exec: None,
       hide_keymap_window: settings.hide_keymap_window,
       mouse_scroll_speed: settings.mouse_scroll_speed,
       scrollback_len: settings.scrollback_len,
       proc_list_width: settings.proc_list_width,
       proc_list_title,
+      on_init: None,
       on_all_finished,
       proc_log,
     };
@@ -125,12 +125,12 @@ impl Config {
     Ok(Self {
       procs: Vec::new(),
       server: None,
-      exec: None,
       hide_keymap_window: settings.hide_keymap_window,
       mouse_scroll_speed: settings.mouse_scroll_speed,
       scrollback_len: settings.scrollback_len,
       proc_list_width: settings.proc_list_width,
       proc_list_title: settings.proc_list_title.clone(),
+      on_init: None,
       on_all_finished: settings.on_all_finished.clone(),
       proc_log: settings.proc_log.clone(),
     })

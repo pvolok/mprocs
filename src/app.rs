@@ -1252,7 +1252,7 @@ pub async fn server_main(
     clients: Vec::new(),
   };
 
-  if let Some(event) = app.config.exec.clone() {
+  if let Some(event) = app.config.on_init.clone() {
     app.pc.send_self_custom(event);
   }
 

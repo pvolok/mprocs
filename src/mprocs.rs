@@ -75,7 +75,7 @@ async fn run_app() -> anyhow::Result<()> {
         .default_missing_value("Procfile"),
     )
     .arg(arg!(--just "Run recipes from justfile. Recipes are not started by default. Requires just to be installed."))
-    .arg(arg!(--exec [YAML] "Send an initial yaml/json encoded command on startup"))
+    .arg(arg!(--on-init [YAML] "Event to trigger when mprocs starts"))
     .arg(arg!(--"on-all-finished" [YAML] "Event to trigger when all processes are finished"))
     .arg(arg!(--"log-dir" [DIR] "Directory for process log files. Each process logs to <DIR>/<name>.log"))
     .arg(arg!(--"log-file" [PATH] "Process log file path or template. Supports {name}, {id}, {pid}, {ts}. Relative paths are resolved inside --log-dir when present."))
@@ -129,8 +129,8 @@ async fn run_app() -> anyhow::Result<()> {
       config.on_all_finished = Some(serde_yaml::from_str(on_all_finished)?);
     }
 
-    if let Some(exec) = matches.get_one::<String>("exec") {
-      config.exec = Some(serde_yaml::from_str(exec)?);
+    if let Some(on_init) = matches.get_one::<String>("on-init") {
+      config.on_init = Some(serde_yaml::from_str(on_init)?);
     }
 
     if let Some(log_dir) = matches.get_one::<String>("log-dir") {
