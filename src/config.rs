@@ -41,6 +41,7 @@ pub struct Config {
   pub scrollback_len: usize,
   pub proc_list_width: usize,
   pub proc_list_title: String,
+  pub on_init: Option<AppEvent>,
   pub on_all_finished: Option<AppEvent>,
   pub proc_log: Option<LogConfig>,
 }
@@ -114,6 +115,7 @@ impl Config {
       scrollback_len: settings.scrollback_len,
       proc_list_width: settings.proc_list_width,
       proc_list_title,
+      on_init: None,
       on_all_finished,
       proc_log,
     };
@@ -131,6 +133,7 @@ impl Config {
       scrollback_len: settings.scrollback_len,
       proc_list_width: settings.proc_list_width,
       proc_list_title: settings.proc_list_title.clone(),
+      on_init: None,
       on_all_finished: settings.on_all_finished.clone(),
       proc_log: settings.proc_log.clone(),
     })
