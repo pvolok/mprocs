@@ -233,6 +233,9 @@ mod tests {
     let mut differ = ScreenDiffer::new();
     let mut out = String::new();
 
+    differ.diff(&mut out, &vec![vec![]]).unwrap();
+    assert_eq!("\x1b[?25l", out); // Hide cursor
+
     let screen = vec![vec![
       Cell::new("1"),
       Cell::new("2"),
@@ -240,8 +243,9 @@ mod tests {
       Cell::new("4").with_attrs(attrs),
       Cell::new("5"),
     ]];
+    out.clear();
     differ.diff(&mut out, &screen).unwrap();
-    assert_eq!("12\x1b[38;5;4m34\x1b[39m5", out);
+    assert_eq!("\x1b[1;1H12\x1b[38;5;4m34\x1b[39m5", out);
 
     let screen = vec![vec![
       Cell::new("1"),
