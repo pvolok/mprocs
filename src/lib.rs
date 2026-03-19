@@ -1,5 +1,3 @@
-#![feature(vec_deque_truncate_front)]
-
 mod app;
 mod client;
 mod clipboard;

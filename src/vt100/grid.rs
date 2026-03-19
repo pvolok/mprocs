@@ -181,9 +181,8 @@ impl Grid {
     drop(rows);
     self.rows = acc;
 
-    self
-      .rows
-      .truncate_front(self.scrollback_len + size.height as usize);
+    let max_rows = self.scrollback_len + size.height as usize;
+    self.rows.drain(..self.rows.len().saturating_sub(max_rows));
     self.scrollback_offset =
       (self.rows.len().saturating_sub(size.height as usize))
         .min(self.scrollback_offset);
@@ -420,9 +419,8 @@ impl Grid {
         if let Some(removed) = removed {
           self.rows.insert(row0, removed);
         }
-        self
-          .rows
-          .truncate_front(self.scrollback_len + self.size.height as usize);
+        let max_rows = self.scrollback_len + self.size.height as usize;
+        self.rows.drain(..self.rows.len().saturating_sub(max_rows));
         if self.scrollback_offset > 0 {
           self.scrollback_offset = (self.rows.len()
             - self.size.height as usize)

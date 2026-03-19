@@ -1,6 +1,14 @@
 ## Unreleased
 
-- Add proc_log and procs.*.log configuration in mprocs.yaml
+## 0.9.0 - 2026-03-19
+
+- Add `proc_log` and `procs.*.log` configuration in mprocs.yaml and `--log-dir`
+  cli arg
+- Add `--on-init` cli arg (#205)
+- Add quit-on-finish option (#188)
+- Add Procfile support (#192)
+- Implement OSC 0-2 (window title)
+- A lot of terminal/pty related internals were rewritten
 
 ## 0.8.3 - 2026-01-21
 

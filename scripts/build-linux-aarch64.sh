@@ -14,5 +14,5 @@ podman run -it --workdir /app \
   -v $(pwd)/helpers:/app/helpers \
   -v $(pwd)/scripts:/app/scripts \
   -v $(pwd)/release:/app/release \
-  rust:1.87.0-alpine3.21 \
+  rust:1.94.0-alpine3.23 \
   scripts/_build-linux.sh
