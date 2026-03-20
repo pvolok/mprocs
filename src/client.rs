@@ -1,5 +1,6 @@
 use std::io::{stdout, Write};
 
+use crate::key::{Key, KeyEventKind};
 use crate::term::term_driver::TermDriver;
 use crate::term::TermEvent;
 use crate::{
@@ -58,6 +59,10 @@ async fn client_main_loop(
         _ => break,
       },
       LocalEvent::TermEvent(event) => match event? {
+        Some(TermEvent::Key(Key {
+          kind: KeyEventKind::Release,
+          ..
+        })) => (),
         Some(event) => sender.send(CltToSrv::Key(event)).await?,
         _ => break,
       },
