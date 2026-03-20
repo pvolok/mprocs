@@ -1,4 +1,4 @@
-SET VERSION=0.9.0
+SET VERSION=0.9.1
 
 MKDIR release\mprocs-%VERSION%-windows-x86_64 || exit /b
 

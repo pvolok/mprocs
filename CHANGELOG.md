@@ -1,5 +1,9 @@
 ## Unreleased
 
+## 0.9.1 - 2026-03-20
+
+- Fixed double key event with kitty protocol
+
 ## 0.9.0 - 2026-03-19
 
 - Add `proc_log` and `procs.*.log` configuration in mprocs.yaml and `--log-dir`
