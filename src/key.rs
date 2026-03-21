@@ -318,10 +318,12 @@ impl KeyParser<'_> {
       let code = parser.take_key()?;
       if let Some(code) = KEYS.get(code.to_ascii_lowercase().as_str()) {
         *code
-      } else if code.len() == 1 {
-        KeyCode::Char(code.chars().next().unwrap())
       } else {
-        bail!("Wrong key code: \"{}\"", code);
+        let mut chars = code.chars();
+        match (chars.next(), chars.next()) {
+          (Some(ch), None) => KeyCode::Char(ch),
+          _ => bail!("Wrong key code: \"{}\"", code),
+        }
       }
     };
     parser.expect(">")?;
@@ -365,13 +367,14 @@ impl KeyParser<'_> {
 
   fn take_mods(&mut self) -> anyhow::Result<KeyMods> {
     let mut mods = KeyMods::NONE;
+    let bytes = self.text.as_bytes();
     let mut pos = self.pos;
-    while pos + 1 < self.text.len() && &self.text[pos + 1..pos + 2] == "-" {
-      match &self.text[pos..pos + 1] {
-        "c" | "C" => mods = mods.union(KeyMods::CONTROL),
-        "s" | "S" => mods = mods.union(KeyMods::SHIFT),
-        "m" | "M" => mods = mods.union(KeyMods::ALT),
-        ch => bail!("Wrong key modifier: \"{}\"", ch),
+    while pos + 1 < bytes.len() && bytes[pos + 1] == b'-' {
+      match bytes[pos] {
+        b'c' | b'C' => mods = mods.union(KeyMods::CONTROL),
+        b's' | b'S' => mods = mods.union(KeyMods::SHIFT),
+        b'm' | b'M' => mods = mods.union(KeyMods::ALT),
+        b => bail!("Wrong key modifier: \"{}\"", b as char),
       }
       pos += 2;
     }
