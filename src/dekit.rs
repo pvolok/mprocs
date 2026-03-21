@@ -197,33 +197,46 @@ pub async fn dekit_main() -> anyhow::Result<()> {
 
           let src = std::fs::read_to_string(first)?;
 
-          let vm = JsVm::new()?;
-          let root = vm.eval_file(Path::new("dekit.js"), src.as_bytes())?;
+          let vm = JsVm::new().await?;
+          let root =
+            vm.eval_file(Path::new("dekit.js"), src.as_bytes()).await?;
 
-          let r: anyhow::Result<()> = vm.context.with(|ctx| {
-            let m = root.restore(&ctx)?;
-            let r = m.get::<_, rquickjs::Value>("main")?;
-            let r = match r.type_of() {
-              rquickjs::Type::Constructor => {
-                r.into_constructor().unwrap().call::<_, rquickjs::Value>(())
-              }
-              rquickjs::Type::Function => r.into_function().unwrap().call(()),
-              t => {
-                println!("Exported `main` is not a function ({}).", t.as_str());
-                Ok(rquickjs::Value::new_undefined(ctx.clone()))
-              }
-            };
-            println!("-> {:?}", r);
-            if let Err(rquickjs::Error::Exception) = r {
-              println!("Exc: {:?}", ctx.catch());
-            }
-            Ok(())
-          });
+          let r: anyhow::Result<()> =
+            rquickjs::async_with!(vm.context => |ctx| {
+              run_module_main(&ctx, &root).await
+            })
+            .await;
           r?;
         }
       }
     }
   }
 
+  Ok(())
+}
+
+async fn run_module_main(
+  ctx: &rquickjs::Ctx<'_>,
+  root: &rquickjs::Persistent<rquickjs::Object<'static>>,
+) -> anyhow::Result<()> {
+  let m = root.clone().restore(ctx)?;
+  let main = m.get::<_, rquickjs::Value>("main")?;
+
+  let val = match main.type_of() {
+    rquickjs::Type::Constructor => main
+      .into_constructor()
+      .unwrap()
+      .call::<_, rquickjs::Value>(()),
+    rquickjs::Type::Function => main.into_function().unwrap().call(()),
+    t => anyhow::bail!("Exported `main` is not a function ({}).", t.as_str()),
+  }?;
+
+  let val = if let Some(promise) = val.clone().into_promise() {
+    promise.into_future::<rquickjs::Value<'_>>().await?
+  } else {
+    val
+  };
+
+  println!("-> {:?}", val);
   Ok(())
 }
