@@ -1,5 +1,9 @@
 ## Unreleased
 
+## 0.9.2 - 2026-03-21
+
+- Fixed Cyrillic input
+
 ## 0.9.1 - 2026-03-20
 
 - Fixed double key event with kitty protocol

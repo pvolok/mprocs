@@ -1095,7 +1095,7 @@ dependencies = [
 
 [[package]]
 name = "mprocs"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "assert_matches",
