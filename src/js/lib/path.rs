@@ -36,5 +36,22 @@ pub fn init(ctx: Ctx<'_>) -> rquickjs::Result<Object<'_>> {
       .unwrap_or_default()
   })?;
 
+  obj.def_fn("resolve", |Rest(parts): Rest<String>| -> String {
+    let mut p = std::env::current_dir().unwrap_or_default();
+    for part in parts {
+      let path = Path::new(&part);
+      if path.is_absolute() {
+        p = path.to_path_buf();
+      } else {
+        p.push(path);
+      }
+    }
+    p.to_string_lossy().to_string()
+  })?;
+
+  obj.def_fn("isAbsolute", |path: String| -> bool {
+    Path::new(&path).is_absolute()
+  })?;
+
   Ok(obj)
 }
