@@ -111,7 +111,7 @@ impl ScreenDiffer {
             }
             if brush.underline() != attrs.underline() {
               sep(w)?;
-              let value = if attrs.italic() { 4 } else { 24 };
+              let value = if attrs.underline() { 4 } else { 24 };
               write!(w, "{value}")?;
             }
             if brush.inverse() != attrs.inverse() {
