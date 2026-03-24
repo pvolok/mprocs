@@ -72,4 +72,141 @@ declare const dk: {
     /** Current process ID. */
     readonly pid: number;
   };
+
+  /** Terminal UI API (uses alternate screen + raw input). */
+  readonly tui: {
+    /** Open terminal UI mode. Safe to call multiple times. */
+    open(): void;
+    /** Close terminal UI mode and restore terminal state. */
+    close(): void;
+    /** Get current terminal size. */
+    size(): { width: number; height: number };
+    /** Wait for the next terminal input event. Optional timeout in ms. */
+    input(timeoutMs?: number): Promise<
+      | {
+          type: "key";
+          key: string;
+          kind: "press" | "repeat" | "release";
+        }
+      | { type: "timeout" }
+      | { type: "resize"; width: number; height: number }
+      | {
+          type: "mouse";
+          x: number;
+          y: number;
+          kind:
+            | "down-left"
+            | "down-right"
+            | "down-middle"
+            | "up-left"
+            | "up-right"
+            | "up-middle"
+            | "drag-left"
+            | "drag-right"
+            | "drag-middle"
+            | "moved"
+            | "scroll-down"
+            | "scroll-up"
+            | "scroll-left"
+            | "scroll-right";
+        }
+      | { type: "focus"; focused: boolean }
+      | { type: "paste"; text: string }
+      | null
+    >;
+    /** Draw one frame. Callback receives a transient frame object. */
+    draw(
+      cb: (frame: {
+        readonly width: number;
+        readonly height: number;
+        /** Draw text at x/y. */
+        text(
+          x: number,
+          y: number,
+          text: string,
+          style?: {
+            fg?:
+              | number
+              | {
+                  r: number;
+                  g: number;
+                  b: number;
+                }
+              | "default"
+              | "black"
+              | "red"
+              | "green"
+              | "yellow"
+              | "blue"
+              | "magenta"
+              | "cyan"
+              | "white"
+              | "brightBlack"
+              | "brightRed"
+              | "brightGreen"
+              | "brightYellow"
+              | "brightBlue"
+              | "brightMagenta"
+              | "brightCyan"
+              | "brightWhite";
+            bg?:
+              | number
+              | {
+                  r: number;
+                  g: number;
+                  b: number;
+                }
+              | "default"
+              | "black"
+              | "red"
+              | "green"
+              | "yellow"
+              | "blue"
+              | "magenta"
+              | "cyan"
+              | "white"
+              | "brightBlack"
+              | "brightRed"
+              | "brightGreen"
+              | "brightYellow"
+              | "brightBlue"
+              | "brightMagenta"
+              | "brightCyan"
+              | "brightWhite";
+            bold?: boolean;
+            italic?: boolean;
+            underline?: boolean;
+            inverse?: boolean;
+          },
+        ): void;
+        /** Fill whole frame with a character. */
+        clear(
+          ch?: string,
+          style?: {
+            fg?: number | { r: number; g: number; b: number } | string;
+            bg?: number | { r: number; g: number; b: number } | string;
+            bold?: boolean;
+            italic?: boolean;
+            underline?: boolean;
+            inverse?: boolean;
+          },
+        ): void;
+        /** Hide terminal cursor for this frame. */
+        hideCursor(): void;
+        /** Show cursor at x/y for this frame. */
+        setCursor(x: number, y: number): void;
+        /** Set cursor style for this frame. */
+        setCursorStyle(
+          style:
+            | "default"
+            | "blinkingBlock"
+            | "steadyBlock"
+            | "blinkingUnderline"
+            | "steadyUnderline"
+            | "blinkingBar"
+            | "steadyBar",
+        ): void;
+      }) => void,
+    ): void;
+  };
 };

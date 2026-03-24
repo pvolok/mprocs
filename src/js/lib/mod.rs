@@ -3,6 +3,7 @@ mod fs;
 mod log;
 mod path;
 mod process;
+mod tui;
 
 use rquickjs::{function::This, object::Accessor, Ctx, Object};
 
@@ -15,6 +16,7 @@ pub fn init(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
   register_lazy(&dk, "path", path::init)?;
   register_lazy(&dk, "env", env::init)?;
   register_lazy(&dk, "process", process::init)?;
+  register_lazy(&dk, "tui", tui::init)?;
 
   ctx.globals().set("dk", dk)?;
   Ok(())
