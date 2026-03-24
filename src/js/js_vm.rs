@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use anyhow::anyhow;
+use rquickjs::CatchResultExt;
 use rquickjs::{AsyncContext, AsyncRuntime, Ctx, Module, Object, Persistent};
 
 pub struct JsVm {
@@ -30,6 +32,8 @@ impl JsVm {
     let path = path.to_path_buf();
     let module = rquickjs::async_with!(self.context => |ctx| {
       eval_module(&ctx, &path, src)
+        .catch(&ctx)
+        .map_err(|err| anyhow!("JavaScript module evaluation failed:\n{err}"))
     })
     .await?;
     Ok(module)

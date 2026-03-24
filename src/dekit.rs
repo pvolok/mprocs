@@ -2,6 +2,7 @@ use std::path::Path;
 
 use anyhow::anyhow;
 use clap::{Arg, Command};
+use rquickjs::CatchResultExt;
 
 use crate::{
   app::{client_loop, create_app_proc, ClientId},
@@ -219,24 +220,55 @@ async fn run_module_main(
   ctx: &rquickjs::Ctx<'_>,
   root: &rquickjs::Persistent<rquickjs::Object<'static>>,
 ) -> anyhow::Result<()> {
-  let m = root.clone().restore(ctx)?;
-  let main = m.get::<_, rquickjs::Value>("main")?;
+  let m = map_js_error(
+    ctx,
+    root.clone().restore(ctx),
+    "Failed to restore module namespace",
+  )?;
+  let main = map_js_error(
+    ctx,
+    m.get::<_, rquickjs::Value>("main"),
+    "Failed to read exported `main`",
+  )?;
 
   let val = match main.type_of() {
-    rquickjs::Type::Constructor => main
-      .into_constructor()
-      .unwrap()
-      .call::<_, rquickjs::Value>(()),
-    rquickjs::Type::Function => main.into_function().unwrap().call(()),
+    rquickjs::Type::Constructor => map_js_error(
+      ctx,
+      main
+        .into_constructor()
+        .expect("Type checked as constructor")
+        .call::<_, rquickjs::Value>(()),
+      "Error while calling exported constructor `main`",
+    )?,
+    rquickjs::Type::Function => map_js_error(
+      ctx,
+      main
+        .into_function()
+        .expect("Type checked as function")
+        .call(()),
+      "Error while calling exported function `main`",
+    )?,
     t => anyhow::bail!("Exported `main` is not a function ({}).", t.as_str()),
-  }?;
+  };
 
   let val = if let Some(promise) = val.clone().into_promise() {
-    promise.into_future::<rquickjs::Value<'_>>().await?
+    map_js_error(
+      ctx,
+      promise.into_future::<rquickjs::Value<'_>>().await,
+      "Unhandled rejection in exported `main`",
+    )?
   } else {
     val
   };
 
   println!("-> {:?}", val);
   Ok(())
+}
+
+fn map_js_error<T>(
+  ctx: &rquickjs::Ctx<'_>,
+  result: rquickjs::Result<T>,
+  scope: &str,
+) -> anyhow::Result<T> {
+  result.catch(ctx).map_err(|err| anyhow!("{scope}:\n{err}"))
 }
