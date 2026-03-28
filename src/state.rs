@@ -1,6 +1,6 @@
 use crate::{
   app::ClientId,
-  kernel::proc::ProcId,
+  kernel::task::TaskId,
   keymap::KeymapGroup,
   proc::{view::ProcView, CopyMode},
   widgets::list::ListState,
@@ -62,7 +62,7 @@ impl State {
     }
   }
 
-  pub fn get_proc_mut(&mut self, id: ProcId) -> Option<&mut ProcView> {
+  pub fn get_proc_mut(&mut self, id: TaskId) -> Option<&mut ProcView> {
     self.procs.iter_mut().find(|p| p.id() == id)
   }
 

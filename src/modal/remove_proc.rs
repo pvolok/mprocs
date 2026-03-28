@@ -1,7 +1,7 @@
 use crate::{
   app::LoopAction,
   event::AppEvent,
-  kernel::{kernel_message::ProcContext, proc::ProcId},
+  kernel::{kernel_message::TaskContext, task::TaskId},
   key::{Key, KeyCode},
   state::State,
   term::TermEvent,
@@ -15,12 +15,12 @@ use crate::{
 use super::modal::Modal;
 
 pub struct RemoveProcModal {
-  pc: ProcContext,
-  id: ProcId,
+  pc: TaskContext,
+  id: TaskId,
 }
 
 impl RemoveProcModal {
-  pub fn new(id: ProcId, pc: ProcContext) -> Self {
+  pub fn new(id: TaskId, pc: TaskContext) -> Self {
     RemoveProcModal { pc, id }
   }
 }

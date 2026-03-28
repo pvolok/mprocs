@@ -11,8 +11,8 @@ use crate::{
   event::{AppEvent, CopyMove},
   host::{receiver::MsgReceiver, sender::MsgSender},
   kernel::{
-    kernel_message::{KernelCommand, ProcContext, ProcSender},
-    proc::{ProcId, ProcInit, ProcStatus},
+    kernel_message::{KernelCommand, TaskContext, TaskSender},
+    task::{TaskId, TaskInit, TaskStatus},
   },
   key::{Key, KeyEventKind},
   keymap::Keymap,
@@ -71,7 +71,7 @@ pub struct App {
   grid: Grid,
   modal: Option<Box<dyn Modal>>,
   pr: tokio::sync::mpsc::UnboundedReceiver<ProcCmd>,
-  pc: ProcContext,
+  pc: TaskContext,
 
   screen_size: Size,
   clients: Vec<ClientHandle>,
@@ -81,7 +81,7 @@ impl App {
   pub async fn run(self) -> anyhow::Result<()> {
     let (exit_trigger, exit_listener) = triggered::trigger();
 
-    let app_proc_id = self.pc.proc_id;
+    let app_task_id = self.pc.task_id;
     let server_thread = if let Some(ref server_addr) = self.config.server {
       let server = match server_addr {
         ServerConfig::Tcp(addr) => tokio::net::TcpListener::bind(addr).await?,
@@ -116,8 +116,8 @@ impl App {
             };
             let msg: AppEvent = serde_yaml::from_slice(buf.as_slice()).unwrap();
             // log::info!("Received remote command: {:?}", msg);
-            ctl_pc.send(KernelCommand::ProcCmd(
-              app_proc_id,
+            ctl_pc.send(KernelCommand::TaskCmd(
+              app_task_id,
               ProcCmd::Custom(Box::new(msg)),
             ));
           });
@@ -142,7 +142,7 @@ impl App {
   }
 
   async fn main_loop(mut self) -> anyhow::Result<()> {
-    self.pc.send(KernelCommand::ListenProcUpdates);
+    self.pc.send(KernelCommand::ListenTaskUpdates);
 
     self.start_procs(Rect {
       x: 0,
@@ -162,7 +162,7 @@ impl App {
       let term_size = layout.term_area().size();
       if term_size != last_term_size {
         for proc_handle in &mut self.state.procs {
-          self.pc.send(KernelCommand::ProcCmd(
+          self.pc.send(KernelCommand::TaskCmd(
             proc_handle.id(),
             ProcCmd::Resize {
               w: term_size.width,
@@ -230,7 +230,7 @@ impl App {
       client.sender.send(SrvToClt::Quit).await.log_ignore();
     }
 
-    self.pc.send(KernelCommand::UnlistenProcUpdates);
+    self.pc.send(KernelCommand::UnlistenTaskUpdates);
 
     Ok(())
   }
@@ -238,8 +238,8 @@ impl App {
   fn start_procs(&mut self, size: Rect) -> anyhow::Result<()> {
     let mut id_map = HashMap::with_capacity(self.config.procs.len());
     for proc_cfg in &self.config.procs {
-      let proc_id = self.pc.alloc_id();
-      id_map.insert(proc_cfg.name.clone(), proc_id);
+      let task_id = self.pc.alloc_id();
+      id_map.insert(proc_cfg.name.clone(), task_id);
     }
 
     let mut procs = self
@@ -255,8 +255,8 @@ impl App {
             // TODO: Show error.
           }
         }
-        let proc_id = id_map.get(&proc_cfg.name).unwrap();
-        launch_proc(&self.pc, proc_cfg.clone(), *proc_id, deps, size)
+        let task_id = id_map.get(&proc_cfg.name).unwrap();
+        launch_proc(&self.pc, proc_cfg.clone(), *task_id, deps, size)
       })
       .collect::<Vec<_>>();
 
@@ -439,7 +439,7 @@ impl App {
                   | MouseProtocolMode::PressRelease
                   | MouseProtocolMode::ButtonMotion
                   | MouseProtocolMode::AnyMotion => {
-                    self.pc.send(KernelCommand::ProcCmd(
+                    self.pc.send(KernelCommand::TaskCmd(
                       proc.id(),
                       ProcCmd::SendMouse(local_event),
                     ));
@@ -583,7 +583,7 @@ impl App {
         for proc_handle in self.state.procs.iter_mut() {
           proc_handle.target_state = TargetState::Stopped;
           if proc_handle.is_up() {
-            pc.send(KernelCommand::ProcCmd(proc_handle.id(), ProcCmd::Stop));
+            pc.send(KernelCommand::TaskCmd(proc_handle.id(), ProcCmd::Stop));
           }
         }
         loop_action.render();
@@ -592,7 +592,7 @@ impl App {
         for proc_handle in self.state.procs.iter_mut() {
           proc_handle.target_state = TargetState::Stopped;
           if proc_handle.is_up() {
-            pc.send(KernelCommand::ProcCmd(proc_handle.id(), ProcCmd::Kill));
+            pc.send(KernelCommand::TaskCmd(proc_handle.id(), ProcCmd::Kill));
           }
         }
         loop_action.force_quit();
@@ -650,28 +650,28 @@ impl App {
       AppEvent::StartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.target_state = TargetState::Started;
-          pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
+          pc.send(KernelCommand::TaskCmd(proc.id, ProcCmd::Start));
         }
       }
       AppEvent::TermProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.target_state = TargetState::Stopped;
-          pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Stop));
+          pc.send(KernelCommand::TaskCmd(proc.id, ProcCmd::Stop));
         }
       }
       AppEvent::KillProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.target_state = TargetState::Stopped;
-          pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Kill));
+          pc.send(KernelCommand::TaskCmd(proc.id, ProcCmd::Kill));
         }
       }
       AppEvent::RestartProc => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.target_state = TargetState::Started;
           if proc.is_up() {
-            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Stop));
+            pc.send(KernelCommand::TaskCmd(proc.id, ProcCmd::Stop));
           } else {
-            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
+            pc.send(KernelCommand::TaskCmd(proc.id, ProcCmd::Start));
           }
         }
       }
@@ -679,9 +679,9 @@ impl App {
         for proc in &mut self.state.procs {
           proc.target_state = TargetState::Started;
           if proc.is_up() {
-            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Stop));
+            pc.send(KernelCommand::TaskCmd(proc.id, ProcCmd::Stop));
           } else {
-            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
+            pc.send(KernelCommand::TaskCmd(proc.id, ProcCmd::Start));
           }
         }
       }
@@ -689,9 +689,9 @@ impl App {
         if let Some(proc) = self.state.get_current_proc_mut() {
           proc.target_state = TargetState::Started;
           if proc.is_up() {
-            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Kill));
+            pc.send(KernelCommand::TaskCmd(proc.id, ProcCmd::Kill));
           } else {
-            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
+            pc.send(KernelCommand::TaskCmd(proc.id, ProcCmd::Start));
           }
         }
       }
@@ -699,9 +699,9 @@ impl App {
         for proc in &mut self.state.procs {
           proc.target_state = TargetState::Started;
           if proc.is_up() {
-            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Kill));
+            pc.send(KernelCommand::TaskCmd(proc.id, ProcCmd::Kill));
           } else {
-            pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::Start));
+            pc.send(KernelCommand::TaskCmd(proc.id, ProcCmd::Start));
           }
         }
       }
@@ -709,7 +709,7 @@ impl App {
       AppEvent::ScrollUpLines { n } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           match &mut proc.copy_mode {
-            CopyMode::None(_) => pc.send(KernelCommand::ProcCmd(
+            CopyMode::None(_) => pc.send(KernelCommand::TaskCmd(
               proc.id,
               ProcCmd::ScrollUpLines { n: *n },
             )),
@@ -721,7 +721,7 @@ impl App {
       AppEvent::ScrollDownLines { n } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           match &mut proc.copy_mode {
-            CopyMode::None(_) => pc.send(KernelCommand::ProcCmd(
+            CopyMode::None(_) => pc.send(KernelCommand::TaskCmd(
               proc.id,
               ProcCmd::ScrollDownLines { n: *n },
             )),
@@ -734,7 +734,7 @@ impl App {
         if let Some(proc) = self.state.get_current_proc_mut() {
           match &mut proc.copy_mode {
             CopyMode::None(_) => {
-              pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::ScrollUp))
+              pc.send(KernelCommand::TaskCmd(proc.id, ProcCmd::ScrollUp))
             }
             CopyMode::Active(screen, _, _) => {
               screen.scroll_screen_up(screen.size().height as usize / 2)
@@ -747,7 +747,7 @@ impl App {
         if let Some(proc) = self.state.get_current_proc_mut() {
           match &mut proc.copy_mode {
             CopyMode::None(_) => {
-              pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::ScrollDown))
+              pc.send(KernelCommand::TaskCmd(proc.id, ProcCmd::ScrollDown))
             }
             CopyMode::Active(screen, _, _) => {
               screen.scroll_screen_down(screen.size().height as usize / 2)
@@ -916,7 +916,7 @@ impl App {
 
       AppEvent::SendKey { key } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          pc.send(KernelCommand::ProcCmd(proc.id, ProcCmd::SendKey(*key)));
+          pc.send(KernelCommand::TaskCmd(proc.id, ProcCmd::SendKey(*key)));
         }
       }
     }
@@ -963,9 +963,9 @@ impl App {
         }
       }
 
-      ProcCmd::OnProcUpdate(proc_id, update) => match update {
+      ProcCmd::OnProcUpdate(task_id, update) => match update {
         ProcUpdate::Started => {
-          if let Some(proc) = self.state.get_proc_mut(proc_id) {
+          if let Some(proc) = self.state.get_proc_mut(task_id) {
             proc.is_up = true;
             proc.last_start = Some(Instant::now());
             match proc.target_state {
@@ -974,14 +974,14 @@ impl App {
                 proc.target_state = TargetState::None;
               }
               TargetState::Stopped => {
-                self.pc.send(KernelCommand::ProcCmd(proc_id, ProcCmd::Stop));
+                self.pc.send(KernelCommand::TaskCmd(task_id, ProcCmd::Stop));
               }
             }
             loop_action.render();
           }
         }
         ProcUpdate::Stopped(exit_code) => {
-          if let Some(proc) = self.state.get_proc_mut(proc_id) {
+          if let Some(proc) = self.state.get_proc_mut(task_id) {
             proc.is_up = false;
             proc.exit_code = Some(exit_code);
 
@@ -1006,7 +1006,7 @@ impl App {
             if restart {
               self
                 .pc
-                .send(KernelCommand::ProcCmd(proc_id, ProcCmd::Start));
+                .send(KernelCommand::TaskCmd(task_id, ProcCmd::Start));
             }
 
             match proc.target_state {
@@ -1029,7 +1029,7 @@ impl App {
           }
         }
         ProcUpdate::ScreenChanged(vt) => {
-          if let Some(proc) = self.state.get_proc_mut(proc_id) {
+          if let Some(proc) = self.state.get_proc_mut(task_id) {
             proc.vt = vt;
             proc.changed = true;
             loop_action.render();
@@ -1039,8 +1039,8 @@ impl App {
           let is_current = self
             .state
             .get_current_proc()
-            .is_some_and(|p| p.id() == proc_id);
-          if let Some(proc) = self.state.get_proc_mut(proc_id) {
+            .is_some_and(|p| p.id() == task_id);
+          if let Some(proc) = self.state.get_proc_mut(task_id) {
             if !is_current {
               proc.changed = true;
             }
@@ -1105,7 +1105,7 @@ pub struct ClientId(pub u32);
 
 pub async fn client_loop(
   id: ClientId,
-  app_sender: ProcSender,
+  app_sender: TaskSender,
   (client_sender, mut server_receiver): (
     MsgSender<SrvToClt>,
     MsgReceiver<CltToSrv>,
@@ -1190,27 +1190,27 @@ impl ClientHandle {
   }
 }
 
-pub fn create_app_proc(
+pub fn create_app_task(
   config: Config,
   keymap: Keymap,
-  pc: &ProcContext,
-) -> ProcId {
-  pc.add_proc(Box::new(|pc| {
-    log::debug!("Creating app proc (id: {})", pc.proc_id.0);
+  pc: &TaskContext,
+) -> TaskId {
+  pc.add_task(Box::new(|pc| {
+    log::debug!("Creating app task (id: {})", pc.task_id.0);
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(async {
       let pc = pc;
       let r = server_main(config, keymap, receiver, pc.clone()).await;
       match r {
         Ok(()) => (),
-        Err(err) => log::error!("App proc finished with error: {:?}", err),
+        Err(err) => log::error!("App task finished with error: {:?}", err),
       };
       pc.send(KernelCommand::Quit);
     });
-    ProcInit {
+    TaskInit {
       sender,
       stop_on_quit: false,
-      status: ProcStatus::Running,
+      status: TaskStatus::Running,
       deps: Vec::new(),
     }
   }))
@@ -1220,7 +1220,7 @@ pub async fn server_main(
   config: Config,
   keymap: Keymap,
   pr: UnboundedReceiver<ProcCmd>,
-  pc: ProcContext,
+  pc: TaskContext,
 ) -> anyhow::Result<()> {
   let state = State {
     current_client_id: None,

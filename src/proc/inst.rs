@@ -4,7 +4,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::SharedVt;
-use crate::kernel::proc::ProcId;
+use crate::kernel::task::TaskId;
 use crate::proc_log_config::{LogConfig, LogMode};
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
@@ -36,7 +36,7 @@ impl Debug for Inst {
 
 impl Inst {
   pub async fn spawn(
-    id: ProcId,
+    id: TaskId,
     name: &str,
     spec: &ProcessSpec,
     tx: UnboundedSender<ProcEvent>,

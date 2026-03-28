@@ -1,7 +1,7 @@
 use std::{any::Any, fmt::Debug};
 
 use crate::{
-  kernel::{kernel_message::SharedVt, proc::ProcId},
+  kernel::{kernel_message::SharedVt, task::TaskId},
   key::Key,
   mouse::MouseEvent,
 };
@@ -24,7 +24,7 @@ pub enum ProcCmd {
 
   Custom(Box<dyn CustomProcCmd + Send + 'static>),
 
-  OnProcUpdate(ProcId, ProcUpdate),
+  OnProcUpdate(TaskId, ProcUpdate),
 }
 
 pub trait CustomProcCmd: Any + Debug {}

@@ -3,7 +3,7 @@ use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-  app::ClientId, kernel::proc::ProcId, key::Key, proc::msg::CustomProcCmd,
+  app::ClientId, kernel::task::TaskId, key::Key, proc::msg::CustomProcCmd,
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -38,7 +38,7 @@ pub enum AppEvent {
   AddProc { cmd: String, name: Option<String> },
   DuplicateProc,
   ShowRemoveProc,
-  RemoveProc { id: ProcId },
+  RemoveProc { id: TaskId },
 
   CloseCurrentModal,
 

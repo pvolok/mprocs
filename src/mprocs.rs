@@ -6,7 +6,7 @@ use std::{
   path::{Path, PathBuf},
 };
 
-use crate::app::{client_loop, create_app_proc, ClientId};
+use crate::app::{client_loop, create_app_task, ClientId};
 use crate::client::client_main;
 use crate::config::{
   CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig,
@@ -19,7 +19,7 @@ use crate::host::{receiver::MsgReceiver, sender::MsgSender};
 use crate::just::load_just_procs;
 use crate::kernel::{
   kernel::Kernel,
-  proc::{ProcInit, ProcStatus},
+  task::{TaskInit, TaskStatus},
 };
 use crate::keymap::Keymap;
 use crate::package_json::load_npm_procs;
@@ -244,11 +244,11 @@ async fn run_app() -> anyhow::Result<()> {
       #[cfg(unix)]
       crate::process::unix_processes_waiter::UnixProcessesWaiter::init()?;
       let mut kernel = Kernel::new();
-      kernel.spawn_proc(|pc| {
-        let app_proc_id = create_app_proc(config, keymap, &pc);
+      kernel.spawn_task(|pc| {
+        let app_task_id = create_app_task(config, keymap, &pc);
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
 
-        let app_sender = pc.get_proc_sender(app_proc_id);
+        let app_sender = pc.get_task_sender(app_task_id);
         tokio::spawn(async move {
           client_loop(
             ClientId(1),
@@ -258,10 +258,10 @@ async fn run_app() -> anyhow::Result<()> {
           .await
         });
 
-        ProcInit {
+        TaskInit {
           sender,
           stop_on_quit: false,
-          status: ProcStatus::Down,
+          status: TaskStatus::Down,
           deps: Vec::new(),
         }
       });

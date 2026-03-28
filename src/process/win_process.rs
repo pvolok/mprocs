@@ -43,7 +43,7 @@ use windows::{
 };
 
 use crate::{
-  error::ResultLogger, kernel::proc::ProcId, process::process::Process,
+  error::ResultLogger, kernel::task::TaskId, process::process::Process,
   term_types::winsize::Winsize,
 };
 
@@ -65,7 +65,7 @@ type OnWaitReturned = Box<dyn Fn(Option<i32>) + Send + Sync>;
 
 impl WinProcess {
   pub fn spawn(
-    id: ProcId,
+    id: TaskId,
     spec: &ProcessSpec,
     size: Winsize,
     on_wait_returned: OnWaitReturned,

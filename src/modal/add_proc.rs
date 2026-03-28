@@ -3,7 +3,7 @@ use tui_input::Input;
 use crate::{
   app::LoopAction,
   event::AppEvent,
-  kernel::kernel_message::ProcContext,
+  kernel::kernel_message::TaskContext,
   key::{Key, KeyCode},
   state::State,
   term::TermEvent,
@@ -18,12 +18,12 @@ use crate::{
 use super::modal::Modal;
 
 pub struct AddProcModal {
-  pc: ProcContext,
+  pc: TaskContext,
   input: Input,
 }
 
 impl AddProcModal {
-  pub fn new(pc: ProcContext) -> Self {
+  pub fn new(pc: TaskContext) -> Self {
     AddProcModal {
       pc,
       input: Input::default(),

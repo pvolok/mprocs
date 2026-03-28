@@ -11,27 +11,27 @@ use crate::{
   vt100::Parser,
 };
 
-use super::proc::{ProcId, ProcInit};
+use super::task::{TaskId, TaskInit};
 
 pub struct KernelMessage {
-  pub from: ProcId,
+  pub from: TaskId,
   pub command: KernelCommand,
 }
 
 pub enum KernelCommand {
   Quit,
 
-  AddProc(ProcId, Box<dyn FnOnce(ProcContext) -> ProcInit + Send>),
-  ProcCmd(ProcId, ProcCmd),
+  AddTask(TaskId, Box<dyn FnOnce(TaskContext) -> TaskInit + Send>),
+  TaskCmd(TaskId, ProcCmd),
 
-  ListenProcUpdates,
-  UnlistenProcUpdates,
+  ListenTaskUpdates,
+  UnlistenTaskUpdates,
 
-  // Proc reporting
-  ProcStarted,
-  ProcStopped(u32),
-  ProcUpdatedScreen(Option<SharedVt>),
-  ProcRendered,
+  // Task reporting
+  TaskStarted,
+  TaskStopped(u32),
+  TaskUpdatedScreen(Option<SharedVt>),
+  TaskRendered,
 }
 
 #[derive(Clone)]
@@ -58,96 +58,96 @@ impl Deref for SharedVt {
 }
 
 #[derive(Clone)]
-pub struct ProcContext {
-  next_proc_id: Arc<AtomicUsize>,
+pub struct TaskContext {
+  next_task_id: Arc<AtomicUsize>,
   sender: UnboundedSender<KernelMessage>,
-  pub proc_id: ProcId,
+  pub task_id: TaskId,
 }
 
-impl ProcContext {
+impl TaskContext {
   pub fn new(
-    next_proc_id: Arc<AtomicUsize>,
-    proc_id: ProcId,
+    next_task_id: Arc<AtomicUsize>,
+    task_id: TaskId,
     sender: UnboundedSender<KernelMessage>,
   ) -> Self {
     Self {
-      next_proc_id,
+      next_task_id,
       sender,
-      proc_id,
+      task_id,
     }
   }
 
   pub fn send(&self, command: KernelCommand) {
     if let Err(_err) = self.sender.send(KernelMessage {
-      from: self.proc_id,
+      from: self.task_id,
       command,
     }) {
       log::info!(
-        "Failed to send kernel message (proc_id: {}). Channel is closed.",
-        self.proc_id.0,
+        "Failed to send kernel message (task_id: {}). Channel is closed.",
+        self.task_id.0,
       );
     }
   }
 
   pub fn send_self_custom<T: CustomProcCmd + Send>(&self, custom: T) {
-    self.send(KernelCommand::ProcCmd(
-      self.proc_id,
+    self.send(KernelCommand::TaskCmd(
+      self.task_id,
       ProcCmd::Custom(Box::new(custom)),
     ));
   }
 
-  pub fn alloc_id(&self) -> ProcId {
-    ProcId(
+  pub fn alloc_id(&self) -> TaskId {
+    TaskId(
       self
-        .next_proc_id
+        .next_task_id
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
     )
   }
 
-  pub fn add_proc(
+  pub fn add_task(
     &self,
-    f: Box<dyn FnOnce(ProcContext) -> ProcInit + Send>,
-  ) -> ProcId {
-    let proc_id = self.alloc_id();
-    self.add_proc_with_id(proc_id, f)
+    f: Box<dyn FnOnce(TaskContext) -> TaskInit + Send>,
+  ) -> TaskId {
+    let task_id = self.alloc_id();
+    self.add_task_with_id(task_id, f)
   }
 
-  pub fn add_proc_with_id(
+  pub fn add_task_with_id(
     &self,
-    proc_id: ProcId,
-    f: Box<dyn FnOnce(ProcContext) -> ProcInit + Send>,
-  ) -> ProcId {
-    self.send(KernelCommand::AddProc(proc_id, f));
-    proc_id
+    task_id: TaskId,
+    f: Box<dyn FnOnce(TaskContext) -> TaskInit + Send>,
+  ) -> TaskId {
+    self.send(KernelCommand::AddTask(task_id, f));
+    task_id
   }
 
-  pub fn get_proc_sender(&self, target_id: ProcId) -> ProcSender {
-    ProcSender {
-      proc_id: target_id,
-      from_id: self.proc_id,
+  pub fn get_task_sender(&self, target_id: TaskId) -> TaskSender {
+    TaskSender {
+      task_id: target_id,
+      from_id: self.task_id,
       sender: self.sender.clone(),
     }
   }
 }
 
 #[derive(Clone)]
-pub struct ProcSender {
-  pub proc_id: ProcId,
-  pub from_id: ProcId,
+pub struct TaskSender {
+  pub task_id: TaskId,
+  pub from_id: TaskId,
   sender: UnboundedSender<KernelMessage>,
 }
 
-impl ProcSender {
+impl TaskSender {
   pub fn send(&self, cmd: ProcCmd) {
     let r = self.sender.send(KernelMessage {
       from: self.from_id,
-      command: KernelCommand::ProcCmd(self.proc_id, cmd),
+      command: KernelCommand::TaskCmd(self.task_id, cmd),
     });
     if let Err(_err) = r {
       log::debug!(
-        "ProcSender.send() to closed channel. from_id:{} proc_id:{}",
+        "TaskSender.send() to closed channel. from_id:{} task_id:{}",
         self.from_id.0,
-        self.proc_id.0
+        self.task_id.0
       );
     }
   }

@@ -5,7 +5,7 @@ use clap::{Arg, Command};
 use rquickjs::CatchResultExt;
 
 use crate::{
-  app::{client_loop, create_app_proc, ClientId},
+  app::{client_loop, create_app_task, ClientId},
   client::client_main,
   config::Config,
   host::socket::{bind_server_socket, connect_client_socket},
@@ -13,7 +13,7 @@ use crate::{
   kernel::{
     kernel::Kernel,
     kernel_message::KernelCommand,
-    proc::{ProcInit, ProcStatus},
+    task::{TaskInit, TaskStatus},
   },
   keymap::Keymap,
   lualib::init_std,
@@ -50,11 +50,11 @@ async fn run_server() -> anyhow::Result<()> {
   #[cfg(unix)]
   crate::process::unix_processes_waiter::UnixProcessesWaiter::init()?;
   let mut kernel = Kernel::new();
-  kernel.spawn_proc(|pc| {
-    let app_proc_id = create_app_proc(config, keymap, &pc);
+  kernel.spawn_task(|pc| {
+    let app_task_id = create_app_task(config, keymap, &pc);
     let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
 
-    let app_sender = pc.get_proc_sender(app_proc_id);
+    let app_sender = pc.get_task_sender(app_task_id);
 
     tokio::spawn(async move {
       let mut last_client_id = 0;
@@ -89,10 +89,10 @@ async fn run_server() -> anyhow::Result<()> {
       }
     });
 
-    ProcInit {
+    TaskInit {
       sender,
       stop_on_quit: false,
-      status: ProcStatus::Down,
+      status: TaskStatus::Down,
       deps: Vec::new(),
     }
   });

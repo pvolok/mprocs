@@ -1,6 +1,6 @@
 use crate::{
   config::ProcConfig,
-  kernel::{kernel_message::SharedVt, proc::ProcId},
+  kernel::{kernel_message::SharedVt, task::TaskId},
 };
 
 use super::CopyMode;
@@ -18,7 +18,7 @@ pub enum TargetState {
 }
 
 pub struct ProcView {
-  pub id: ProcId,
+  pub id: TaskId,
   pub cfg: ProcConfig,
 
   pub is_up: bool,
@@ -32,7 +32,7 @@ pub struct ProcView {
 }
 
 impl ProcView {
-  pub fn new(id: ProcId, cfg: ProcConfig) -> Self {
+  pub fn new(id: TaskId, cfg: ProcConfig) -> Self {
     Self {
       id,
       cfg,
@@ -52,7 +52,7 @@ impl ProcView {
     self.cfg.name.replace_range(.., name);
   }
 
-  pub fn id(&self) -> ProcId {
+  pub fn id(&self) -> TaskId {
     self.id
   }
 

@@ -6,38 +6,38 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::{error::ResultLogger, proc::msg::ProcCmd};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct ProcId(pub usize);
+pub struct TaskId(pub usize);
 
-pub struct ProcHandle {
+pub struct TaskHandle {
   #[allow(dead_code)]
-  pub proc_id: ProcId,
+  pub task_id: TaskId,
   pub sender: UnboundedSender<ProcCmd>,
 
   pub stop_on_quit: bool,
-  pub status: ProcStatus,
+  pub status: TaskStatus,
 
-  pub deps: HashMap<ProcId, DepInfo>,
+  pub deps: HashMap<TaskId, DepInfo>,
 }
 
-impl ProcHandle {
+impl TaskHandle {
   pub fn send(&self, cmd: ProcCmd) {
     self.sender.send(cmd).log_ignore();
   }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ProcStatus {
+pub enum TaskStatus {
   Down,
   Running,
 }
 
-pub struct ProcInit {
+pub struct TaskInit {
   pub sender: UnboundedSender<ProcCmd>,
   pub stop_on_quit: bool,
-  pub status: ProcStatus,
-  pub deps: Vec<ProcId>,
+  pub status: TaskStatus,
+  pub deps: Vec<TaskId>,
 }
 
 pub struct DepInfo {
-  pub status: ProcStatus,
+  pub status: TaskStatus,
 }

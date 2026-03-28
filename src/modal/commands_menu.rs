@@ -6,7 +6,7 @@ use crate::{
   app::LoopAction,
   encode_term::print_key,
   event::AppEvent,
-  kernel::kernel_message::ProcContext,
+  kernel::kernel_message::TaskContext,
   key::{Key, KeyCode, KeyMods},
   keymap::Keymap,
   state::State,
@@ -28,7 +28,7 @@ use crate::{
 use super::modal::Modal;
 
 pub struct CommandsMenuModal {
-  pc: ProcContext,
+  pc: TaskContext,
   input: Input,
   list_state: ListState,
   items: Vec<CommandInfo>,
@@ -36,7 +36,7 @@ pub struct CommandsMenuModal {
 }
 
 impl CommandsMenuModal {
-  pub fn new(pc: ProcContext, keymap: &Keymap) -> Self {
+  pub fn new(pc: TaskContext, keymap: &Keymap) -> Self {
     let mut key_bindings = HashMap::new();
     for (event, key) in &keymap.rev_procs {
       key_bindings

@@ -8,7 +8,7 @@ use rustix::{process::WaitStatus, termios::Pid};
 use tokio::io::unix::AsyncFd;
 
 use crate::{
-  kernel::proc::ProcId,
+  kernel::task::TaskId,
   process::{process::Process, unix_processes_waiter::UnixProcessesWaiter},
   term_types::winsize::Winsize,
 };
@@ -22,7 +22,7 @@ pub struct UnixProcess {
 
 impl UnixProcess {
   pub fn spawn(
-    _id: ProcId,
+    _id: TaskId,
     spec: &ProcessSpec,
     size: Winsize,
     on_wait_returned: Box<dyn Fn(WaitStatus) + Send + Sync>,

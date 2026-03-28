@@ -9,8 +9,8 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use crate::config::ProcConfig;
 use crate::encode_term::{encode_key, encode_mouse_event, KeyCodeEncodeModes};
 use crate::error::ResultLogger;
-use crate::kernel::kernel_message::{KernelCommand, ProcContext};
-use crate::kernel::proc::{ProcId, ProcInit, ProcStatus};
+use crate::kernel::kernel_message::{KernelCommand, TaskContext};
+use crate::kernel::task::{TaskId, TaskInit, TaskStatus};
 use crate::key::Key;
 use crate::mouse::{MouseEvent, MouseEventKind};
 use crate::proc_log_config::LogConfig;
@@ -26,7 +26,7 @@ use super::Size;
 use super::StopSignal;
 
 pub struct Proc {
-  pub id: ProcId,
+  pub id: TaskId,
   pub spec: ProcessSpec,
   size: Size,
 
@@ -47,28 +47,28 @@ pub enum ProcState {
 }
 
 pub fn launch_proc(
-  parent_ks: &ProcContext,
+  parent_ks: &TaskContext,
   cfg: ProcConfig,
-  proc_id: ProcId,
-  deps: Vec<ProcId>,
+  task_id: TaskId,
+  deps: Vec<TaskId>,
   size: Rect,
 ) -> ProcView {
   let cfg_ = cfg.clone();
-  let child_id = parent_ks.add_proc_with_id(
-    proc_id,
+  let child_id = parent_ks.add_task_with_id(
+    task_id,
     Box::new(move |ks| {
       let (cmd_sender, cmd_receiver) = tokio::sync::mpsc::unbounded_channel();
 
       let cfg = cfg_;
       tokio::spawn(async move {
-        let proc_id = ks.proc_id;
-        proc_main_loop(ks, proc_id, &cfg, size, cmd_receiver).await;
+        let task_id = ks.task_id;
+        proc_main_loop(ks, task_id, &cfg, size, cmd_receiver).await;
       });
 
-      ProcInit {
+      TaskInit {
         sender: cmd_sender,
         stop_on_quit: true,
-        status: ProcStatus::Down,
+        status: TaskStatus::Down,
         deps,
       }
     }),
@@ -78,15 +78,15 @@ pub fn launch_proc(
 }
 
 async fn proc_main_loop(
-  ks: ProcContext,
-  proc_id: ProcId,
+  ks: TaskContext,
+  task_id: TaskId,
   cfg: &ProcConfig,
   size: Rect,
   mut cmd_receiver: UnboundedReceiver<ProcCmd>,
 ) -> ProcView {
   let (internal_sender, mut internal_receiver) =
     tokio::sync::mpsc::unbounded_channel();
-  let mut proc = Proc::new(proc_id, cfg, internal_sender, size).await;
+  let mut proc = Proc::new(task_id, cfg, internal_sender, size).await;
 
   let mut vt_events_buf = Vec::new();
 
@@ -107,7 +107,7 @@ async fn proc_main_loop(
         let mut rendered = false;
         proc.handle_cmd(cmd, &mut rendered).await;
         if rendered {
-          ks.send(KernelCommand::ProcRendered);
+          ks.send(KernelCommand::TaskRendered);
         }
       }
       NextValue::Cmd(None) => (),
@@ -115,14 +115,14 @@ async fn proc_main_loop(
         ProcEvent::Exited(exit_code) => {
           proc.handle_exited(exit_code);
           if !proc.is_up() {
-            ks.send(KernelCommand::ProcStopped(exit_code));
+            ks.send(KernelCommand::TaskStopped(exit_code));
           }
         }
         ProcEvent::Started => {
-          ks.send(KernelCommand::ProcStarted);
+          ks.send(KernelCommand::TaskStarted);
         }
         ProcEvent::SetVt(vt) => {
-          ks.send(KernelCommand::ProcUpdatedScreen(vt));
+          ks.send(KernelCommand::TaskUpdatedScreen(vt));
         }
       },
       NextValue::Internal(None) => (),
@@ -137,7 +137,7 @@ async fn proc_main_loop(
         if count == 0 {
           inst.stdout_eof = true;
           if !proc.is_up() {
-            ks.send(KernelCommand::ProcStopped(
+            ks.send(KernelCommand::TaskStopped(
               proc.exit_code().unwrap_or(199),
             ));
           }
@@ -164,7 +164,7 @@ async fn proc_main_loop(
               }
             };
           }
-          ks.send(KernelCommand::ProcRendered);
+          ks.send(KernelCommand::TaskRendered);
         }
       }
       NextValue::Read(Err(e)) => {
@@ -173,7 +173,7 @@ async fn proc_main_loop(
           ProcState::Some(inst) => {
             inst.stdout_eof = true;
             if !proc.is_up() {
-              ks.send(KernelCommand::ProcStopped(
+              ks.send(KernelCommand::TaskStopped(
                 proc.exit_code().unwrap_or(198),
               ));
             }
@@ -187,7 +187,7 @@ async fn proc_main_loop(
 
 impl Proc {
   pub async fn new(
-    id: ProcId,
+    id: TaskId,
     cfg: &ProcConfig,
     tx: UnboundedSender<ProcEvent>,
     area: Rect,
