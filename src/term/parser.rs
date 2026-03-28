@@ -1,9 +1,9 @@
-use crate::vt100::Size;
+use super::common::Size;
 
 /// A parser for terminal output which produces an in-memory representation of
 /// the terminal contents.
 pub struct Parser {
-  pub screen: crate::vt100::screen::Screen,
+  pub screen: super::screen::Screen,
 }
 
 impl Parser {
@@ -12,7 +12,7 @@ impl Parser {
   #[must_use]
   pub fn new(rows: u16, cols: u16, scrollback_len: usize) -> Self {
     Self {
-      screen: crate::vt100::screen::Screen::new(
+      screen: super::screen::Screen::new(
         Size {
           height: rows,
           width: cols,
@@ -45,7 +45,7 @@ impl Parser {
   /// Returns a reference to a `Screen` object containing the terminal
   /// state.
   #[must_use]
-  pub fn screen(&self) -> &crate::vt100::screen::Screen {
+  pub fn screen(&self) -> &super::screen::Screen {
     &self.screen
   }
 }

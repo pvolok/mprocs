@@ -1,7 +1,7 @@
 use crate::{
   proc::{view::ProcViewFrame, CopyMode, Pos},
   state::{Scope, State},
-  vt100::{attrs::Attrs, grid::Rect, Color, Grid, Screen},
+  term::{attrs::Attrs, grid::Rect, Color, Grid, Screen},
 };
 
 pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
@@ -16,10 +16,10 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
 
   if let Some(proc) = state.get_current_proc() {
     let border_type = match active {
-      true => crate::vt100::grid::BorderType::Thick,
-      false => crate::vt100::grid::BorderType::Plain,
+      true => crate::term::grid::BorderType::Thick,
+      false => crate::term::grid::BorderType::Plain,
     };
-    grid.draw_block(area, border_type, crate::vt100::attrs::Attrs::default());
+    grid.draw_block(area, border_type, crate::term::attrs::Attrs::default());
 
     let mut top_line = Rect {
       x: area.x + 1,
@@ -89,7 +89,7 @@ pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
 
         if active {
           if let Some(cursor) = cursor {
-            grid.cursor_pos = Some(crate::vt100::grid::Pos {
+            grid.cursor_pos = Some(crate::term::grid::Pos {
               col: cursor.0,
               row: cursor.1,
             });
@@ -110,7 +110,7 @@ fn render_screen(
   for row in 0..area.height {
     for col in 0..area.width {
       let to_cell = if let Some(cell) =
-        grid.drawing_cell_mut(crate::vt100::grid::Pos {
+        grid.drawing_cell_mut(crate::term::grid::Pos {
           col: area.x + col,
           row: area.y + row,
         }) {
@@ -141,8 +141,8 @@ fn render_screen(
           ) {
             to_cell.set_attrs(
               Attrs::default()
-                .fg(crate::vt100::Color::BLACK)
-                .bg(crate::vt100::Color::CYAN),
+                .fg(crate::term::Color::BLACK)
+                .bg(crate::term::Color::CYAN),
             );
           }
         }

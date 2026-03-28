@@ -6,7 +6,7 @@ use serde_yaml::Value;
 
 use crate::{
   event::{AppEvent, CopyMove},
-  key::{Key, KeyCode, KeyMods},
+  term::key::{Key, KeyCode, KeyMods},
   keymap::Keymap,
   proc_log_config::LogConfig,
   yaml_val::{value_to_string, Val},

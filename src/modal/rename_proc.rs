@@ -4,13 +4,12 @@ use crate::{
   app::LoopAction,
   event::AppEvent,
   kernel::kernel_message::TaskContext,
-  key::{Key, KeyCode},
   state::State,
-  term::TermEvent,
-  vt100::{
+  term::{
     attrs::Attrs,
     grid::{BorderType, Pos, Rect},
-    Grid,
+    key::{Key, KeyCode},
+    Grid, TermEvent,
   },
   widgets::text_input::{render_text_input, to_input_request},
 };

@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{key::KeyMods, proc::Pos, vt100::grid::Rect};
+use crate::proc::Pos;
+
+use super::{grid::Rect, key::KeyMods};
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct MouseEvent {

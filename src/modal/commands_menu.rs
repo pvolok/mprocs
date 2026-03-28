@@ -4,20 +4,17 @@ use tui_input::Input;
 
 use crate::{
   app::LoopAction,
-  encode_term::print_key,
   event::AppEvent,
   kernel::kernel_message::TaskContext,
-  key::{Key, KeyCode, KeyMods},
   keymap::Keymap,
   state::State,
   term::{
-    line_symbols::{HORIZONTAL, VERTICAL_LEFT, VERTICAL_RIGHT},
-    TermEvent,
-  },
-  vt100::{
     attrs::Attrs,
+    encode::print_key,
     grid::{BorderType, Pos, Rect},
-    Color, Grid,
+    key::{Key, KeyCode, KeyMods},
+    line_symbols::{HORIZONTAL, VERTICAL_LEFT, VERTICAL_RIGHT},
+    Color, Grid, TermEvent,
   },
   widgets::{
     list::ListState,
@@ -329,7 +326,7 @@ impl Modal for CommandsMenuModal {
       col: cursor.0,
       row: cursor.1,
     });
-    grid.cursor_style = crate::protocol::CursorStyle::BlinkingBar;
+    grid.cursor_style = crate::term::CursorStyle::BlinkingBar;
   }
 }
 

@@ -1,4 +1,4 @@
-use crate::{key::Key, mouse::MouseEvent};
+use crate::term::{key::Key, mouse::MouseEvent};
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]

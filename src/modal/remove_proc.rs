@@ -2,13 +2,12 @@ use crate::{
   app::LoopAction,
   event::AppEvent,
   kernel::{kernel_message::TaskContext, task::TaskId},
-  key::{Key, KeyCode},
   state::State,
-  term::TermEvent,
-  vt100::{
+  term::{
     attrs::Attrs,
     grid::{BorderType, Rect},
-    Grid,
+    key::{Key, KeyCode},
+    Grid, TermEvent,
   },
 };
 

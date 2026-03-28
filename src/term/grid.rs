@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::{protocol::CursorStyle, vt100::Size};
+use super::common::{CursorStyle, Size};
 
 use super::{attrs::Attrs, row::Row, Cell};
 
@@ -17,7 +17,7 @@ pub struct Grid {
   saved_pos: Pos,
   scroll_top: u16,
   scroll_bottom: u16,
-  rows: VecDeque<crate::vt100::row::Row>,
+  rows: VecDeque<super::row::Row>,
   /// Number of visible rows that were printed to. On resizing unused rows can
   /// be removed.
   used_rows: u16,

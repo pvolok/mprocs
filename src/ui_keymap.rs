@@ -1,9 +1,8 @@
 use crate::{
-  encode_term::print_key,
   event::AppEvent,
   keymap::{Keymap, KeymapGroup},
   state::State,
-  vt100::{attrs::Attrs, grid::Rect, Color, Grid},
+  term::{attrs::Attrs, encode::print_key, grid::Rect, Color, Grid},
 };
 
 pub fn render_keymap(
@@ -18,7 +17,7 @@ pub fn render_keymap(
 
   grid.draw_block(
     area.into(),
-    crate::vt100::grid::BorderType::Plain,
+    crate::term::grid::BorderType::Plain,
     Attrs::default(),
   );
   grid.draw_text(
@@ -49,7 +48,7 @@ pub fn render_keymap(
     ][..],
   };
 
-  let area: crate::vt100::grid::Rect = area.into();
+  let area: crate::term::grid::Rect = area.into();
   let mut line = Rect {
     x: area.x + 1,
     y: area.y + 1,

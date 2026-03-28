@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::vt100::grid::Rect;
+use crate::term::grid::Rect;
 
 #[derive(Default)]
 pub struct ListState {

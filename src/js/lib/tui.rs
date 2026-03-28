@@ -4,15 +4,15 @@ use rquickjs::{function::Opt, Ctx, Exception, Function, Object};
 
 use crate::{
   js::rquickjs_ext::ObjectExt,
-  key::KeyEventKind,
-  mouse::{MouseButton, MouseEventKind},
-  protocol::CursorStyle,
-  term::{term_driver::TermDriver, TermEvent},
-  vt100::{
-    attrs::{Attrs, Color},
+  term::{
+    attrs::Attrs,
+    color::Color,
     grid::{Pos, Rect},
-    Grid, ScreenDiffer,
+    key::KeyEventKind,
+    mouse::{MouseButton, MouseEventKind},
+    CursorStyle, Grid, ScreenDiffer, TermEvent,
   },
+  term_driver::TermDriver,
 };
 
 struct TuiState {

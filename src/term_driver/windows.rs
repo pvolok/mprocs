@@ -18,10 +18,13 @@ use windows::Win32::{
 
 use crate::{
   error::ResultLogger,
-  key::{Key, KeyCode, KeyEventKind, KeyMods},
-  mouse::{MouseButton, MouseEvent, MouseEventKind},
-  term::{input_parser::InputParser, internal::InternalTermEvent},
+  term::{
+    key::{Key, KeyCode, KeyEventKind, KeyMods},
+    mouse::{MouseButton, MouseEvent, MouseEventKind},
+  },
 };
+
+use super::{input_parser::InputParser, internal::InternalTermEvent};
 
 pub struct WinVt {
   h_in: HANDLE,

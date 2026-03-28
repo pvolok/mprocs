@@ -5,7 +5,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::{
   config::Config,
   state::{Scope, State},
-  vt100::{
+  term::{
     attrs::Attrs,
     grid::{BorderType, Rect},
     Color, Grid,
@@ -72,11 +72,11 @@ pub fn render_procs(
 
     let selected = index == state.selected();
     let attrs = if selected {
-      Attrs::default().bg(crate::vt100::Color::Idx(240))
+      Attrs::default().bg(crate::term::Color::Idx(240))
     } else {
       Attrs::default()
     };
-    let mut row_area = crate::vt100::grid::Rect {
+    let mut row_area = crate::term::grid::Rect {
       x: area.x + 1,
       y: area.y + 1 + row as u16,
       width: area.width.saturating_sub(2),

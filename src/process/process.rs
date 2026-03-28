@@ -1,4 +1,4 @@
-use crate::term_types::winsize::Winsize;
+use crate::term::Winsize;
 
 pub trait Process {
   fn on_exited(&mut self);

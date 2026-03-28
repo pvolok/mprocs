@@ -1,13 +1,14 @@
 use anyhow::{anyhow, bail, Context};
 
-use crate::{
+use crate::term::{
   key::{
     Key, KeyCode, KeyEventKind, KeyEventState, KeyMods, MediaKeyCode,
     ModKeyCode,
   },
   mouse::{MouseButton, MouseEvent, MouseEventKind},
-  term::internal::InternalTermEvent as E,
 };
+
+use super::internal::InternalTermEvent as E;
 
 pub struct InputParser {
   buf: Vec<u8>,
@@ -36,7 +37,7 @@ impl InputParser {
     let mut i = 0;
     let mut consumed = 0;
 
-    use crate::key::KeyMods as Mods;
+    use crate::term::key::KeyMods as Mods;
 
     self.buf.extend_from_slice(input);
     let buf = &self.buf;
@@ -184,7 +185,7 @@ impl InputParser {
 }
 
 fn parse_char_key(c: u8, buf: &[u8]) -> anyhow::Result<(usize, Option<Key>)> {
-  use crate::key::KeyMods as Mods;
+  use crate::term::key::KeyMods as Mods;
 
   let mut i = 0;
   let key = match c {

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{event::AppEvent, key::Key};
+use crate::{event::AppEvent, term::key::Key};
 
 pub struct Keymap {
   pub procs: HashMap<Key, AppEvent>,

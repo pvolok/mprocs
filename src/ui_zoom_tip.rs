@@ -1,7 +1,7 @@
 use crate::{
   event::AppEvent,
   keymap::{Keymap, KeymapGroup},
-  vt100::{attrs::Attrs, grid::Rect, Color, Grid},
+  term::{attrs::Attrs, grid::Rect, Color, Grid},
 };
 
 pub fn render_zoom_tip(area: Rect, grid: &mut Grid, keymap: &Keymap) {

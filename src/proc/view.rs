@@ -88,5 +88,5 @@ impl ProcView {
 
 pub enum ProcViewFrame<'a> {
   Empty,
-  Vt(std::sync::RwLockReadGuard<'a, crate::vt100::Parser>),
+  Vt(std::sync::RwLockReadGuard<'a, crate::term::Parser>),
 }

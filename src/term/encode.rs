@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use anyhow::Result;
 
-use crate::{
+use super::{
   key::{Key, KeyCode, KeyMods},
   mouse::{MouseButton, MouseEvent, MouseEventKind},
 };

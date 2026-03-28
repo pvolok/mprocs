@@ -9,7 +9,7 @@ use crate::proc_log_config::{LogConfig, LogMode};
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
 use crate::process::NativeProcess;
-use crate::term_types::winsize::Winsize;
+use crate::term::Winsize;
 
 use super::msg::ProcEvent;
 use super::Size;
@@ -44,7 +44,7 @@ impl Inst {
     scrollback_len: usize,
     log: Option<&LogConfig>,
   ) -> anyhow::Result<Self> {
-    let vt = crate::vt100::Parser::new(size.height, size.width, scrollback_len);
+    let vt = crate::term::Parser::new(size.height, size.width, scrollback_len);
     let vt = SharedVt::new(vt);
 
     tx.send(ProcEvent::SetVt(Some(vt.clone()))).log_ignore();
@@ -54,7 +54,7 @@ impl Inst {
       crate::process::unix_process::UnixProcess::spawn(
         id,
         spec,
-        crate::term_types::winsize::Winsize {
+        Winsize {
           x: size.width,
           y: size.height,
           x_px: 0,
@@ -79,7 +79,7 @@ impl Inst {
       crate::process::win_process::WinProcess::spawn(
         id,
         spec,
-        crate::term_types::winsize::Winsize {
+        Winsize {
           x: size.width,
           y: size.height,
           x_px: 0,

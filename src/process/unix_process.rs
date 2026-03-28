@@ -10,7 +10,7 @@ use tokio::io::unix::AsyncFd;
 use crate::{
   kernel::task::TaskId,
   process::{process::Process, unix_processes_waiter::UnixProcessesWaiter},
-  term_types::winsize::Winsize,
+  term::Winsize,
 };
 
 use super::process_spec::ProcessSpec;

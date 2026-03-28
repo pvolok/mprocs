@@ -1,20 +1,23 @@
-use serde::{Deserialize, Serialize};
-
-use crate::{key::Key, mouse::MouseEvent};
-
-mod input_parser;
-mod internal;
+pub mod attrs;
+pub mod cell;
+pub mod color;
+pub mod common;
+pub mod encode;
+pub mod event;
+pub mod grid;
+pub mod key;
 pub mod line_symbols;
-pub mod term_driver;
-#[cfg(windows)]
-mod windows;
+pub mod mouse;
+pub mod parser;
+pub mod row;
+pub mod screen;
+pub mod screen_differ;
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub enum TermEvent {
-  FocusGained,
-  FocusLost,
-  Key(Key),
-  Mouse(MouseEvent),
-  Paste(String),
-  Resize(u16, u16),
-}
+pub use cell::Cell;
+pub use color::Color;
+pub use common::{CursorStyle, Size, Winsize};
+pub use event::TermEvent;
+pub use grid::Grid;
+pub use parser::Parser;
+pub use screen::{MouseProtocolMode, Screen, VtEvent};
+pub use screen_differ::ScreenDiffer;

@@ -1,8 +1,7 @@
 use crate::{
   app::LoopAction,
   state::State,
-  term::TermEvent,
-  vt100::{grid::Rect, Grid},
+  term::{grid::Rect, Grid, TermEvent},
 };
 
 pub trait Modal: Send {

@@ -2,12 +2,12 @@ use crate::{
   app::LoopAction,
   event::AppEvent,
   kernel::kernel_message::TaskContext,
-  key::{Key, KeyCode},
   state::State,
-  term::TermEvent,
-  vt100::{
+  term::{
     attrs::Attrs,
     grid::{BorderType, Rect},
+    key::{Key, KeyCode},
+    TermEvent,
   },
 };
 
@@ -85,8 +85,8 @@ impl Modal for QuitModal {
     (36, 5)
   }
 
-  fn render(&mut self, grid: &mut crate::vt100::Grid) {
-    use crate::vt100::grid::Rect;
+  fn render(&mut self, grid: &mut crate::term::Grid) {
+    use crate::term::grid::Rect;
 
     let area = self.area(grid.area());
 

@@ -2,8 +2,7 @@ use std::{any::Any, fmt::Debug};
 
 use crate::{
   kernel::{kernel_message::SharedVt, task::TaskId},
-  key::Key,
-  mouse::MouseEvent,
+  term::{key::Key, mouse::MouseEvent},
 };
 
 #[derive(Debug)]

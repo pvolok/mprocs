@@ -7,17 +7,17 @@ use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::config::ProcConfig;
-use crate::encode_term::{encode_key, encode_mouse_event, KeyCodeEncodeModes};
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::{KernelCommand, TaskContext};
 use crate::kernel::task::{TaskId, TaskInit, TaskStatus};
-use crate::key::Key;
-use crate::mouse::{MouseEvent, MouseEventKind};
 use crate::proc_log_config::LogConfig;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
-use crate::vt100::grid::Rect;
-use crate::vt100::{self, VtEvent};
+use crate::term::encode::{encode_key, encode_mouse_event, KeyCodeEncodeModes};
+use crate::term::grid::Rect;
+use crate::term::key::Key;
+use crate::term::mouse::{MouseEvent, MouseEventKind};
+use crate::term::{MouseProtocolMode, Parser, VtEvent};
 
 use super::inst::Inst;
 use super::msg::{ProcCmd, ProcEvent};
@@ -275,7 +275,7 @@ impl Proc {
 
   pub fn lock_vt(
     &self,
-  ) -> Option<std::sync::RwLockReadGuard<'_, vt100::Parser>> {
+  ) -> Option<std::sync::RwLockReadGuard<'_, Parser>> {
     match &self.inst {
       ProcState::None => None,
       ProcState::Some(inst) => inst.vt.read().ok(),
@@ -284,7 +284,7 @@ impl Proc {
 
   pub fn lock_vt_mut(
     &mut self,
-  ) -> Option<std::sync::RwLockWriteGuard<'_, vt100::Parser>> {
+  ) -> Option<std::sync::RwLockWriteGuard<'_, Parser>> {
     match &self.inst {
       ProcState::None => None,
       ProcState::Some(inst) => inst.vt.write().ok(),
@@ -413,8 +413,8 @@ impl Proc {
     if let ProcState::Some(inst) = &mut self.inst {
       let mouse_mode = inst.vt.read().unwrap().screen().mouse_protocol_mode();
       let seq = match mouse_mode {
-        vt100::MouseProtocolMode::None => String::new(),
-        vt100::MouseProtocolMode::Press => match event.kind {
+        MouseProtocolMode::None => String::new(),
+        MouseProtocolMode::Press => match event.kind {
           MouseEventKind::Down(_)
           | MouseEventKind::ScrollDown
           | MouseEventKind::ScrollUp
@@ -422,7 +422,7 @@ impl Proc {
           | MouseEventKind::ScrollRight => encode_mouse_event(event),
           _ => String::new(),
         },
-        vt100::MouseProtocolMode::PressRelease => match event.kind {
+        MouseProtocolMode::PressRelease => match event.kind {
           MouseEventKind::Down(_)
           | MouseEventKind::Up(_)
           | MouseEventKind::ScrollDown
@@ -431,7 +431,7 @@ impl Proc {
           | MouseEventKind::ScrollRight => encode_mouse_event(event),
           MouseEventKind::Drag(_) | MouseEventKind::Moved => String::new(),
         },
-        vt100::MouseProtocolMode::ButtonMotion => match event.kind {
+        MouseProtocolMode::ButtonMotion => match event.kind {
           MouseEventKind::Down(_)
           | MouseEventKind::Up(_)
           | MouseEventKind::ScrollDown
@@ -441,7 +441,7 @@ impl Proc {
           | MouseEventKind::ScrollRight => encode_mouse_event(event),
           MouseEventKind::Moved => String::new(),
         },
-        vt100::MouseProtocolMode::AnyMotion => encode_mouse_event(event),
+        MouseProtocolMode::AnyMotion => encode_mouse_event(event),
       };
       let _r = inst.process.write_all(seq.as_bytes()).await;
     }

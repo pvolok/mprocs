@@ -8,7 +8,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
   proc::msg::{CustomProcCmd, ProcCmd},
-  vt100::Parser,
+  term::Parser,
 };
 
 use super::task::{TaskId, TaskInit};

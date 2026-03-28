@@ -1,8 +1,9 @@
 use std::fmt::Debug;
 
-use crate::{
-  protocol::CursorStyle,
-  vt100::{attrs::Attrs, Color, Size},
+use super::{
+  attrs::Attrs,
+  color::Color,
+  common::{CursorStyle, Size},
 };
 use compact_str::CompactString;
 use unicode_width::UnicodeWidthChar as _;
@@ -79,11 +80,11 @@ pub enum MouseProtocolEncoding {
 pub struct Screen {
   feed_buf: Vec<u8>,
 
-  grid: crate::vt100::grid::Grid,
-  alternate_grid: crate::vt100::grid::Grid,
+  grid: super::grid::Grid,
+  alternate_grid: super::grid::Grid,
 
-  attrs: crate::vt100::attrs::Attrs,
-  saved_attrs: crate::vt100::attrs::Attrs,
+  attrs: super::attrs::Attrs,
+  saved_attrs: super::attrs::Attrs,
 
   modes: u8,
   mouse_protocol_mode: MouseProtocolMode,
@@ -112,15 +113,15 @@ impl Screen {
   }
 
   pub(crate) fn new(size: Size, scrollback_len: usize) -> Self {
-    let grid = crate::vt100::grid::Grid::new(size, scrollback_len);
+    let grid = super::grid::Grid::new(size, scrollback_len);
     Self {
       feed_buf: Vec::new(),
 
       grid,
-      alternate_grid: crate::vt100::grid::Grid::new(size, 0),
+      alternate_grid: super::grid::Grid::new(size, 0),
 
-      attrs: crate::vt100::attrs::Attrs::default(),
-      saved_attrs: crate::vt100::attrs::Attrs::default(),
+      attrs: super::attrs::Attrs::default(),
+      saved_attrs: super::attrs::Attrs::default(),
 
       modes: 0,
       mouse_protocol_mode: MouseProtocolMode::default(),
@@ -195,10 +196,10 @@ impl Screen {
   /// Returns the `Cell` object at the given location in the terminal, if it
   /// exists.
   #[must_use]
-  pub fn cell(&self, row: u16, col: u16) -> Option<&crate::vt100::cell::Cell> {
+  pub fn cell(&self, row: u16, col: u16) -> Option<&super::cell::Cell> {
     self
       .grid()
-      .visible_cell(crate::vt100::grid::Pos { row, col })
+      .visible_cell(super::grid::Pos { row, col })
   }
 
   #[must_use]
@@ -229,7 +230,7 @@ impl Screen {
     self.mouse_protocol_mode
   }
 
-  fn grid(&self) -> &crate::vt100::grid::Grid {
+  fn grid(&self) -> &super::grid::Grid {
     if self.mode(MODE_ALTERNATE_SCREEN) {
       &self.alternate_grid
     } else {
@@ -237,7 +238,7 @@ impl Screen {
     }
   }
 
-  fn grid_mut(&mut self) -> &mut crate::vt100::grid::Grid {
+  fn grid_mut(&mut self) -> &mut super::grid::Grid {
     if self.mode(MODE_ALTERNATE_SCREEN) {
       &mut self.alternate_grid
     } else {
@@ -324,7 +325,7 @@ impl Screen {
     // cells, which i really don't want to do).
     let mut wrap = false;
     if pos.col > size.width - width {
-      let last_cell_pos = crate::vt100::grid::Pos {
+      let last_cell_pos = super::grid::Pos {
         row: pos.row,
         col: size.width - 1,
       };
@@ -346,12 +347,12 @@ impl Screen {
 
     if width == 0 {
       if pos.col > 0 {
-        let prev_cell_pos = crate::vt100::grid::Pos {
+        let prev_cell_pos = super::grid::Pos {
           row: pos.row,
           col: pos.col - 1,
         };
         let prev_cell_pos = if self.grid().is_wide_continuation(prev_cell_pos) {
-          crate::vt100::grid::Pos {
+          super::grid::Pos {
             row: pos.row,
             col: pos.col - 2,
           }
@@ -378,13 +379,13 @@ impl Screen {
           // checked for pos.row > 0.
           .unwrap();
         if prev_row.wrapped() {
-          let prev_cell_pos = crate::vt100::grid::Pos {
+          let prev_cell_pos = super::grid::Pos {
             row: pos.row - 1,
             col: size.width - 1,
           };
           let prev_cell_pos = if self.grid().is_wide_continuation(prev_cell_pos)
           {
-            crate::vt100::grid::Pos {
+            super::grid::Pos {
               row: pos.row - 1,
               col: size.width - 2,
             }
@@ -413,7 +414,7 @@ impl Screen {
       if self.grid().is_wide_continuation(pos) {
         let prev_cell = self
           .grid_mut()
-          .drawing_cell_mut(crate::vt100::grid::Pos {
+          .drawing_cell_mut(super::grid::Pos {
             row: pos.row,
             col: pos.col - 1,
           })
@@ -439,7 +440,7 @@ impl Screen {
         .is_wide()
       {
         if let Some(next_cell) =
-          self.grid_mut().drawing_cell_mut(crate::vt100::grid::Pos {
+          self.grid_mut().drawing_cell_mut(super::grid::Pos {
             row: pos.row,
             col: pos.col + 1,
           })
@@ -473,7 +474,7 @@ impl Screen {
           .unwrap()
           .is_wide()
         {
-          let next_next_pos = crate::vt100::grid::Pos {
+          let next_next_pos = super::grid::Pos {
             row: pos.row,
             col: pos.col + 1,
           };
@@ -512,7 +513,7 @@ impl Screen {
           // only happens if width > 1, and col_wrap takes width
           // into account.
           .unwrap();
-        next_cell.clear(crate::vt100::attrs::Attrs::default());
+        next_cell.clear(super::attrs::Attrs::default());
         self.grid_mut().col_inc(1);
       }
     }
@@ -951,7 +952,7 @@ impl Screen {
         let col = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
         self
           .grid_mut()
-          .set_pos(crate::vt100::grid::Pos { row, col });
+          .set_pos(super::grid::Pos { row, col });
       }
       ("", _, "", b'J') => {
         // ED - Erase Display
@@ -1036,7 +1037,7 @@ impl Screen {
         let x = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
         self
           .grid_mut()
-          .set_pos(crate::vt100::grid::Pos { row: y, col: x });
+          .set_pos(super::grid::Pos { row: y, col: x });
       }
       ("", _, "", b'`') => {
         // HPA - Horizontal Position Absolute

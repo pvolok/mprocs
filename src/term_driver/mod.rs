@@ -3,14 +3,16 @@ use std::io::Write;
 use std::pin::Pin;
 use std::time::Duration;
 
-use crate::{
-  error::ResultLogger,
-  term::{
-    input_parser::InputParser,
-    internal::{InternalTermEvent, KeyboardMode},
-    TermEvent,
-  },
-  vt100::Size,
+mod input_parser;
+pub(crate) mod internal;
+#[cfg(windows)]
+mod windows;
+
+use crate::{error::ResultLogger, term::{TermEvent, Size}};
+
+use self::{
+  input_parser::InputParser,
+  internal::{InternalTermEvent, KeyboardMode},
 };
 
 pub struct TermDriver {
@@ -26,7 +28,7 @@ pub struct TermDriver {
   sigwinch: tokio::signal::unix::Signal,
 
   #[cfg(windows)]
-  win_vt: super::windows::WinVt,
+  win_vt: windows::WinVt,
 
   events:
     tokio::sync::mpsc::UnboundedReceiver<std::io::Result<InternalTermEvent>>,
@@ -48,7 +50,7 @@ impl TermDriver {
     }
 
     #[cfg(windows)]
-    let win_vt = super::windows::WinVt::enable()?;
+    let win_vt = windows::WinVt::enable()?;
 
     let mut stdout = std::io::stdout();
 
@@ -200,7 +202,7 @@ impl TermDriver {
               }
             };
 
-            super::windows::decode_input_records(
+            windows::decode_input_records(
               &mut input_parser,
               &buf[..count as usize],
               &mut |event| {

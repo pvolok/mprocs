@@ -8,7 +8,7 @@ use std::fmt::Debug;
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 
-use crate::key::Key;
+use crate::term::key::Key;
 use crate::yaml_val::Val;
 
 #[derive(Clone, Debug, Default)]
@@ -54,7 +54,7 @@ pub struct Size {
 #[allow(clippy::large_enum_variant)]
 pub enum CopyMode {
   None(Option<Pos>),
-  Active(crate::vt100::Screen, Pos, Option<Pos>),
+  Active(crate::term::Screen, Pos, Option<Pos>),
 }
 
 impl Default for CopyMode {

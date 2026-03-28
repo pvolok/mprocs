@@ -2,7 +2,7 @@ use super::Cell;
 
 #[derive(Clone, Debug)]
 pub struct Row {
-  pub cells: Vec<crate::vt100::cell::Cell>,
+  pub cells: Vec<super::cell::Cell>,
   size: u16,
   wrapped: bool,
 }
@@ -10,14 +10,14 @@ pub struct Row {
 impl Row {
   pub fn new(cols: u16) -> Self {
     Self {
-      cells: vec![crate::vt100::cell::Cell::default(); usize::from(cols)],
+      cells: vec![super::cell::Cell::default(); usize::from(cols)],
       size: 0,
       wrapped: false,
     }
   }
 
-  pub fn new_with_attrs(cols: u16, attrs: crate::vt100::attrs::Attrs) -> Self {
-    let mut cell = crate::vt100::cell::Cell::default();
+  pub fn new_with_attrs(cols: u16, attrs: super::attrs::Attrs) -> Self {
+    let mut cell = super::cell::Cell::default();
     cell.set_attrs(attrs);
     Self {
       cells: vec![cell; usize::from(cols)],
@@ -35,7 +35,7 @@ impl Row {
       .unwrap()
   }
 
-  pub fn clear(&mut self, attrs: crate::vt100::attrs::Attrs) {
+  pub fn clear(&mut self, attrs: super::attrs::Attrs) {
     for cell in &mut self.cells {
       cell.clear(attrs);
     }
@@ -43,20 +43,20 @@ impl Row {
     self.wrapped = false;
   }
 
-  fn cells(&self) -> impl Iterator<Item = &crate::vt100::cell::Cell> {
+  fn cells(&self) -> impl Iterator<Item = &super::cell::Cell> {
     self.cells.iter()
   }
 
-  pub fn get(&self, col: u16) -> Option<&crate::vt100::cell::Cell> {
+  pub fn get(&self, col: u16) -> Option<&super::cell::Cell> {
     self.cells.get(usize::from(col))
   }
 
-  pub fn get_mut(&mut self, col: u16) -> Option<&mut crate::vt100::cell::Cell> {
+  pub fn get_mut(&mut self, col: u16) -> Option<&mut super::cell::Cell> {
     self.size = self.size.max(col + 1);
     self.cells.get_mut(usize::from(col))
   }
 
-  pub fn insert(&mut self, i: u16, cell: crate::vt100::cell::Cell) {
+  pub fn insert(&mut self, i: u16, cell: super::cell::Cell) {
     self.cells.insert(usize::from(i), cell);
     self.wrapped = false;
   }
@@ -67,7 +67,7 @@ impl Row {
     self.wrapped = false;
   }
 
-  pub fn erase(&mut self, i: u16, attrs: crate::vt100::attrs::Attrs) {
+  pub fn erase(&mut self, i: u16, attrs: super::attrs::Attrs) {
     let wide = self.cells[usize::from(i)].is_wide();
     self.clear_wide(i);
     self.cells[usize::from(i)].clear(attrs);
@@ -85,7 +85,7 @@ impl Row {
     }
   }
 
-  pub fn resize(&mut self, len: u16, cell: crate::vt100::cell::Cell) {
+  pub fn resize(&mut self, len: u16, cell: super::cell::Cell) {
     self.cells.resize(usize::from(len), cell);
     self.wrapped = false;
   }

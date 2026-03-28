@@ -2,13 +2,11 @@ use std::fmt::Write;
 
 use unicode_width::UnicodeWidthStr;
 
-use crate::{
-  protocol::CursorStyle,
-  vt100::{
-    attrs::Attrs,
-    grid::{Grid, Pos},
-    Cell, Size,
-  },
+use super::{
+  attrs::Attrs,
+  common::{CursorStyle, Size},
+  grid::{Grid, Pos},
+  Cell,
 };
 
 pub struct ScreenDiffer {
@@ -219,7 +217,7 @@ impl BufferView for Grid {
 
 #[cfg(test)]
 mod tests {
-  use crate::vt100::Color;
+  use crate::term::Color;
 
   use super::*;
 

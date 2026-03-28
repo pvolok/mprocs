@@ -1,8 +1,8 @@
 use std::io::{stdout, Write};
 
-use crate::key::{Key, KeyEventKind};
-use crate::term::term_driver::TermDriver;
+use crate::term::key::{Key, KeyEventKind};
 use crate::term::TermEvent;
+use crate::term_driver::TermDriver;
 use crate::{
   host::{receiver::MsgReceiver, sender::MsgSender},
   protocol::{CltToSrv, SrvToClt},

@@ -14,14 +14,12 @@ use crate::{
     kernel_message::{KernelCommand, TaskContext, TaskSender},
     task::{TaskId, TaskInit, TaskStatus},
   },
-  key::{Key, KeyEventKind},
   keymap::Keymap,
   modal::{
     add_proc::AddProcModal, commands_menu::CommandsMenuModal, modal::Modal,
     quit::QuitModal, remove_proc::RemoveProcModal,
     rename_proc::RenameProcModal,
   },
-  mouse::{MouseButton, MouseEventKind},
   proc::{
     msg::{ProcCmd, ProcUpdate},
     proc::launch_proc,
@@ -31,14 +29,15 @@ use crate::{
   protocol::{CltToSrv, SrvToClt},
   server::server_message::ServerMessage,
   state::{Scope, State},
-  term::TermEvent,
+  term::{
+    attrs::Attrs, grid::Rect, key::{Key, KeyEventKind},
+    mouse::{MouseButton, MouseEventKind}, Grid, MouseProtocolMode,
+    ScreenDiffer, Size, TermEvent,
+  },
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
   ui_term::{render_term, term_check_hit},
   ui_zoom_tip::render_zoom_tip,
-  vt100::{
-    attrs::Attrs, grid::Rect, Grid, MouseProtocolMode, ScreenDiffer, Size,
-  },
   widgets::list::ListState,
 };
 
@@ -178,7 +177,7 @@ impl App {
         let grid = &mut self.grid;
         grid.erase_all(Attrs::default());
         grid.cursor_pos = None;
-        grid.cursor_style = crate::protocol::CursorStyle::Default;
+        grid.cursor_style = crate::term::CursorStyle::Default;
 
         let state = &mut self.state;
         let config = &mut self.config;
@@ -189,7 +188,7 @@ impl App {
         render_zoom_tip(layout.zoom_banner.into(), grid, keymap);
 
         if let Some(modal) = &mut self.modal {
-          grid.cursor_style = crate::protocol::CursorStyle::Default;
+          grid.cursor_style = crate::term::CursorStyle::Default;
           modal.render(grid);
         }
 
