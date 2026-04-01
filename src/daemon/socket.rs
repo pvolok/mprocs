@@ -11,10 +11,10 @@ mod unix {
   use tokio::net::{UnixListener, UnixStream};
 
   use crate::{
-    error::ResultLogger,
-    host::{
+    daemon::{
       daemon::spawn_server_daemon, receiver::MsgReceiver, sender::MsgSender,
     },
+    error::ResultLogger,
   };
 
   fn get_socket_path() -> PathBuf {
@@ -113,7 +113,7 @@ mod windows {
   use tokio::net::{TcpListener, TcpStream};
   use windows::Win32::Storage::FileSystem::FILE_FLAG_DELETE_ON_CLOSE;
 
-  use crate::host::{
+  use crate::daemon::{
     daemon::spawn_server_daemon, receiver::MsgReceiver, sender::MsgSender,
   };
 

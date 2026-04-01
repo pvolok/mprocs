@@ -7,9 +7,9 @@ use tokio::{io::AsyncReadExt, sync::mpsc::UnboundedReceiver};
 
 use crate::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
+  daemon::{receiver::MsgReceiver, sender::MsgSender},
   error::ResultLogger,
   event::{AppEvent, CopyMove},
-  host::{receiver::MsgReceiver, sender::MsgSender},
   kernel::{
     kernel_message::{KernelCommand, TaskContext, TaskSender},
     task::{ChannelTask, TaskCmd, TaskId, TaskInit, TaskNotify, TaskStatus},
@@ -30,9 +30,11 @@ use crate::{
   server::server_message::ServerMessage,
   state::{Scope, State},
   term::{
-    attrs::Attrs, grid::Rect, key::{Key, KeyEventKind},
-    mouse::{MouseButton, MouseEventKind}, Grid, MouseProtocolMode,
-    ScreenDiffer, Size, TermEvent,
+    attrs::Attrs,
+    grid::Rect,
+    key::{Key, KeyEventKind},
+    mouse::{MouseButton, MouseEventKind},
+    Grid, MouseProtocolMode, ScreenDiffer, Size, TermEvent,
   },
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
@@ -115,10 +117,7 @@ impl App {
             };
             let msg: AppEvent = serde_yaml::from_slice(buf.as_slice()).unwrap();
             // log::info!("Received remote command: {:?}", msg);
-            ctl_pc.send(KernelCommand::TaskCmd(
-              app_task_id,
-              TaskCmd::msg(msg),
-            ));
+            ctl_pc.send(KernelCommand::TaskCmd(app_task_id, TaskCmd::msg(msg)));
           });
         }
       });
@@ -732,9 +731,10 @@ impl App {
       AppEvent::ScrollUp => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           match &mut proc.copy_mode {
-            CopyMode::None(_) => {
-              pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::msg(ProcMsg::ScrollUp)))
-            }
+            CopyMode::None(_) => pc.send(KernelCommand::TaskCmd(
+              proc.id,
+              TaskCmd::msg(ProcMsg::ScrollUp),
+            )),
             CopyMode::Active(screen, _, _) => {
               screen.scroll_screen_up(screen.size().height as usize / 2)
             }
@@ -745,9 +745,10 @@ impl App {
       AppEvent::ScrollDown => {
         if let Some(proc) = self.state.get_current_proc_mut() {
           match &mut proc.copy_mode {
-            CopyMode::None(_) => {
-              pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::msg(ProcMsg::ScrollDown)))
-            }
+            CopyMode::None(_) => pc.send(KernelCommand::TaskCmd(
+              proc.id,
+              TaskCmd::msg(ProcMsg::ScrollDown),
+            )),
             CopyMode::Active(screen, _, _) => {
               screen.scroll_screen_down(screen.size().height as usize / 2)
             }
@@ -915,7 +916,10 @@ impl App {
 
       AppEvent::SendKey { key } => {
         if let Some(proc) = self.state.get_current_proc_mut() {
-          pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::msg(ProcMsg::SendKey(*key))));
+          pc.send(KernelCommand::TaskCmd(
+            proc.id,
+            TaskCmd::msg(ProcMsg::SendKey(*key)),
+          ));
         }
       }
     }
@@ -929,26 +933,22 @@ impl App {
     match command {
       TaskCmd::Start | TaskCmd::Stop | TaskCmd::Kill => (),
 
-      TaskCmd::Msg(msg) => {
-        match msg.downcast::<AppEvent>() {
-          Ok(app_event) => {
-            self.handle_event(loop_action, &app_event);
-          }
-          Err(msg) => {
-            match msg.downcast::<ServerMessage>() {
-              Ok(server_msg) => {
-                let r = self.handle_server_message(loop_action, *server_msg);
-                if let Err(err) = r {
-                  log::debug!("ServerMessage error: {:?}", err);
-                }
-              }
-              Err(_msg) => {
-                log::error!("App received unknown Msg");
-              }
+      TaskCmd::Msg(msg) => match msg.downcast::<AppEvent>() {
+        Ok(app_event) => {
+          self.handle_event(loop_action, &app_event);
+        }
+        Err(msg) => match msg.downcast::<ServerMessage>() {
+          Ok(server_msg) => {
+            let r = self.handle_server_message(loop_action, *server_msg);
+            if let Err(err) = r {
+              log::debug!("ServerMessage error: {:?}", err);
             }
           }
-        }
-      }
+          Err(_msg) => {
+            log::error!("App received unknown Msg");
+          }
+        },
+      },
 
       TaskCmd::Notify(task_id, notify) => match notify {
         TaskNotify::Started => {

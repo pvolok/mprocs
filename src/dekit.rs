@@ -8,7 +8,7 @@ use crate::{
   app::{client_loop, create_app_task, ClientId},
   client::client_main,
   config::Config,
-  host::socket::{bind_server_socket, connect_client_socket},
+  daemon::socket::{bind_server_socket, connect_client_socket},
   js::js_vm::JsVm,
   kernel::{
     kernel::Kernel,

@@ -4,7 +4,7 @@ use crate::term::key::{Key, KeyEventKind};
 use crate::term::TermEvent;
 use crate::term_driver::TermDriver;
 use crate::{
-  host::{receiver::MsgReceiver, sender::MsgSender},
+  daemon::{receiver::MsgReceiver, sender::MsgSender},
   protocol::{CltToSrv, SrvToClt},
 };
 
