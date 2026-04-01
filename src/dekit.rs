@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::anyhow;
 use clap::{Arg, Command};
@@ -8,7 +8,10 @@ use crate::{
   app::{client_loop, create_app_task, ClientId},
   client::client_main,
   config::Config,
-  daemon::socket::{bind_server_socket, connect_client_socket},
+  daemon::{
+    lockfile,
+    socket::{bind_server_socket, connect_client_socket},
+  },
   js::js_vm::JsVm,
   kernel::{
     kernel::Kernel,
@@ -21,7 +24,7 @@ use crate::{
   settings::Settings,
 };
 
-async fn run_server() -> anyhow::Result<()> {
+async fn run_server(working_dir: PathBuf) -> anyhow::Result<()> {
   let settings = Settings::default();
   let mut keymap = Keymap::new();
   settings.add_to_keymap(&mut keymap)?;
@@ -47,10 +50,16 @@ async fn run_server() -> anyhow::Result<()> {
     logger.use_utc().start().unwrap()
   };
 
+  // Create lock file and acquire exclusive flock.
+  let lock_guard = lockfile::create_lock_file(&working_dir)?;
+  log::info!("Lock file created for directory: {}", working_dir.display());
+
   #[cfg(unix)]
   crate::process::unix_processes_waiter::UnixProcessesWaiter::init()?;
   let mut kernel = Kernel::new();
-  kernel.spawn_task(|pc| {
+
+  let socket_path = lock_guard.socket_path().to_path_buf();
+  kernel.spawn_task(move |pc| {
     let app_task_id = create_app_task(config, keymap, &pc);
 
     let app_sender = pc.get_task_sender(app_task_id);
@@ -58,7 +67,7 @@ async fn run_server() -> anyhow::Result<()> {
     tokio::spawn(async move {
       let mut last_client_id = 0;
 
-      let mut server_socket = match bind_server_socket().await {
+      let mut server_socket = match bind_server_socket(&socket_path).await {
         Ok(server_socket) => {
           log::info!("Server is listening.");
           server_socket
@@ -97,6 +106,10 @@ async fn run_server() -> anyhow::Result<()> {
   });
 
   kernel.run().await;
+
+  // lock_guard is dropped here, removing lock + socket files.
+  drop(lock_guard);
+
   #[cfg(unix)]
   crate::process::unix_processes_waiter::UnixProcessesWaiter::uninit()?;
 
@@ -112,10 +125,19 @@ pub async fn dekit_main() -> anyhow::Result<()> {
       Command::new("up"),
       Command::new("down"),
       Command::new("server").subcommands([
-        Command::new("run"),
-        Command::new("start"),
-        Command::new("stop"),
-        Command::new("status"),
+        Command::new("run").arg(
+          Arg::new("dir")
+            .long("dir")
+            .required(true)
+            .help("Working directory this daemon manages"),
+        ),
+        Command::new("start")
+          .about("Start the daemon for the current directory"),
+        Command::new("stop").about("Stop the daemon for the current directory"),
+        Command::new("status")
+          .about("Show daemon status for the current directory"),
+        Command::new("list").about("List all daemons on this machine"),
+        Command::new("clean").about("Remove stale lock files"),
       ]),
     ])
     .arg(
@@ -127,8 +149,10 @@ pub async fn dekit_main() -> anyhow::Result<()> {
 
   match matches.subcommand() {
     Some(("attach", _sub_m)) => {
+      let working_dir = std::env::current_dir()?;
       let (sender, receiver) =
-        connect_client_socket::<CltToSrv, SrvToClt>(false).await?;
+        connect_client_socket::<CltToSrv, SrvToClt>(&working_dir, false)
+          .await?;
       client_main(sender, receiver).await?;
     }
     Some(("up", _sub_m)) => {
@@ -138,17 +162,68 @@ pub async fn dekit_main() -> anyhow::Result<()> {
       println!("Down.");
     }
     Some(("server", sub_m)) => match sub_m.subcommand() {
-      Some(("run", _sub_m)) => {
-        run_server().await?;
+      Some(("run", run_m)) => {
+        let dir = run_m.get_one::<String>("dir").unwrap();
+        run_server(PathBuf::from(dir)).await?;
       }
       Some(("start", _sub_m)) => {
-        println!("Start server.");
+        let working_dir = std::env::current_dir()?;
+        // Check if already running.
+        if let Some(info) = lockfile::get_daemon_status(&working_dir)? {
+          if info.is_running {
+            println!("Daemon already running (pid={}).", info.contents.pid);
+            return Ok(());
+          }
+          // Stale -- clean up and start fresh.
+          lockfile::cleanup_stale(&working_dir)?;
+        }
+        crate::daemon::daemon::spawn_server_daemon(&working_dir)?;
+        println!("Daemon started for {}.", working_dir.display());
       }
       Some(("stop", _sub_m)) => {
-        println!("Stop server.");
+        let working_dir = std::env::current_dir()?;
+        lockfile::stop_daemon(&working_dir)?;
+        println!("Daemon stopped.");
       }
       Some(("status", _sub_m)) => {
-        println!("Server status.");
+        let working_dir = std::env::current_dir()?;
+        match lockfile::get_daemon_status(&working_dir)? {
+          Some(info) => {
+            let status = if info.is_running { "running" } else { "stale" };
+            println!(
+              "[{}] pid={} socket={} version={}",
+              status,
+              info.contents.pid,
+              info.contents.socket,
+              info.contents.version,
+            );
+          }
+          None => {
+            println!("No daemon for this directory.");
+          }
+        }
+      }
+      Some(("list", _sub_m)) => {
+        let daemons = lockfile::list_daemons()?;
+        if daemons.is_empty() {
+          println!("No daemons found.");
+        } else {
+          for d in &daemons {
+            let status = if d.is_running { "running" } else { "stale" };
+            println!(
+              "[{}] pid={} dir={} socket={} version={}",
+              status,
+              d.contents.pid,
+              d.contents.working_dir,
+              d.contents.socket,
+              d.contents.version,
+            );
+          }
+        }
+      }
+      Some(("clean", _sub_m)) => {
+        let count = lockfile::cleanup_all_stale()?;
+        println!("Removed {} stale lock file(s).", count);
       }
       _ => {
         println!("Expected more arguments after `dk server`");
@@ -158,19 +233,14 @@ pub async fn dekit_main() -> anyhow::Result<()> {
       println!("Unknown: {}", arg);
     }
     None => {
-      println!("None.");
       let paths = matches
         .get_many::<String>("files")
         .map(|p| p.collect::<Vec<_>>())
         .unwrap_or_default();
-      println!("paths = {:?}", paths);
 
-      #[allow(clippy::collapsible_if)]
       if let Some(first) = paths.first() {
         // .lua
         if first.ends_with(".lua") {
-          println!("Running the script.");
-
           let src = std::fs::read_to_string(first)?;
 
           let lua = mlua::Lua::new();
@@ -180,7 +250,6 @@ pub async fn dekit_main() -> anyhow::Result<()> {
             .globals()
             .set("std", init_std(&lua).map_err(|e| anyhow!("{}", e))?)
             .map_err(|e| anyhow!("{}", e))?;
-          println!("After std init.");
 
           let chunk = lua.load(src.clone());
           let f: mlua::Function = chunk.eval().map_err(|e| anyhow!("{}", e))?;
@@ -193,8 +262,6 @@ pub async fn dekit_main() -> anyhow::Result<()> {
         }
         // .js
         else if first.ends_with(".js") {
-          println!("Running the script.");
-
           let src = std::fs::read_to_string(first)?;
 
           let vm = JsVm::new().await?;
@@ -208,6 +275,14 @@ pub async fn dekit_main() -> anyhow::Result<()> {
             .await;
           r?;
         }
+      } else {
+        // No args: connect to daemon for current dir, starting it on
+        // demand.
+        let working_dir = std::env::current_dir()?;
+        let (sender, receiver) =
+          connect_client_socket::<CltToSrv, SrvToClt>(&working_dir, true)
+            .await?;
+        client_main(sender, receiver).await?;
       }
     }
   }

@@ -1,10 +1,14 @@
-pub fn spawn_server_daemon() -> anyhow::Result<()> {
+use std::path::Path;
+
+pub fn spawn_server_daemon(working_dir: &Path) -> anyhow::Result<()> {
   let exe = std::env::current_exe()?;
+  let canonical_dir = dunce::canonicalize(working_dir)?;
+  let dir_str = canonical_dir.to_string_lossy().into_owned();
 
   #[cfg(unix)]
-  return self::unix::spawn_impl(exe);
+  return self::unix::spawn_impl(exe, &dir_str);
   #[cfg(windows)]
-  return self::windows::spawn_impl(exe);
+  return self::windows::spawn_impl(exe, &dir_str);
 }
 
 #[cfg(unix)]
@@ -13,7 +17,7 @@ mod unix {
 
   use anyhow::bail;
 
-  pub fn spawn_impl(exe: PathBuf) -> anyhow::Result<()> {
+  pub fn spawn_impl(exe: PathBuf, dir: &str) -> anyhow::Result<()> {
     let daemon =
       daemonize::Daemonize::new().working_directory(std::env::current_dir()?);
 
@@ -24,6 +28,9 @@ mod unix {
           anyhow::format_err!("Failed to convert exe path: {:?}", exe)
         })?,
         "server",
+        "run",
+        "--dir",
+        dir,
       ])?,
     }
 
@@ -70,14 +77,14 @@ mod windows {
     CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS,
   };
 
-  pub fn spawn_impl(path: PathBuf) -> anyhow::Result<()> {
+  pub fn spawn_impl(path: PathBuf, dir: &str) -> anyhow::Result<()> {
     use std::{os::windows::process::CommandExt, process::Stdio};
 
     std::process::Command::new(path)
-      .arg("server")
+      .args(["server", "run", "--dir", dir])
       .stdin(Stdio::null())
       .stdout(Stdio::null())
-      .stdout(Stdio::null())
+      .stderr(Stdio::null())
       .creation_flags(CREATE_NEW_PROCESS_GROUP.0 | DETACHED_PROCESS.0)
       .spawn()?;
 
