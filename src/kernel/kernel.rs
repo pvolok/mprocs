@@ -5,15 +5,13 @@ use std::{
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use crate::{
-  error::ResultLogger,
-  kernel::{kernel_message::TaskContext, task::DepInfo},
-  proc::msg::{ProcCmd, ProcUpdate},
-};
+use crate::{error::ResultLogger, kernel::kernel_message::TaskContext};
 
 use super::{
   kernel_message::{KernelCommand, KernelMessage},
-  task::{TaskHandle, TaskId, TaskInit, TaskStatus},
+  task::{
+    DepInfo, TaskCmd, TaskHandle, TaskId, TaskInit, TaskNotify, TaskStatus,
+  },
 };
 
 pub struct Kernel {
@@ -66,7 +64,7 @@ impl Kernel {
     let init = f(kernel_sender);
     let mut task_handle = TaskHandle {
       task_id,
-      sender: init.sender,
+      task: init.task,
 
       stop_on_quit: init.stop_on_quit,
       status: init.status,
@@ -106,8 +104,11 @@ impl Kernel {
           }
           self.quitting = true;
 
-          for task in self.tasks.values() {
-            let _ = task.sender.send(ProcCmd::Stop);
+          let task_ids: Vec<TaskId> = self.tasks.keys().copied().collect();
+          for task_id in task_ids {
+            if let Some(task) = self.tasks.get_mut(&task_id) {
+              task.task.handle_cmd(TaskCmd::Stop);
+            }
           }
 
           if self.is_ready_to_quit() {
@@ -119,30 +120,22 @@ impl Kernel {
           self.spawn_task_with_id(task_id, create_task);
         }
         KernelCommand::TaskCmd(task_id, cmd) => {
-          if let Some(task) = self.tasks.get(&task_id) {
+          if let Some(task) = self.tasks.get_mut(&task_id) {
             match cmd {
-              ProcCmd::Start => {
+              TaskCmd::Start => {
                 let all_deps_ready = task
                   .deps
                   .iter()
                   .all(|(_, dep)| dep.status == TaskStatus::Running);
                 if all_deps_ready {
-                  task.send(cmd);
+                  task.task.handle_cmd(cmd);
                 }
               }
-              ProcCmd::Stop | ProcCmd::Kill => {
-                task.send(cmd);
+              TaskCmd::Stop | TaskCmd::Kill => {
+                task.task.handle_cmd(cmd);
               }
-              ProcCmd::SendKey(_)
-              | ProcCmd::SendMouse(_)
-              | ProcCmd::ScrollUp
-              | ProcCmd::ScrollDown
-              | ProcCmd::ScrollUpLines { .. }
-              | ProcCmd::ScrollDownLines { .. }
-              | ProcCmd::Resize { .. }
-              | ProcCmd::Custom(_)
-              | ProcCmd::OnProcUpdate(_, _) => {
-                task.send(cmd);
+              _ => {
+                task.task.handle_cmd(cmd);
               }
             }
           }
@@ -181,7 +174,7 @@ impl Kernel {
                         from: TaskId(0),
                         command: KernelCommand::TaskCmd(
                           *rev_dep_id,
-                          ProcCmd::Start,
+                          TaskCmd::Start,
                         ),
                       })
                       .log_ignore();
@@ -192,9 +185,10 @@ impl Kernel {
           }
 
           for listener_id in self.listeners.iter() {
-            if let Some(listener) = self.tasks.get(listener_id) {
+            if let Some(listener) = self.tasks.get_mut(&listener_id) {
               listener
-                .send(ProcCmd::OnProcUpdate(msg.from, ProcUpdate::Started));
+                .task
+                .handle_cmd(TaskCmd::Notify(msg.from, TaskNotify::Started));
             }
           }
         }
@@ -204,10 +198,10 @@ impl Kernel {
           }
 
           for listener_id in self.listeners.iter() {
-            if let Some(listener) = self.tasks.get(listener_id) {
-              listener.send(ProcCmd::OnProcUpdate(
+            if let Some(listener) = self.tasks.get_mut(&listener_id) {
+              listener.task.handle_cmd(TaskCmd::Notify(
                 msg.from,
-                ProcUpdate::Stopped(exit_code),
+                TaskNotify::Stopped(exit_code),
               ));
             }
           }
@@ -218,19 +212,20 @@ impl Kernel {
         }
         KernelCommand::TaskUpdatedScreen(vt) => {
           for listener_id in self.listeners.iter() {
-            if let Some(listener) = self.tasks.get(listener_id) {
-              listener.send(ProcCmd::OnProcUpdate(
+            if let Some(listener) = self.tasks.get_mut(&listener_id) {
+              listener.task.handle_cmd(TaskCmd::Notify(
                 msg.from,
-                ProcUpdate::ScreenChanged(vt.clone()),
+                TaskNotify::ScreenChanged(vt.clone()),
               ));
             }
           }
         }
         KernelCommand::TaskRendered => {
           for listener_id in self.listeners.iter() {
-            if let Some(listener) = self.tasks.get(listener_id) {
+            if let Some(listener) = self.tasks.get_mut(&listener_id) {
               listener
-                .send(ProcCmd::OnProcUpdate(msg.from, ProcUpdate::Rendered));
+                .task
+                .handle_cmd(TaskCmd::Notify(msg.from, TaskNotify::Rendered));
             }
           }
         }

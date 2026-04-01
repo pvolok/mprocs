@@ -13,7 +13,7 @@ use crate::{
   kernel::{
     kernel::Kernel,
     kernel_message::KernelCommand,
-    task::{TaskInit, TaskStatus},
+    task::{NoopTask, TaskInit, TaskStatus},
   },
   keymap::Keymap,
   lualib::init_std,
@@ -52,7 +52,6 @@ async fn run_server() -> anyhow::Result<()> {
   let mut kernel = Kernel::new();
   kernel.spawn_task(|pc| {
     let app_task_id = create_app_task(config, keymap, &pc);
-    let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
 
     let app_sender = pc.get_task_sender(app_task_id);
 
@@ -90,7 +89,7 @@ async fn run_server() -> anyhow::Result<()> {
     });
 
     TaskInit {
-      sender,
+      task: Box::new(NoopTask),
       stop_on_quit: false,
       status: TaskStatus::Down,
       deps: Vec::new(),

@@ -9,7 +9,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use crate::config::ProcConfig;
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::{KernelCommand, TaskContext};
-use crate::kernel::task::{TaskId, TaskInit, TaskStatus};
+use crate::kernel::task::{ChannelTask, TaskCmd, TaskId, TaskInit, TaskStatus};
 use crate::proc_log_config::LogConfig;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
@@ -20,7 +20,7 @@ use crate::term::mouse::{MouseEvent, MouseEventKind};
 use crate::term::{MouseProtocolMode, Parser, VtEvent};
 
 use super::inst::Inst;
-use super::msg::{ProcCmd, ProcEvent};
+use super::msg::{ProcEvent, ProcMsg};
 use super::view::ProcView;
 use super::Size;
 use super::StopSignal;
@@ -66,7 +66,7 @@ pub fn launch_proc(
       });
 
       TaskInit {
-        sender: cmd_sender,
+        task: Box::new(ChannelTask::new(cmd_sender)),
         stop_on_quit: true,
         status: TaskStatus::Down,
         deps,
@@ -82,7 +82,7 @@ async fn proc_main_loop(
   task_id: TaskId,
   cfg: &ProcConfig,
   size: Rect,
-  mut cmd_receiver: UnboundedReceiver<ProcCmd>,
+  mut cmd_receiver: UnboundedReceiver<TaskCmd>,
 ) -> ProcView {
   let (internal_sender, mut internal_receiver) =
     tokio::sync::mpsc::unbounded_channel();
@@ -92,7 +92,7 @@ async fn proc_main_loop(
 
   loop {
     enum NextValue {
-      Cmd(Option<ProcCmd>),
+      Cmd(Option<TaskCmd>),
       Internal(Option<ProcEvent>),
       Read(std::io::Result<usize>),
     }
@@ -105,7 +105,24 @@ async fn proc_main_loop(
     match value {
       NextValue::Cmd(Some(cmd)) => {
         let mut rendered = false;
-        proc.handle_cmd(cmd, &mut rendered).await;
+        match cmd {
+          TaskCmd::Start => {
+            proc.start().await;
+            rendered = true;
+          }
+          TaskCmd::Stop => proc.stop().await,
+          TaskCmd::Kill => proc.kill().await,
+          TaskCmd::Msg(msg) => {
+            if let Ok(proc_msg) = msg.downcast::<ProcMsg>() {
+              proc.handle_msg(*proc_msg, &mut rendered).await;
+            } else {
+              log::error!("Proc received unknown Msg");
+            }
+          }
+          TaskCmd::Notify(_, _) => {
+            log::warn!("Proc received TaskCmd::Notify");
+          }
+        }
         if rendered {
           ks.send(KernelCommand::TaskRendered);
         }
@@ -449,49 +466,34 @@ impl Proc {
 }
 
 impl Proc {
-  pub async fn handle_cmd(&mut self, cmd: ProcCmd, rendered: &mut bool) {
-    match cmd {
-      ProcCmd::Start => {
-        self.start().await;
-        *rendered = true;
-      }
-      ProcCmd::Stop => self.stop().await,
-      ProcCmd::Kill => self.kill().await,
+  pub async fn handle_msg(&mut self, msg: ProcMsg, rendered: &mut bool) {
+    match msg {
+      ProcMsg::SendKey(key) => self.send_key(&key).await,
+      ProcMsg::SendMouse(event) => self.handle_mouse(event).await,
 
-      ProcCmd::SendKey(key) => self.send_key(&key).await,
-      ProcCmd::SendMouse(event) => self.handle_mouse(event).await,
-
-      ProcCmd::ScrollUp => {
+      ProcMsg::ScrollUp => {
         self.scroll_half_screen_up();
         *rendered = true;
       }
-      ProcCmd::ScrollDown => {
+      ProcMsg::ScrollDown => {
         self.scroll_half_screen_down();
         *rendered = true;
       }
-      ProcCmd::ScrollUpLines { n } => {
+      ProcMsg::ScrollUpLines { n } => {
         self.scroll_up_lines(n);
         *rendered = true;
       }
-      ProcCmd::ScrollDownLines { n } => {
+      ProcMsg::ScrollDownLines { n } => {
         self.scroll_down_lines(n);
         *rendered = true;
       }
 
-      ProcCmd::Resize { w, h } => {
+      ProcMsg::Resize { w, h } => {
         self.resize(Size {
           width: w,
           height: h,
         });
         *rendered = true;
-      }
-
-      ProcCmd::Custom(custom) => {
-        log::error!("Proc received unknown custom command: {:?}", custom);
-      }
-
-      ProcCmd::OnProcUpdate(_, _) => {
-        log::warn!("Proc received ProcCmd::OnProcUpdate.");
       }
     }
   }

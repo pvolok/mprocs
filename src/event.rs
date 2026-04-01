@@ -3,7 +3,7 @@ use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-  app::ClientId, kernel::task::TaskId, proc::msg::CustomProcCmd, term::key::Key,
+  app::ClientId, kernel::task::TaskId, term::key::Key,
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -57,7 +57,6 @@ pub enum AppEvent {
   SendKey { key: Key },
 }
 
-impl CustomProcCmd for AppEvent {}
 
 impl AppEvent {
   pub fn desc(&self) -> String {

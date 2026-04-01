@@ -1,4 +1,5 @@
 use std::{
+  any::Any,
   fmt::Debug,
   ops::Deref,
   sync::{atomic::AtomicUsize, Arc, RwLock},
@@ -6,12 +7,9 @@ use std::{
 
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{
-  proc::msg::{CustomProcCmd, ProcCmd},
-  term::Parser,
-};
+use crate::term::Parser;
 
-use super::task::{TaskId, TaskInit};
+use super::task::{TaskCmd, TaskId, TaskInit};
 
 pub struct KernelMessage {
   pub from: TaskId,
@@ -22,7 +20,7 @@ pub enum KernelCommand {
   Quit,
 
   AddTask(TaskId, Box<dyn FnOnce(TaskContext) -> TaskInit + Send>),
-  TaskCmd(TaskId, ProcCmd),
+  TaskCmd(TaskId, TaskCmd),
 
   ListenTaskUpdates,
   UnlistenTaskUpdates,
@@ -89,10 +87,10 @@ impl TaskContext {
     }
   }
 
-  pub fn send_self_custom<T: CustomProcCmd + Send>(&self, custom: T) {
+  pub fn send_self_custom<T: Any + Send + 'static>(&self, custom: T) {
     self.send(KernelCommand::TaskCmd(
       self.task_id,
-      ProcCmd::Custom(Box::new(custom)),
+      TaskCmd::msg(custom),
     ));
   }
 
@@ -138,7 +136,7 @@ pub struct TaskSender {
 }
 
 impl TaskSender {
-  pub fn send(&self, cmd: ProcCmd) {
+  pub fn send(&self, cmd: TaskCmd) {
     let r = self.sender.send(KernelMessage {
       from: self.from_id,
       command: KernelCommand::TaskCmd(self.task_id, cmd),

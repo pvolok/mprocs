@@ -1,6 +1,5 @@
 use crate::{
   app::{ClientHandle, ClientId},
-  proc::msg::CustomProcCmd,
   protocol::CltToSrv,
 };
 
@@ -10,5 +9,3 @@ pub enum ServerMessage {
   ClientConnected { handle: ClientHandle },
   ClientDisconnected { client_id: ClientId },
 }
-
-impl CustomProcCmd for ServerMessage {}
