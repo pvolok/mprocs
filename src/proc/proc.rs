@@ -10,6 +10,7 @@ use crate::config::ProcConfig;
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::{KernelCommand, TaskContext};
 use crate::kernel::task::{ChannelTask, TaskCmd, TaskId, TaskInit, TaskStatus};
+use crate::kernel::task_path::TaskPath;
 use crate::proc_log_config::LogConfig;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
@@ -51,6 +52,7 @@ pub fn launch_proc(
   cfg: ProcConfig,
   task_id: TaskId,
   deps: Vec<TaskId>,
+  path: Option<TaskPath>,
   size: Rect,
 ) -> ProcView {
   let cfg_ = cfg.clone();
@@ -70,6 +72,7 @@ pub fn launch_proc(
         stop_on_quit: true,
         status: TaskStatus::Down,
         deps,
+        path,
       }
     }),
   );

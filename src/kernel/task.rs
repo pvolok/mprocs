@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::kernel_message::SharedVt;
+use super::task_path::TaskPath;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct TaskId(pub usize);
@@ -89,9 +90,12 @@ pub struct TaskHandle {
   pub status: TaskStatus,
 
   pub deps: HashMap<TaskId, DepInfo>,
+
+  pub path: Option<TaskPath>,
+  pub vt: Option<SharedVt>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum TaskStatus {
   Down,
   Running,
@@ -102,6 +106,7 @@ pub struct TaskInit {
   pub stop_on_quit: bool,
   pub status: TaskStatus,
   pub deps: Vec<TaskId>,
+  pub path: Option<TaskPath>,
 }
 
 pub struct DepInfo {

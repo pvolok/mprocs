@@ -2,14 +2,16 @@ use std::{
   any::Any,
   fmt::Debug,
   ops::Deref,
-  sync::{atomic::AtomicUsize, Arc, RwLock},
+  sync::{Arc, RwLock, atomic::AtomicUsize},
 };
 
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::term::Parser;
 
-use super::task::{TaskCmd, TaskId, TaskInit};
+use super::task::{TaskCmd, TaskId, TaskInit, TaskStatus};
+use super::task_path::TaskPath;
 
 pub struct KernelMessage {
   pub from: TaskId,
@@ -22,6 +24,15 @@ pub enum KernelCommand {
   AddTask(TaskId, Box<dyn FnOnce(TaskContext) -> TaskInit + Send>),
   TaskCmd(TaskId, TaskCmd),
 
+  TaskCmdByPath(TaskPath, TaskCmd),
+
+  SetTaskPath(TaskId, TaskPath),
+
+  Query(
+    KernelQuery,
+    tokio::sync::oneshot::Sender<KernelQueryResponse>,
+  ),
+
   ListenTaskUpdates,
   UnlistenTaskUpdates,
 
@@ -30,6 +41,29 @@ pub enum KernelCommand {
   TaskStopped(u32),
   TaskUpdatedScreen(Option<SharedVt>),
   TaskRendered,
+}
+
+pub enum KernelQuery {
+  /// List tasks matching an optional glob. None = list all.
+  ListTasks(Option<String>),
+  /// Resolve a path to a TaskId.
+  ResolvePath(TaskPath),
+  /// Get the current screen content for a task (rendered as ANSI text).
+  GetScreen(TaskPath),
+}
+
+pub enum KernelQueryResponse {
+  TaskList(Vec<TaskInfo>),
+  ResolvedPath(Option<TaskId>),
+  /// ANSI-rendered screen content, or None if the task has no screen.
+  Screen(Option<String>),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TaskInfo {
+  pub id: TaskId,
+  pub path: Option<TaskPath>,
+  pub status: TaskStatus,
 }
 
 #[derive(Clone)]
@@ -88,10 +122,7 @@ impl TaskContext {
   }
 
   pub fn send_self_custom<T: Any + Send + 'static>(&self, custom: T) {
-    self.send(KernelCommand::TaskCmd(
-      self.task_id,
-      TaskCmd::msg(custom),
-    ));
+    self.send(KernelCommand::TaskCmd(self.task_id, TaskCmd::msg(custom)));
   }
 
   pub fn alloc_id(&self) -> TaskId {
@@ -117,6 +148,23 @@ impl TaskContext {
   ) -> TaskId {
     self.send(KernelCommand::AddTask(task_id, f));
     task_id
+  }
+
+  pub fn send_to_path(&self, path: TaskPath, cmd: TaskCmd) {
+    self.send(KernelCommand::TaskCmdByPath(path, cmd));
+  }
+
+  pub fn set_task_path(&self, task_id: TaskId, path: TaskPath) {
+    self.send(KernelCommand::SetTaskPath(task_id, path));
+  }
+
+  pub fn query(
+    &self,
+    query: KernelQuery,
+  ) -> tokio::sync::oneshot::Receiver<KernelQueryResponse> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    self.send(KernelCommand::Query(query, tx));
+    rx
   }
 
   pub fn get_task_sender(&self, target_id: TaskId) -> TaskSender {

@@ -254,7 +254,7 @@ impl App {
           }
         }
         let task_id = id_map.get(&proc_cfg.name).unwrap();
-        launch_proc(&self.pc, proc_cfg.clone(), *task_id, deps, size)
+        launch_proc(&self.pc, proc_cfg.clone(), *task_id, deps, None, size)
       })
       .collect::<Vec<_>>();
 
@@ -306,6 +306,7 @@ impl App {
         self.handle_input(loop_action, client_id, event);
         Ok(())
       }
+      CltToSrv::Rpc(_) => bail!("Rpc message is unexpected in app."),
     };
     self.state.current_client_id = None;
     ret
@@ -785,6 +786,7 @@ impl App {
           proc_config,
           self.pc.alloc_id(),
           Vec::new(),
+          None,
           self.get_layout().term_area(),
         );
         self.state.procs.push(proc_handle);
@@ -800,7 +802,7 @@ impl App {
           let size = self.get_layout().term_area();
           log::error!("TODO: Copy deps for duplicate proc.");
           let proc_handle =
-            launch_proc(&pc, cfg, self.pc.alloc_id(), Vec::new(), size);
+            launch_proc(&pc, cfg, self.pc.alloc_id(), Vec::new(), None, size);
           self.state.procs.push(proc_handle);
           loop_action.render();
         }
@@ -1155,7 +1157,7 @@ impl Debug for ClientHandle {
 }
 
 impl ClientHandle {
-  fn create(
+  pub fn create(
     id: ClientId,
     client_sender: MsgSender<SrvToClt>,
     size: Size,
@@ -1199,6 +1201,7 @@ pub fn create_app_task(
       stop_on_quit: false,
       status: TaskStatus::Running,
       deps: Vec::new(),
+      path: None,
     }
   }))
 }

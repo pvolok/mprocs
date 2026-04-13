@@ -55,6 +55,7 @@ async fn client_main_loop(
             stdout().flush()?;
           }
           SrvToClt::Quit => break,
+          SrvToClt::Rpc(_) => {},
         },
         _ => break,
       },

@@ -1,27 +1,34 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use clap::{Arg, Command};
 use rquickjs::CatchResultExt;
 
 use crate::{
-  app::{client_loop, create_app_task, ClientId},
+  app::{ClientHandle, ClientId, create_app_task},
   client::client_main,
   config::Config,
   daemon::{
     lockfile,
+    receiver::MsgReceiver,
+    sender::MsgSender,
     socket::{bind_server_socket, connect_client_socket},
   },
   js::js_vm::JsVm,
   kernel::{
     kernel::Kernel,
-    kernel_message::KernelCommand,
-    task::{NoopTask, TaskInit, TaskStatus},
+    kernel_message::{
+      KernelCommand, KernelQuery, KernelQueryResponse, TaskContext,
+    },
+    task::{NoopTask, TaskCmd, TaskInit, TaskStatus},
+    task_path::TaskPath,
   },
   keymap::Keymap,
   lualib::init_std,
-  protocol::{CltToSrv, SrvToClt},
+  protocol::{CltToSrv, DkRequest, DkResponse, DkTaskInfo, SrvToClt},
+  server::server_message::ServerMessage,
   settings::Settings,
+  term::Size,
 };
 
 async fn run_server(working_dir: PathBuf) -> anyhow::Result<()> {
@@ -81,12 +88,14 @@ async fn run_server(working_dir: PathBuf) -> anyhow::Result<()> {
       log::debug!("Waiting for clients...");
       loop {
         match server_socket.accept().await {
-          Ok(socket) => {
+          Ok((sender, receiver)) => {
             last_client_id += 1;
             let client_id = ClientId(last_client_id);
             let app_sender = app_sender.clone();
+            let pc = pc.clone();
             tokio::spawn(async move {
-              client_loop(client_id, app_sender, socket).await;
+              dispatch_connection(client_id, app_sender, pc, sender, receiver)
+                .await;
             });
           }
           Err(err) => {
@@ -102,6 +111,7 @@ async fn run_server(working_dir: PathBuf) -> anyhow::Result<()> {
       stop_on_quit: false,
       status: TaskStatus::Down,
       deps: Vec::new(),
+      path: None,
     }
   });
 
@@ -116,6 +126,180 @@ async fn run_server(working_dir: PathBuf) -> anyhow::Result<()> {
   Ok(())
 }
 
+/// Dispatch an accepted connection: RPC or TUI.
+async fn dispatch_connection(
+  client_id: ClientId,
+  app_sender: crate::kernel::kernel_message::TaskSender,
+  pc: TaskContext,
+  mut sender: MsgSender<SrvToClt>,
+  mut receiver: MsgReceiver<CltToSrv>,
+) {
+  let first_msg = receiver.recv().await;
+  match first_msg {
+    Some(Ok(CltToSrv::Rpc(req))) => {
+      let resp = handle_rpc(&pc, req)
+        .await
+        .unwrap_or_else(|e| DkResponse::Error(e.to_string()));
+      let _ = sender.send(SrvToClt::Rpc(resp)).await;
+    }
+    Some(Ok(CltToSrv::Init { width, height })) => {
+      let handle =
+        ClientHandle::create(client_id, sender, Size { width, height });
+      match handle {
+        Ok(handle) => {
+          app_sender
+            .send(TaskCmd::msg(ServerMessage::ClientConnected { handle }));
+        }
+        Err(err) => {
+          log::error!("Client creation error: {:?}", err);
+          return;
+        }
+      }
+      // Forward subsequent messages to app.
+      loop {
+        let msg = if let Some(msg) = receiver.recv().await {
+          msg
+        } else {
+          break;
+        };
+        match msg {
+          Ok(msg) => {
+            app_sender.send(TaskCmd::msg(ServerMessage::ClientMessage {
+              client_id,
+              msg,
+            }));
+          }
+          Err(_err) => break,
+        }
+      }
+      app_sender.send(TaskCmd::msg(ServerMessage::ClientDisconnected {
+        client_id,
+      }));
+    }
+    _ => {
+      log::warn!("Unexpected first message from client");
+    }
+  }
+}
+
+async fn handle_rpc(
+  pc: &TaskContext,
+  req: DkRequest,
+) -> anyhow::Result<DkResponse> {
+  let response = match req {
+    DkRequest::Ls { glob } => {
+      let query = KernelQuery::ListTasks(glob);
+      match pc.query(query).await? {
+        KernelQueryResponse::TaskList(tasks) => {
+          let items = tasks
+            .into_iter()
+            .map(|t| DkTaskInfo {
+              path: t
+                .path
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| format!("<task:{}>", t.id.0)),
+              status: match t.status {
+                TaskStatus::Running => "running".to_string(),
+                TaskStatus::Down => "down".to_string(),
+              },
+            })
+            .collect();
+          DkResponse::TaskList(items)
+        }
+        _ => DkResponse::Error("unexpected query response".to_string()),
+      }
+    }
+
+    DkRequest::Start { path } => {
+      let path = TaskPath::new(&path)?;
+      pc.send_to_path(path, TaskCmd::Start);
+      DkResponse::Ok
+    }
+
+    DkRequest::Stop { path } => {
+      let path = TaskPath::new(&path)?;
+      pc.send_to_path(path, TaskCmd::Stop);
+      DkResponse::Ok
+    }
+
+    DkRequest::Kill { path } => {
+      let path = TaskPath::new(&path)?;
+      pc.send_to_path(path, TaskCmd::Kill);
+      DkResponse::Ok
+    }
+
+    DkRequest::Restart { path } => {
+      let path = TaskPath::new(&path)?;
+      pc.send_to_path(path.clone(), TaskCmd::Stop);
+      pc.send_to_path(path, TaskCmd::Start);
+      DkResponse::Ok
+    }
+
+    DkRequest::Screen { path } => {
+      let path = TaskPath::new(&path)?;
+      let query = KernelQuery::GetScreen(path);
+      match pc.query(query).await? {
+        KernelQueryResponse::Screen(content) => DkResponse::Screen(content),
+        _ => DkResponse::Error("unexpected query response".to_string()),
+      }
+    }
+
+    DkRequest::Spawn { path, cmd, cwd } => {
+      let task_path = TaskPath::new(&path)?;
+      if cmd.is_empty() {
+        bail!("cmd must not be empty".to_string());
+      }
+      let proc_config = crate::config::ProcConfig {
+        name: task_path.name().to_string(),
+        cmd: crate::config::CmdConfig::Cmd { cmd },
+        cwd: cwd.map(|s| s.into()),
+        env: None,
+        autostart: true,
+        autorestart: false,
+        stop: crate::proc::StopSignal::default(),
+        deps: Vec::new(),
+        mouse_scroll_speed: 5,
+        scrollback_len: 1000,
+        log: None,
+      };
+      let task_id = pc.alloc_id();
+      let size = crate::term::grid::Rect {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 24,
+      };
+      crate::proc::proc::launch_proc(
+        pc,
+        proc_config,
+        task_id,
+        Vec::new(),
+        Some(task_path),
+        size,
+      );
+      DkResponse::Ok
+    }
+  };
+  Ok(response)
+}
+
+async fn rpc_request(
+  working_dir: &Path,
+  req: DkRequest,
+) -> anyhow::Result<DkResponse> {
+  let (mut sender, mut receiver) =
+    connect_client_socket::<CltToSrv, SrvToClt>(working_dir, false).await?;
+  sender.send(CltToSrv::Rpc(req)).await?;
+  match receiver.recv().await {
+    Some(Ok(SrvToClt::Rpc(resp))) => Ok(resp),
+    Some(Ok(other)) => {
+      anyhow::bail!("unexpected response: {:?}", other)
+    }
+    Some(Err(e)) => anyhow::bail!("decode error: {}", e),
+    None => anyhow::bail!("connection closed without response"),
+  }
+}
+
 pub async fn dekit_main() -> anyhow::Result<()> {
   println!("* Welcome to dekit — playground for future features *\n");
 
@@ -124,6 +308,44 @@ pub async fn dekit_main() -> anyhow::Result<()> {
       Command::new("attach"),
       Command::new("up"),
       Command::new("down"),
+      Command::new("spawn")
+        .about("Create and start a new task at the given path")
+        .arg(
+          Arg::new("path")
+            .long("path")
+            .required(true)
+            .help("Task path (e.g. /services/web)"),
+        )
+        .arg(
+          Arg::new("cwd")
+            .long("cwd")
+            .help("Working directory for the process"),
+        )
+        .arg(
+          Arg::new("cmd")
+            .required(true)
+            .num_args(1..)
+            .last(true)
+            .help("Command to run"),
+        ),
+      Command::new("ls")
+        .about("List tasks")
+        .arg(Arg::new("glob").help("Optional glob pattern")),
+      Command::new("start")
+        .about("Start a stopped task")
+        .arg(Arg::new("path").required(true).help("Task path")),
+      Command::new("stop")
+        .about("Gracefully stop a task")
+        .arg(Arg::new("path").required(true).help("Task path")),
+      Command::new("kill")
+        .about("Force kill a task")
+        .arg(Arg::new("path").required(true).help("Task path")),
+      Command::new("restart")
+        .about("Restart a task")
+        .arg(Arg::new("path").required(true).help("Task path")),
+      Command::new("screen")
+        .about("Print the current screen of a task")
+        .arg(Arg::new("path").required(true).help("Task path")),
       Command::new("server").subcommands([
         Command::new("run").arg(
           Arg::new("dir")
@@ -154,6 +376,95 @@ pub async fn dekit_main() -> anyhow::Result<()> {
         connect_client_socket::<CltToSrv, SrvToClt>(&working_dir, false)
           .await?;
       client_main(sender, receiver).await?;
+    }
+    Some(("spawn", sub_m)) => {
+      let working_dir = std::env::current_dir()?;
+      let path = sub_m.get_one::<String>("path").unwrap().clone();
+      let cwd = sub_m.get_one::<String>("cwd").cloned();
+      let cmd: Vec<String> =
+        sub_m.get_many::<String>("cmd").unwrap().cloned().collect();
+      let resp =
+        rpc_request(&working_dir, DkRequest::Spawn { path, cmd, cwd }).await?;
+      match resp {
+        DkResponse::Ok => println!("Spawned."),
+        DkResponse::Error(e) => eprintln!("Error: {}", e),
+        _ => eprintln!("Unexpected response"),
+      }
+    }
+    Some(("ls", sub_m)) => {
+      let working_dir = std::env::current_dir()?;
+      let glob = sub_m.get_one::<String>("glob").cloned();
+      let resp = rpc_request(&working_dir, DkRequest::Ls { glob }).await?;
+      match resp {
+        DkResponse::TaskList(tasks) => {
+          if tasks.is_empty() {
+            println!("No tasks.");
+          } else {
+            for t in &tasks {
+              println!("{}\t{}", t.path, t.status);
+            }
+          }
+        }
+        DkResponse::Error(e) => eprintln!("Error: {}", e),
+        _ => eprintln!("Unexpected response"),
+      }
+    }
+    Some(("start", sub_m)) => {
+      let working_dir = std::env::current_dir()?;
+      let path = sub_m.get_one::<String>("path").unwrap().clone();
+      let resp = rpc_request(&working_dir, DkRequest::Start { path }).await?;
+      match resp {
+        DkResponse::Ok => println!("Started."),
+        DkResponse::Error(e) => eprintln!("Error: {}", e),
+        _ => eprintln!("Unexpected response"),
+      }
+    }
+    Some(("stop", sub_m)) => {
+      let working_dir = std::env::current_dir()?;
+      let path = sub_m.get_one::<String>("path").unwrap().clone();
+      let resp = rpc_request(&working_dir, DkRequest::Stop { path }).await?;
+      match resp {
+        DkResponse::Ok => println!("Stopped."),
+        DkResponse::Error(e) => eprintln!("Error: {}", e),
+        _ => eprintln!("Unexpected response"),
+      }
+    }
+    Some(("kill", sub_m)) => {
+      let working_dir = std::env::current_dir()?;
+      let path = sub_m.get_one::<String>("path").unwrap().clone();
+      let resp = rpc_request(&working_dir, DkRequest::Kill { path }).await?;
+      match resp {
+        DkResponse::Ok => println!("Killed."),
+        DkResponse::Error(e) => eprintln!("Error: {}", e),
+        _ => eprintln!("Unexpected response"),
+      }
+    }
+    Some(("restart", sub_m)) => {
+      let working_dir = std::env::current_dir()?;
+      let path = sub_m.get_one::<String>("path").unwrap().clone();
+      let resp = rpc_request(&working_dir, DkRequest::Restart { path }).await?;
+      match resp {
+        DkResponse::Ok => println!("Restarted."),
+        DkResponse::Error(e) => eprintln!("Error: {}", e),
+        _ => eprintln!("Unexpected response"),
+      }
+    }
+    Some(("screen", sub_m)) => {
+      let working_dir = std::env::current_dir()?;
+      let path = sub_m.get_one::<String>("path").unwrap().clone();
+      let resp = rpc_request(&working_dir, DkRequest::Screen { path }).await?;
+      match resp {
+        DkResponse::Screen(Some(content)) => {
+          print!("{}", content);
+          // Reset terminal attributes after printing
+          print!("\x1b[0m\n");
+        }
+        DkResponse::Screen(None) => {
+          eprintln!("No screen content for this task.");
+        }
+        DkResponse::Error(e) => eprintln!("Error: {}", e),
+        _ => eprintln!("Unexpected response"),
+      }
     }
     Some(("up", _sub_m)) => {
       println!("Up.");

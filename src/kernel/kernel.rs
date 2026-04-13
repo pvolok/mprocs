@@ -1,6 +1,6 @@
 use std::{
   collections::{HashMap, HashSet},
-  sync::{atomic::AtomicUsize, Arc},
+  sync::{Arc, atomic::AtomicUsize},
 };
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -8,7 +8,10 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use crate::{error::ResultLogger, kernel::kernel_message::TaskContext};
 
 use super::{
-  kernel_message::{KernelCommand, KernelMessage},
+  kernel_message::{
+    KernelCommand, KernelMessage, KernelQuery, KernelQueryResponse, TaskInfo,
+  },
+  path_trie::PathTrie,
   task::{
     DepInfo, TaskCmd, TaskHandle, TaskId, TaskInit, TaskNotify, TaskStatus,
   },
@@ -24,6 +27,7 @@ pub struct Kernel {
   /// If `a` requires `b`, then `rev_deps = {b: [a]}`.
   rev_deps: HashMap<TaskId, HashSet<TaskId>>,
   listeners: HashSet<TaskId>,
+  path_trie: PathTrie,
 }
 
 impl Kernel {
@@ -39,6 +43,7 @@ impl Kernel {
       tasks: HashMap::new(),
       rev_deps: HashMap::new(),
       listeners: Default::default(),
+      path_trie: PathTrie::new(),
     }
   }
 
@@ -62,6 +67,7 @@ impl Kernel {
     let kernel_sender =
       TaskContext::new(self.next_task_id.clone(), task_id, self.sender.clone());
     let init = f(kernel_sender);
+    let path = init.path.clone();
     let mut task_handle = TaskHandle {
       task_id,
       task: init.task,
@@ -70,6 +76,9 @@ impl Kernel {
       status: init.status,
 
       deps: HashMap::new(),
+
+      path: init.path,
+      vt: None,
     };
 
     for dep_id in &init.deps {
@@ -86,6 +95,12 @@ impl Kernel {
     }
 
     self.tasks.insert(task_id, task_handle);
+
+    if let Some(path) = path {
+      if let Err(err) = self.path_trie.insert(&path, task_id) {
+        log::error!("Path conflict while spawning task: {}", err);
+      }
+    }
   }
 
   pub async fn run(mut self) {
@@ -139,6 +154,76 @@ impl Kernel {
               }
             }
           }
+        }
+
+        // TODO: Prevent requeueing.
+        KernelCommand::TaskCmdByPath(path, cmd) => {
+          if let Some(task_id) = self.path_trie.resolve(&path) {
+            self
+              .sender
+              .send(KernelMessage {
+                from: msg.from,
+                command: KernelCommand::TaskCmd(task_id, cmd),
+              })
+              .log_ignore();
+          } else {
+            log::warn!("No task at path: {}", path);
+          }
+        }
+
+        KernelCommand::SetTaskPath(task_id, path) => {
+          if let Some(task) = self.tasks.get_mut(&task_id) {
+            if let Some(old_path) = task.path.take() {
+              self.path_trie.remove(&old_path);
+            }
+            match self.path_trie.insert(&path, task_id) {
+              Ok(()) => {
+                task.path = Some(path);
+              }
+              Err(err) => {
+                log::error!("Path conflict: {}", err);
+              }
+            }
+          }
+        }
+
+        KernelCommand::Query(query, response_tx) => {
+          let response = match query {
+            KernelQuery::ListTasks(glob) => {
+              let entries = match &glob {
+                Some(pattern) => self.path_trie.glob(pattern),
+                None => self.path_trie.iter(),
+              };
+              let tasks: Vec<TaskInfo> = entries
+                .into_iter()
+                .filter_map(|(path, id)| {
+                  self.tasks.get(&id).map(|handle| TaskInfo {
+                    id,
+                    path: Some(path),
+                    status: handle.status,
+                  })
+                })
+                .collect();
+              KernelQueryResponse::TaskList(tasks)
+            }
+            KernelQuery::ResolvePath(path) => {
+              KernelQueryResponse::ResolvedPath(self.path_trie.resolve(&path))
+            }
+            KernelQuery::GetScreen(path) => {
+              let screen_text =
+                self.path_trie.resolve(&path).and_then(|task_id| {
+                  self.tasks.get(&task_id).and_then(|handle| {
+                    handle.vt.as_ref().and_then(|vt| {
+                      vt.read()
+                        .ok()
+                        .map(|parser| render_screen_ansi(parser.screen()))
+                    })
+                  })
+                });
+              KernelQueryResponse::Screen(screen_text)
+            }
+          };
+          let _ = response_tx.send(response);
         }
 
         KernelCommand::TaskStarted => {
@@ -211,6 +296,9 @@ impl Kernel {
           }
         }
         KernelCommand::TaskUpdatedScreen(vt) => {
+          if let Some(task) = self.tasks.get_mut(&msg.from) {
+            task.vt = vt.clone();
+          }
           for listener_id in self.listeners.iter() {
             if let Some(listener) = self.tasks.get_mut(&listener_id) {
               listener.task.handle_cmd(TaskCmd::Notify(
@@ -250,4 +338,111 @@ impl Kernel {
     }
     true
   }
+}
+
+fn render_screen_ansi(screen: &crate::term::screen::Screen) -> String {
+  use std::fmt::Write;
+
+  use crate::term::{attrs::Attrs, color::Color};
+
+  let size = screen.size();
+  let mut out = String::new();
+  let mut brush = Attrs::default();
+
+  for row in 0..size.height {
+    if row > 0 {
+      let _ = write!(out, "\r\n");
+    }
+    let mut line = String::new();
+    let mut line_brush = brush;
+
+    for col in 0..size.width {
+      let cell = match screen.cell(row, col) {
+        Some(c) => c,
+        None => continue,
+      };
+      let attrs = *cell.attrs();
+
+      if line_brush != attrs {
+        let _ = write!(line, "\x1b[");
+        let mut first = true;
+        let mut sep = |w: &mut String| {
+          if first {
+            first = false;
+            Ok(())
+          } else {
+            write!(w, ";")
+          }
+        };
+        if line_brush.fgcolor != attrs.fgcolor {
+          let _ = sep(&mut line);
+          match attrs.fgcolor {
+            Color::Default => {
+              let _ = write!(line, "39");
+            }
+            Color::Idx(idx) => {
+              let _ = write!(line, "38;5;{}", idx);
+            }
+            Color::Rgb(r, g, b) => {
+              let _ = write!(line, "38;2;{r};{g};{b}");
+            }
+          }
+        }
+        if line_brush.bgcolor != attrs.bgcolor {
+          let _ = sep(&mut line);
+          match attrs.bgcolor {
+            Color::Default => {
+              let _ = write!(line, "49");
+            }
+            Color::Idx(idx) => {
+              let _ = write!(line, "48;5;{}", idx);
+            }
+            Color::Rgb(r, g, b) => {
+              let _ = write!(line, "48;2;{r};{g};{b}");
+            }
+          }
+        }
+        if line_brush.bold() != attrs.bold() {
+          let _ = sep(&mut line);
+          let v = if attrs.bold() { 1 } else { 22 };
+          let _ = write!(line, "{v}");
+        }
+        if line_brush.italic() != attrs.italic() {
+          let _ = sep(&mut line);
+          let v = if attrs.italic() { 3 } else { 23 };
+          let _ = write!(line, "{v}");
+        }
+        if line_brush.underline() != attrs.underline() {
+          let _ = sep(&mut line);
+          let v = if attrs.underline() { 4 } else { 24 };
+          let _ = write!(line, "{v}");
+        }
+        if line_brush.inverse() != attrs.inverse() {
+          let _ = sep(&mut line);
+          let v = if attrs.inverse() { 7 } else { 27 };
+          let _ = write!(line, "{v}");
+        }
+        let _ = write!(line, "m");
+        line_brush = attrs;
+      }
+
+      let c = if cell.width() > 0 {
+        cell.contents()
+      } else {
+        " "
+      };
+      line.push_str(c);
+    }
+
+    // Trim trailing default-attrs spaces from each line
+    out.push_str(line.trim_end());
+    brush = line_brush;
+  }
+
+  // Reset attributes at the end
+  if brush != Attrs::default() {
+    let _ = write!(out, "\x1b[0m");
+  }
+
+  out
 }

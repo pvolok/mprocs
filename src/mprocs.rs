@@ -262,6 +262,7 @@ async fn run_app() -> anyhow::Result<()> {
           stop_on_quit: false,
           status: TaskStatus::Down,
           deps: Vec::new(),
+          path: None,
         }
       });
       tokio::spawn(async {
