@@ -5,6 +5,7 @@ mod config;
 mod config_lua;
 mod ctl;
 mod daemon;
+mod dk_app;
 pub mod dekit;
 mod error;
 mod event;

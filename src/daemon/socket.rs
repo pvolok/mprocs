@@ -7,7 +7,7 @@ pub use self::windows::{bind_server_socket, connect_client_socket};
 mod unix {
   use std::{fmt::Debug, path::Path, time::Duration};
 
-  use serde::{de::DeserializeOwned, Serialize};
+  use serde::{Serialize, de::DeserializeOwned};
   use tokio::net::{UnixListener, UnixStream};
 
   use crate::daemon::{
@@ -54,48 +54,64 @@ mod unix {
     }
   }
 
+  async fn connect_to_daemon<
+    S: Serialize + Debug + Send + 'static,
+    R: DeserializeOwned + Send + 'static,
+  >(
+    lock_path: &Path,
+  ) -> anyhow::Result<(MsgSender<S>, MsgReceiver<R>)> {
+    let contents = read_lock_file(lock_path)
+      .ok_or_else(|| anyhow::anyhow!("Failed to read daemon lock file."))?;
+    let socket = UnixStream::connect(&contents.socket)
+      .await
+      .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
+    let (read, write) = socket.into_split();
+    Ok((MsgSender::new(write), MsgReceiver::new(read)))
+  }
+
   pub async fn connect_client_socket<
     S: Serialize + Debug + Send + 'static,
     R: DeserializeOwned + Send + 'static,
   >(
     working_dir: &Path,
-    mut spawn_server: bool,
+    spawn_server: bool,
   ) -> anyhow::Result<(MsgSender<S>, MsgReceiver<R>)> {
     let (lock_path, _socket_path) = daemon_paths(working_dir)?;
 
+    let daemon_running = match read_lock_file(&lock_path) {
+      Some(_) if lockfile::is_daemon_alive(&lock_path) => true,
+      Some(_) => {
+        let _ = cleanup_stale(working_dir);
+        false
+      }
+      None => false,
+    };
+
+    if !daemon_running {
+      if spawn_server {
+        spawn_server_daemon(working_dir)?;
+      } else {
+        anyhow::bail!("Daemon is not running. Start it with `dk up`.");
+      }
+    }
+
+    if daemon_running {
+      return connect_to_daemon(&lock_path).await;
+    }
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
     loop {
-      // Try to read the lock file to find the socket.
       if let Some(contents) = read_lock_file(&lock_path) {
         if lockfile::is_daemon_alive(&lock_path) {
           let socket_path = &contents.socket;
-          match UnixStream::connect(socket_path).await {
-            Ok(socket) => {
-              let (read, write) = socket.into_split();
-              let sender = MsgSender::new(write);
-              let receiver = MsgReceiver::new(read);
-              return Ok((sender, receiver));
-            }
-            Err(err) => {
-              match err.kind() {
-                std::io::ErrorKind::ConnectionRefused => {
-                  // Daemon holds flock but socket not ready yet; wait.
-                }
-                _ => (),
-              }
-            }
+          if let Ok(socket) = UnixStream::connect(socket_path).await {
+            let (read, write) = socket.into_split();
+            return Ok((MsgSender::new(write), MsgReceiver::new(read)));
           }
-          tokio::time::sleep(Duration::from_millis(20)).await;
-          continue;
-        } else {
-          // Stale lock file.
-          let _ = cleanup_stale(working_dir);
         }
       }
-
-      // No daemon running.
-      if spawn_server {
-        spawn_server = false;
-        spawn_server_daemon(working_dir)?;
+      if tokio::time::Instant::now() >= deadline {
+        anyhow::bail!("Timed out waiting for daemon to start.");
       }
       tokio::time::sleep(Duration::from_millis(20)).await;
     }
@@ -106,7 +122,7 @@ mod unix {
 mod windows {
   use std::{fmt::Debug, path::Path, time::Duration};
 
-  use serde::{de::DeserializeOwned, Serialize};
+  use serde::{Serialize, de::DeserializeOwned};
   use tokio::net::{TcpListener, TcpStream};
 
   use crate::daemon::{
@@ -145,45 +161,64 @@ mod windows {
     }
   }
 
+  async fn connect_to_daemon<
+    S: Serialize + Debug + Send + 'static,
+    R: DeserializeOwned + Send + 'static,
+  >(
+    lock_path: &Path,
+  ) -> anyhow::Result<(MsgSender<S>, MsgReceiver<R>)> {
+    let contents = read_lock_file(lock_path)
+      .ok_or_else(|| anyhow::anyhow!("Failed to read daemon lock file."))?;
+    let socket = TcpStream::connect(&contents.socket)
+      .await
+      .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
+    let (read, write) = socket.into_split();
+    Ok((MsgSender::new(write), MsgReceiver::new(read)))
+  }
+
   pub async fn connect_client_socket<
     S: Serialize + Debug + Send + 'static,
     R: DeserializeOwned + Send + 'static,
   >(
     working_dir: &Path,
-    mut spawn_server: bool,
+    spawn_server: bool,
   ) -> anyhow::Result<(MsgSender<S>, MsgReceiver<R>)> {
     let (lock_path, _socket_path) = daemon_paths(working_dir)?;
 
+    let daemon_running = match read_lock_file(&lock_path) {
+      Some(_) if lockfile::is_daemon_alive(&lock_path) => true,
+      Some(_) => {
+        let _ = cleanup_stale(working_dir);
+        false
+      }
+      None => false,
+    };
+
+    if !daemon_running {
+      if spawn_server {
+        spawn_server_daemon(working_dir)?;
+      } else {
+        anyhow::bail!("Daemon is not running. Start it with `dk up`.");
+      }
+    }
+
+    if daemon_running {
+      return connect_to_daemon(&lock_path).await;
+    }
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     loop {
       if let Some(contents) = read_lock_file(&lock_path) {
         if lockfile::is_daemon_alive(&lock_path) {
           let addr = &contents.socket;
-          match TcpStream::connect(addr).await {
-            Ok(socket) => {
-              let (read, write) = socket.into_split();
-              let sender = MsgSender::new(write);
-              let receiver = MsgReceiver::new(read);
-              return Ok((sender, receiver));
-            }
-            Err(err) => {
-              match err.kind() {
-                std::io::ErrorKind::ConnectionRefused => {
-                  // Daemon holds flock but socket not ready yet.
-                }
-                _ => (),
-              }
-            }
+          if let Ok(socket) = TcpStream::connect(addr).await {
+            let (read, write) = socket.into_split();
+            return Ok((MsgSender::new(write), MsgReceiver::new(read)));
           }
-          tokio::time::sleep(Duration::from_millis(50)).await;
-          continue;
-        } else {
-          let _ = cleanup_stale(working_dir);
         }
       }
-
-      if spawn_server {
-        spawn_server = false;
-        spawn_server_daemon(working_dir)?;
+      if tokio::time::Instant::now() >= deadline {
+        anyhow::bail!("Timed out waiting for daemon to start.");
       }
       tokio::time::sleep(Duration::from_millis(50)).await;
     }

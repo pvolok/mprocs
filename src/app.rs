@@ -21,20 +21,20 @@ use crate::{
     rename_proc::RenameProcModal,
   },
   proc::{
+    CopyMode, Pos, StopSignal,
     msg::ProcMsg,
     proc::launch_proc,
-    view::{TargetState, RESTART_THRESHOLD_SECONDS},
-    CopyMode, Pos, StopSignal,
+    view::{RESTART_THRESHOLD_SECONDS, TargetState},
   },
   protocol::{CltToSrv, SrvToClt},
   server::server_message::ServerMessage,
   state::{Scope, State},
   term::{
+    Grid, MouseProtocolMode, ScreenDiffer, Size, TermEvent,
     attrs::Attrs,
     grid::Rect,
     key::{Key, KeyEventKind},
     mouse::{MouseButton, MouseEventKind},
-    Grid, MouseProtocolMode, ScreenDiffer, Size, TermEvent,
   },
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
@@ -1142,10 +1142,10 @@ pub async fn client_loop(
 }
 
 pub struct ClientHandle {
-  id: ClientId,
-  sender: MsgSender<SrvToClt>,
-  screen_size: Size,
-  differ: ScreenDiffer,
+  pub id: ClientId,
+  pub sender: MsgSender<SrvToClt>,
+  pub screen_size: Size,
+  pub differ: ScreenDiffer,
 }
 
 impl Debug for ClientHandle {
@@ -1170,11 +1170,11 @@ impl ClientHandle {
     })
   }
 
-  fn size(&self) -> Size {
+  pub fn size(&self) -> Size {
     self.screen_size
   }
 
-  fn resize(&mut self, size: Size) {
+  pub fn resize(&mut self, size: Size) {
     self.screen_size = size;
   }
 }
