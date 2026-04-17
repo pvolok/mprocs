@@ -6,7 +6,7 @@ use std::{
 use anyhow::Result;
 use serde_yaml::Value;
 
-use crate::yaml_val::Val;
+use crate::mprocs::yaml_val::Val;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum LogMode {

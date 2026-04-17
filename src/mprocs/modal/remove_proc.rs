@@ -1,14 +1,14 @@
-use crate::{
+use crate::kernel::{kernel_message::TaskContext, task::TaskId};
+use crate::mprocs::{
   app::LoopAction,
   event::AppEvent,
-  kernel::{kernel_message::TaskContext, task::TaskId},
   state::State,
-  term::{
-    attrs::Attrs,
-    grid::{BorderType, Rect},
-    key::{Key, KeyCode},
-    Grid, TermEvent,
-  },
+};
+use crate::term::{
+  attrs::Attrs,
+  grid::{BorderType, Rect},
+  key::{Key, KeyCode},
+  Grid, TermEvent,
 };
 
 use super::modal::Modal;

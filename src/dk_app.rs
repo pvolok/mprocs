@@ -1,7 +1,7 @@
 use tokio::sync::mpsc::UnboundedReceiver;
 
+use crate::mprocs::app::{ClientHandle, ClientId};
 use crate::{
-  app::{ClientHandle, ClientId},
   error::ResultLogger,
   kernel::kernel_message::{
     KernelCommand, KernelQuery, KernelQueryResponse, TaskContext,

@@ -1,36 +1,36 @@
 use tui_input::Input;
 
-use crate::{
+use crate::kernel::kernel_message::TaskContext;
+use crate::mprocs::{
   app::LoopAction,
   event::AppEvent,
-  kernel::kernel_message::TaskContext,
   state::State,
-  term::{
-    attrs::Attrs,
-    grid::{Pos, Rect},
-    key::{Key, KeyCode},
-    Grid, TermEvent,
-  },
   widgets::text_input::{render_text_input, to_input_request},
+};
+use crate::term::{
+  attrs::Attrs,
+  grid::{BorderType, Pos, Rect},
+  key::{Key, KeyCode},
+  Grid, TermEvent,
 };
 
 use super::modal::Modal;
 
-pub struct AddProcModal {
+pub struct RenameProcModal {
   pc: TaskContext,
   input: Input,
 }
 
-impl AddProcModal {
+impl RenameProcModal {
   pub fn new(pc: TaskContext) -> Self {
-    AddProcModal {
+    RenameProcModal {
       pc,
       input: Input::default(),
     }
   }
 }
 
-impl Modal for AddProcModal {
+impl Modal for RenameProcModal {
   fn handle_input(
     &mut self,
     _state: &mut State,
@@ -44,11 +44,10 @@ impl Modal for AddProcModal {
         ..
       }) if mods.is_empty() => {
         self.pc.send_self_custom(AppEvent::CloseCurrentModal);
-        self.pc.send_self_custom(AppEvent::AddProc {
-          cmd: self.input.value().to_string(),
-          name: None,
+        self.pc.send_self_custom(AppEvent::RenameProc {
+          name: self.input.value().to_string(),
         });
-        // Skip because AddProc event will immediately rerender.
+        // Skip because RenameProc event will immediately rerender.
         return true;
       }
       TermEvent::Key(Key {
@@ -88,17 +87,9 @@ impl Modal for AddProcModal {
   }
 
   fn render(&mut self, grid: &mut Grid) {
-    let area = self.area(Rect {
-      x: 0,
-      y: 0,
-      width: grid.size().width,
-      height: grid.size().height,
-    });
-    grid.draw_block(
-      area.into(),
-      crate::term::grid::BorderType::Plain,
-      Attrs::default(),
-    );
+    let area = self.area(grid.area());
+
+    grid.draw_block(area, BorderType::Thick, Attrs::default());
     grid.draw_text(
       Rect {
         x: area.x + 1,
@@ -106,16 +97,11 @@ impl Modal for AddProcModal {
         width: area.width.saturating_sub(2),
         height: 1,
       },
-      "Add process",
+      "Rename process",
       Attrs::default(),
     );
 
-    let inner = Rect {
-      x: area.x + 1,
-      y: area.y + 1,
-      width: area.width.saturating_sub(2),
-      height: 1,
-    };
+    let inner = area.inner(1);
 
     let mut cursor = (0u16, 0u16);
     render_text_input(&mut self.input, inner, grid, &mut cursor);

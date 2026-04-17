@@ -2,7 +2,7 @@ use anyhow::Result;
 use indexmap::IndexMap;
 use serde_json::Value;
 
-use crate::{
+use crate::mprocs::{
   config::{CmdConfig, ProcConfig},
   proc::StopSignal,
   settings::Settings,

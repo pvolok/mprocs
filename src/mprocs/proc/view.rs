@@ -1,7 +1,5 @@
-use crate::{
-  config::ProcConfig,
-  kernel::{kernel_message::SharedVt, task::TaskId},
-};
+use crate::kernel::{kernel_message::SharedVt, task::TaskId};
+use crate::mprocs::config::ProcConfig;
 
 use super::CopyMode;
 

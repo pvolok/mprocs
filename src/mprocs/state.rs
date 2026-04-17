@@ -1,6 +1,6 @@
-use crate::{
+use crate::kernel::task::TaskId;
+use crate::mprocs::{
   app::ClientId,
-  kernel::task::TaskId,
   keymap::KeymapGroup,
   proc::{view::ProcView, CopyMode},
   widgets::list::ListState,

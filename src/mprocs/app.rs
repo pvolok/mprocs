@@ -6,14 +6,25 @@ use serde::{Deserialize, Serialize};
 use tokio::{io::AsyncReadExt, sync::mpsc::UnboundedReceiver};
 
 use crate::{
-  config::{CmdConfig, Config, ProcConfig, ServerConfig},
   daemon::{receiver::MsgReceiver, sender::MsgSender},
   error::ResultLogger,
-  event::{AppEvent, CopyMove},
   kernel::{
     kernel_message::{KernelCommand, TaskContext, TaskSender},
     task::{ChannelTask, TaskCmd, TaskId, TaskInit, TaskNotify, TaskStatus},
   },
+  protocol::{CltToSrv, SrvToClt},
+  server::server_message::ServerMessage,
+  term::{
+    Grid, MouseProtocolMode, ScreenDiffer, Size, TermEvent,
+    attrs::Attrs,
+    grid::Rect,
+    key::{Key, KeyEventKind},
+    mouse::{MouseButton, MouseEventKind},
+  },
+};
+use crate::mprocs::{
+  config::{CmdConfig, Config, ProcConfig, ServerConfig},
+  event::{AppEvent, CopyMove},
   keymap::Keymap,
   modal::{
     add_proc::AddProcModal, commands_menu::CommandsMenuModal, modal::Modal,
@@ -26,16 +37,7 @@ use crate::{
     proc::launch_proc,
     view::{RESTART_THRESHOLD_SECONDS, TargetState},
   },
-  protocol::{CltToSrv, SrvToClt},
-  server::server_message::ServerMessage,
   state::{Scope, State},
-  term::{
-    Grid, MouseProtocolMode, ScreenDiffer, Size, TermEvent,
-    attrs::Attrs,
-    grid::Rect,
-    key::{Key, KeyEventKind},
-    mouse::{MouseButton, MouseEventKind},
-  },
   ui_keymap::render_keymap,
   ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
   ui_term::{render_term, term_check_hit},

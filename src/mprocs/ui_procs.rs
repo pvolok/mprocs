@@ -2,14 +2,14 @@ use std::borrow::Cow;
 
 use unicode_width::UnicodeWidthStr;
 
-use crate::{
+use crate::mprocs::{
   config::Config,
   state::{Scope, State},
-  term::{
-    attrs::Attrs,
-    grid::{BorderType, Rect},
-    Color, Grid,
-  },
+};
+use crate::term::{
+  attrs::Attrs,
+  grid::{BorderType, Rect},
+  Color, Grid,
 };
 
 pub fn render_procs(

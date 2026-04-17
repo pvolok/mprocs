@@ -5,14 +5,14 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 
-use crate::{
+use crate::mprocs::{
   event::AppEvent,
   proc::StopSignal,
   proc_log_config::LogConfig,
-  process::process_spec::ProcessSpec,
   settings::Settings,
   yaml_val::{value_to_string, Val},
 };
+use crate::process::process_spec::ProcessSpec;
 
 pub struct ConfigContext {
   pub path: PathBuf,
@@ -99,7 +99,7 @@ impl Config {
 
     let proc_log = {
       match config.get(&Value::from("proc_log")) {
-        Some(val) => crate::proc_log_config::parse_log_config(val, |path| {
+        Some(val) => crate::mprocs::proc_log_config::parse_log_config(val, |path| {
           resolve_config_path(path, ctx)
         })?,
         None => settings.proc_log.clone(),
@@ -250,7 +250,7 @@ impl ProcConfig {
         let log = {
           match map.get(&Value::from("log")) {
             Some(val) => {
-              crate::proc_log_config::parse_log_config(val, |path| {
+              crate::mprocs::proc_log_config::parse_log_config(val, |path| {
                 resolve_config_path(path, ctx)
               })?
             }

@@ -1,5 +1,5 @@
 use crate::{
-  app::{ClientHandle, ClientId},
+  mprocs::app::{ClientHandle, ClientId},
   protocol::CltToSrv,
 };
 

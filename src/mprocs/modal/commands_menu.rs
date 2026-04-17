@@ -2,24 +2,24 @@ use std::collections::HashMap;
 
 use tui_input::Input;
 
-use crate::{
+use crate::kernel::kernel_message::TaskContext;
+use crate::mprocs::{
   app::LoopAction,
   event::AppEvent,
-  kernel::kernel_message::TaskContext,
   keymap::Keymap,
   state::State,
-  term::{
-    attrs::Attrs,
-    encode::print_key,
-    grid::{BorderType, Pos, Rect},
-    key::{Key, KeyCode, KeyMods},
-    line_symbols::{HORIZONTAL, VERTICAL_LEFT, VERTICAL_RIGHT},
-    Color, Grid, TermEvent,
-  },
   widgets::{
     list::ListState,
     text_input::{render_text_input, to_input_request},
   },
+};
+use crate::term::{
+  attrs::Attrs,
+  encode::print_key,
+  grid::{BorderType, Pos, Rect},
+  key::{Key, KeyCode, KeyMods},
+  line_symbols::{HORIZONTAL, VERTICAL_LEFT, VERTICAL_RIGHT},
+  Color, Grid, TermEvent,
 };
 
 use super::modal::Modal;

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::proc::Pos;
+use crate::mprocs::proc::Pos;
 
 use super::{grid::Rect, key::KeyMods};
 

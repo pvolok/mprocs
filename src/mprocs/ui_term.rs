@@ -1,8 +1,8 @@
-use crate::{
+use crate::mprocs::{
   proc::{view::ProcViewFrame, CopyMode, Pos},
   state::{Scope, State},
-  term::{attrs::Attrs, grid::Rect, Color, Grid, Screen},
 };
+use crate::term::{attrs::Attrs, grid::Rect, Color, Grid, Screen};
 
 pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {
   if area.width < 3 || area.height < 3 {

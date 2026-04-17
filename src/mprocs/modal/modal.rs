@@ -1,8 +1,5 @@
-use crate::{
-  app::LoopAction,
-  state::State,
-  term::{grid::Rect, Grid, TermEvent},
-};
+use crate::mprocs::{app::LoopAction, state::State};
+use crate::term::{grid::Rect, Grid, TermEvent};
 
 pub trait Modal: Send {
   fn boxed(self) -> Box<dyn Modal>

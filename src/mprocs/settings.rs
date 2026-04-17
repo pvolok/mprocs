@@ -4,13 +4,13 @@ use anyhow::Result;
 use indexmap::IndexMap;
 use serde_yaml::Value;
 
-use crate::{
+use crate::mprocs::{
   event::{AppEvent, CopyMove},
-  term::key::{Key, KeyCode, KeyMods},
   keymap::Keymap,
   proc_log_config::LogConfig,
   yaml_val::{value_to_string, Val},
 };
+use crate::term::key::{Key, KeyCode, KeyMods};
 
 #[derive(Debug)]
 pub struct Settings {
@@ -159,7 +159,7 @@ impl Settings {
 
     if let Some(proc_log) = obj.get(&Value::from("proc_log")) {
       self.proc_log =
-        crate::proc_log_config::parse_log_config(proc_log, |path| {
+        crate::mprocs::proc_log_config::parse_log_config(proc_log, |path| {
           Ok(PathBuf::from(path))
         })?;
     }

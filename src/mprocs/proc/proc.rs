@@ -6,12 +6,12 @@ use tokio::io::AsyncWriteExt;
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use crate::config::ProcConfig;
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::{KernelCommand, TaskContext};
 use crate::kernel::task::{ChannelTask, TaskCmd, TaskId, TaskInit, TaskStatus};
 use crate::kernel::task_path::TaskPath;
-use crate::proc_log_config::LogConfig;
+use crate::mprocs::config::ProcConfig;
+use crate::mprocs::proc_log_config::LogConfig;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
 use crate::term::encode::{encode_key, encode_mouse_event, KeyCodeEncodeModes};

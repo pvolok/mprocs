@@ -4,8 +4,8 @@ use anyhow::{anyhow, bail};
 use clap::{Arg, Command};
 use rquickjs::CatchResultExt;
 
+use crate::mprocs::app::{ClientHandle, ClientId};
 use crate::{
-  app::{ClientHandle, ClientId},
   client::client_main,
   daemon::{
     lockfile,
@@ -242,14 +242,14 @@ async fn handle_rpc(
       if cmd.is_empty() {
         bail!("cmd must not be empty".to_string());
       }
-      let proc_config = crate::config::ProcConfig {
+      let proc_config = crate::mprocs::config::ProcConfig {
         name: task_path.name().to_string(),
-        cmd: crate::config::CmdConfig::Cmd { cmd },
+        cmd: crate::mprocs::config::CmdConfig::Cmd { cmd },
         cwd: cwd.map(|s| s.into()),
         env: None,
         autostart: true,
         autorestart: false,
-        stop: crate::proc::StopSignal::default(),
+        stop: crate::mprocs::proc::StopSignal::default(),
         deps: Vec::new(),
         mouse_scroll_speed: 5,
         scrollback_len: 1000,
@@ -262,7 +262,7 @@ async fn handle_rpc(
         width: 80,
         height: 24,
       };
-      crate::proc::proc::launch_proc(
+      crate::mprocs::proc::proc::launch_proc(
         pc,
         proc_config,
         task_id,
@@ -379,7 +379,8 @@ pub async fn dekit_main() -> anyhow::Result<()> {
       let cmd: Vec<String> =
         sub_m.get_many::<String>("cmd").unwrap().cloned().collect();
       let resp =
-        rpc_request(&working_dir, DkRequest::Spawn { path, cmd, cwd }, true).await?;
+        rpc_request(&working_dir, DkRequest::Spawn { path, cmd, cwd }, true)
+          .await?;
       match resp {
         DkResponse::Ok => println!("Spawned."),
         DkResponse::Error(e) => eprintln!("Error: {}", e),
@@ -389,7 +390,8 @@ pub async fn dekit_main() -> anyhow::Result<()> {
     Some(("ls", sub_m)) => {
       let working_dir = std::env::current_dir()?;
       let glob = sub_m.get_one::<String>("glob").cloned();
-      let resp = rpc_request(&working_dir, DkRequest::Ls { glob }, false).await?;
+      let resp =
+        rpc_request(&working_dir, DkRequest::Ls { glob }, false).await?;
       match resp {
         DkResponse::TaskList(tasks) => {
           if tasks.is_empty() {
@@ -407,7 +409,8 @@ pub async fn dekit_main() -> anyhow::Result<()> {
     Some(("start", sub_m)) => {
       let working_dir = std::env::current_dir()?;
       let path = sub_m.get_one::<String>("path").unwrap().clone();
-      let resp = rpc_request(&working_dir, DkRequest::Start { path }, true).await?;
+      let resp =
+        rpc_request(&working_dir, DkRequest::Start { path }, true).await?;
       match resp {
         DkResponse::Ok => println!("Started."),
         DkResponse::Error(e) => eprintln!("Error: {}", e),
@@ -417,7 +420,8 @@ pub async fn dekit_main() -> anyhow::Result<()> {
     Some(("stop", sub_m)) => {
       let working_dir = std::env::current_dir()?;
       let path = sub_m.get_one::<String>("path").unwrap().clone();
-      let resp = rpc_request(&working_dir, DkRequest::Stop { path }, false).await?;
+      let resp =
+        rpc_request(&working_dir, DkRequest::Stop { path }, false).await?;
       match resp {
         DkResponse::Ok => println!("Stopped."),
         DkResponse::Error(e) => eprintln!("Error: {}", e),
@@ -427,7 +431,8 @@ pub async fn dekit_main() -> anyhow::Result<()> {
     Some(("kill", sub_m)) => {
       let working_dir = std::env::current_dir()?;
       let path = sub_m.get_one::<String>("path").unwrap().clone();
-      let resp = rpc_request(&working_dir, DkRequest::Kill { path }, false).await?;
+      let resp =
+        rpc_request(&working_dir, DkRequest::Kill { path }, false).await?;
       match resp {
         DkResponse::Ok => println!("Killed."),
         DkResponse::Error(e) => eprintln!("Error: {}", e),
@@ -437,7 +442,8 @@ pub async fn dekit_main() -> anyhow::Result<()> {
     Some(("restart", sub_m)) => {
       let working_dir = std::env::current_dir()?;
       let path = sub_m.get_one::<String>("path").unwrap().clone();
-      let resp = rpc_request(&working_dir, DkRequest::Restart { path }, true).await?;
+      let resp =
+        rpc_request(&working_dir, DkRequest::Restart { path }, true).await?;
       match resp {
         DkResponse::Ok => println!("Restarted."),
         DkResponse::Error(e) => eprintln!("Error: {}", e),
@@ -447,7 +453,8 @@ pub async fn dekit_main() -> anyhow::Result<()> {
     Some(("screen", sub_m)) => {
       let working_dir = std::env::current_dir()?;
       let path = sub_m.get_one::<String>("path").unwrap().clone();
-      let resp = rpc_request(&working_dir, DkRequest::Screen { path }, false).await?;
+      let resp =
+        rpc_request(&working_dir, DkRequest::Screen { path }, false).await?;
       match resp {
         DkResponse::Screen(Some(content)) => {
           print!("{}", content);

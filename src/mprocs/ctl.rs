@@ -1,6 +1,6 @@
 use serde_yaml::Value;
 
-use crate::{
+use crate::mprocs::{
   config::{Config, ServerConfig},
   event::AppEvent,
 };

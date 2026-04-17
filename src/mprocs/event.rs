@@ -2,9 +2,9 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-  app::ClientId, kernel::task::TaskId, term::key::Key,
-};
+use crate::kernel::task::TaskId;
+use crate::mprocs::app::ClientId;
+use crate::term::key::Key;
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(tag = "c", rename_all = "kebab-case")]

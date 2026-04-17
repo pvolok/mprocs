@@ -1,9 +1,9 @@
-use crate::{
+use crate::mprocs::{
   event::AppEvent,
   keymap::{Keymap, KeymapGroup},
   state::State,
-  term::{attrs::Attrs, encode::print_key, grid::Rect, Color, Grid},
 };
+use crate::term::{attrs::Attrs, encode::print_key, grid::Rect, Color, Grid};
 
 pub fn render_keymap(
   area: Rect,

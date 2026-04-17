@@ -8,8 +8,8 @@ use std::fmt::Debug;
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 
+use crate::mprocs::yaml_val::Val;
 use crate::term::key::Key;
-use crate::yaml_val::Val;
 
 #[derive(Clone, Debug, Default)]
 pub enum StopSignal {

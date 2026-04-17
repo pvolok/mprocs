@@ -1,8 +1,8 @@
-use crate::{
+use crate::mprocs::{
   event::AppEvent,
   keymap::{Keymap, KeymapGroup},
-  term::{attrs::Attrs, grid::Rect, Color, Grid},
 };
+use crate::term::{attrs::Attrs, grid::Rect, Color, Grid};
 
 pub fn render_zoom_tip(area: Rect, grid: &mut Grid, keymap: &Keymap) {
   if area.height == 0 {
