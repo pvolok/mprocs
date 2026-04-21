@@ -13,7 +13,8 @@ use super::{
   },
   path_trie::PathTrie,
   task::{
-    DepInfo, TaskCmd, TaskHandle, TaskId, TaskInit, TaskNotify, TaskStatus,
+    DepInfo, Task, TaskCmd, TaskDef, TaskHandle, TaskId, TaskInit, TaskNotify,
+    TaskStatus,
   },
 };
 
@@ -103,6 +104,62 @@ impl Kernel {
     }
   }
 
+  pub fn register_task(
+    &mut self,
+    def: TaskDef,
+    factory: impl FnOnce(TaskContext) -> Box<dyn Task> + 'static,
+  ) -> TaskId {
+    let task_id = TaskId(
+      self
+        .next_task_id
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+    );
+    self.register_task_with_id(task_id, def, Box::new(factory));
+    task_id
+  }
+
+  fn register_task_with_id(
+    &mut self,
+    task_id: TaskId,
+    def: TaskDef,
+    factory: Box<dyn FnOnce(TaskContext) -> Box<dyn Task>>,
+  ) {
+    let ctx =
+      TaskContext::new(self.next_task_id.clone(), task_id, self.sender.clone());
+    let task = factory(ctx);
+    let path = def.path.clone();
+    let mut handle = TaskHandle {
+      task_id,
+      task,
+      stop_on_quit: def.stop_on_quit,
+      status: def.status,
+      deps: HashMap::new(),
+      path: def.path,
+      vt: None,
+    };
+
+    for dep_id in &def.deps {
+      handle.deps.insert(
+        *dep_id,
+        DepInfo {
+          status: self
+            .tasks
+            .get(dep_id)
+            .map_or(TaskStatus::Down, |d| d.status),
+        },
+      );
+      self.rev_deps.entry(*dep_id).or_default().insert(task_id);
+    }
+
+    self.tasks.insert(task_id, handle);
+
+    if let Some(path) = path {
+      if let Err(err) = self.path_trie.insert(&path, task_id) {
+        log::error!("Path conflict while registering task: {}", err);
+      }
+    }
+  }
+
   pub async fn run(mut self) {
     loop {
       let msg = if let Some(msg) = self.receiver.recv().await {
@@ -133,6 +190,9 @@ impl Kernel {
 
         KernelCommand::AddTask(task_id, create_task) => {
           self.spawn_task_with_id(task_id, create_task);
+        }
+        KernelCommand::RegisterTask(task_id, def, factory) => {
+          self.register_task_with_id(task_id, def, factory);
         }
         KernelCommand::TaskCmd(task_id, cmd) => {
           if let Some(task) = self.tasks.get_mut(&task_id) {

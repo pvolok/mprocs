@@ -1,6 +1,6 @@
 use std::{ffi::OsString, path::PathBuf, str::FromStr};
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
@@ -10,7 +10,7 @@ use crate::mprocs::{
   proc::StopSignal,
   proc_log_config::LogConfig,
   settings::Settings,
-  yaml_val::{value_to_string, Val},
+  yaml_val::{Val, value_to_string},
 };
 use crate::process::process_spec::ProcessSpec;
 
@@ -99,9 +99,11 @@ impl Config {
 
     let proc_log = {
       match config.get(&Value::from("proc_log")) {
-        Some(val) => crate::mprocs::proc_log_config::parse_log_config(val, |path| {
-          resolve_config_path(path, ctx)
-        })?,
+        Some(val) => {
+          crate::mprocs::proc_log_config::parse_log_config(val, |path| {
+            resolve_config_path(path, ctx)
+          })?
+        }
         None => settings.proc_log.clone(),
       }
     };

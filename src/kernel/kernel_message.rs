@@ -10,7 +10,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::term::Parser;
 
-use super::task::{TaskCmd, TaskId, TaskInit, TaskStatus};
+use super::task::{Task, TaskCmd, TaskDef, TaskId, TaskInit, TaskStatus};
 use super::task_path::TaskPath;
 
 pub struct KernelMessage {
@@ -22,6 +22,11 @@ pub enum KernelCommand {
   Quit,
 
   AddTask(TaskId, Box<dyn FnOnce(TaskContext) -> TaskInit + Send>),
+  RegisterTask(
+    TaskId,
+    TaskDef,
+    Box<dyn FnOnce(TaskContext) -> Box<dyn Task> + Send>,
+  ),
   TaskCmd(TaskId, TaskCmd),
 
   TaskCmdByPath(TaskPath, TaskCmd),
@@ -148,6 +153,44 @@ impl TaskContext {
   ) -> TaskId {
     self.send(KernelCommand::AddTask(task_id, f));
     task_id
+  }
+
+  pub fn register(
+    &self,
+    def: TaskDef,
+    factory: Box<dyn FnOnce(TaskContext) -> Box<dyn Task> + Send>,
+  ) -> TaskId {
+    let task_id = self.alloc_id();
+    self.register_with_id(task_id, def, factory)
+  }
+
+  pub fn register_with_id(
+    &self,
+    task_id: TaskId,
+    def: TaskDef,
+    factory: Box<dyn FnOnce(TaskContext) -> Box<dyn Task> + Send>,
+  ) -> TaskId {
+    self.send(KernelCommand::RegisterTask(task_id, def, factory));
+    task_id
+  }
+
+  pub fn spawn_async<F, Fut>(&self, def: TaskDef, f: F) -> TaskId
+  where
+    F: FnOnce(TaskContext, tokio::sync::mpsc::UnboundedReceiver<TaskCmd>)
+      -> Fut
+      + Send
+      + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+  {
+    use super::task::ChannelTask;
+    self.register(
+      def,
+      Box::new(|ctx| {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(f(ctx, rx));
+        Box::new(ChannelTask::new(tx))
+      }),
+    )
   }
 
   pub fn send_to_path(&self, path: TaskPath, cmd: TaskCmd) {

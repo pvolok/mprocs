@@ -11,7 +11,7 @@ use super::task_path::TaskPath;
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct TaskId(pub usize);
 
-pub trait KernelTask: Send {
+pub trait Task: Send + 'static {
   fn handle_cmd(&mut self, cmd: TaskCmd);
 }
 
@@ -69,7 +69,7 @@ impl ChannelTask {
   }
 }
 
-impl KernelTask for ChannelTask {
+impl Task for ChannelTask {
   fn handle_cmd(&mut self, cmd: TaskCmd) {
     let _ = self.sender.send(cmd);
   }
@@ -77,14 +77,14 @@ impl KernelTask for ChannelTask {
 
 pub struct NoopTask;
 
-impl KernelTask for NoopTask {
+impl Task for NoopTask {
   fn handle_cmd(&mut self, _cmd: TaskCmd) {}
 }
 
 pub struct TaskHandle {
   #[allow(dead_code)]
   pub task_id: TaskId,
-  pub task: Box<dyn KernelTask>,
+  pub task: Box<dyn Task>,
 
   pub stop_on_quit: bool,
   pub status: TaskStatus,
@@ -102,7 +102,7 @@ pub enum TaskStatus {
 }
 
 pub struct TaskInit {
-  pub task: Box<dyn KernelTask>,
+  pub task: Box<dyn Task>,
   pub stop_on_quit: bool,
   pub status: TaskStatus,
   pub deps: Vec<TaskId>,
@@ -111,4 +111,22 @@ pub struct TaskInit {
 
 pub struct DepInfo {
   pub status: TaskStatus,
+}
+
+pub struct TaskDef {
+  pub stop_on_quit: bool,
+  pub status: TaskStatus,
+  pub deps: Vec<TaskId>,
+  pub path: Option<TaskPath>,
+}
+
+impl Default for TaskDef {
+  fn default() -> Self {
+    Self {
+      stop_on_quit: false,
+      status: TaskStatus::Down,
+      deps: Vec::new(),
+      path: None,
+    }
+  }
 }

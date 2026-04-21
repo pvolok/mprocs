@@ -242,34 +242,13 @@ async fn handle_rpc(
       if cmd.is_empty() {
         bail!("cmd must not be empty".to_string());
       }
-      let proc_config = crate::mprocs::config::ProcConfig {
-        name: task_path.name().to_string(),
-        cmd: crate::mprocs::config::CmdConfig::Cmd { cmd },
-        cwd: cwd.map(|s| s.into()),
-        env: None,
-        autostart: true,
-        autorestart: false,
-        stop: crate::mprocs::proc::StopSignal::default(),
-        deps: Vec::new(),
-        mouse_scroll_speed: 5,
-        scrollback_len: 1000,
-        log: None,
-      };
-      let task_id = pc.alloc_id();
-      let size = crate::term::grid::Rect {
-        x: 0,
-        y: 0,
-        width: 80,
-        height: 24,
-      };
-      crate::mprocs::proc::proc::launch_proc(
-        pc,
-        proc_config,
-        task_id,
-        Vec::new(),
-        Some(task_path),
-        size,
-      );
+      let mut spec = crate::process::process_spec::ProcessSpec::from_argv(cmd);
+      if let Some(cwd) = cwd {
+        spec.cwd(cwd);
+      } else if let Ok(cwd) = std::env::current_dir() {
+        spec.cwd(cwd.to_string_lossy());
+      }
+      crate::task::proc_task::ProcTask::spawn(pc, task_path, spec);
       DkResponse::Ok
     }
   };

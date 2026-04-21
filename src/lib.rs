@@ -1,5 +1,6 @@
 mod client;
 mod clipboard;
+pub mod config;
 mod daemon;
 mod dk_app;
 pub mod dekit;
@@ -11,5 +12,6 @@ pub mod mprocs;
 mod process;
 mod protocol;
 mod server;
+mod task;
 mod term;
 mod term_driver;
