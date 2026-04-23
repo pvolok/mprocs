@@ -368,6 +368,7 @@ impl Kernel {
   }
 
   fn notify_listeners(&mut self, from: TaskId, notify: TaskNotify) {
+    let mut all_fx: Vec<(TaskId, Effects)> = Vec::new();
     for listener_id in self.listeners.iter() {
       if let Some(listener) = self.tasks.get_mut(listener_id) {
         let mut fx = Effects::new();
@@ -378,8 +379,11 @@ impl Kernel {
           }),
           &mut fx,
         );
-        // TODO: Effects are ignored.
+        all_fx.push((*listener_id, fx));
       }
+    }
+    for (task_id, mut fx) in all_fx {
+      self.apply_effects(task_id, &mut fx);
     }
   }
 

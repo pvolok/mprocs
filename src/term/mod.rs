@@ -17,7 +17,7 @@ pub use cell::Cell;
 pub use color::Color;
 pub use common::{CursorStyle, Size, Winsize};
 pub use event::TermEvent;
-pub use grid::Grid;
+pub use grid::{Grid, scroll_offset};
 pub use parser::Parser;
 pub use screen::{MouseProtocolMode, Screen, VtEvent};
 pub use screen_differ::ScreenDiffer;

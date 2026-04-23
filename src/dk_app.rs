@@ -16,6 +16,7 @@ use crate::{
     attrs::Attrs,
     grid::Rect,
     key::{KeyCode, KeyEventKind, KeyMods},
+    scroll_offset,
   },
 };
 
@@ -209,80 +210,59 @@ impl DkApp {
     grid.erase_all(Attrs::default());
     grid.cursor_pos = None;
 
-    let w = self.screen_size.width;
-    let h = self.screen_size.height;
-
-    if w < 4 || h < 3 {
+    let area = Rect::new(0, 0, self.screen_size.width, self.screen_size.height);
+    if area.width < 4 || area.height < 3 {
       return;
     }
 
+    let (title_row, area) = area.split_h(1);
+    let (area, help_row) = area.split_h(area.height - 1);
+
     // Title bar
-    let title = " dekit ";
-    let title_attrs = Attrs::default()
+    let bar_attrs = Attrs::default()
       .fg(Color::BLACK)
       .bg(Color::WHITE)
       .set_bold(true);
-    let bar_attrs = Attrs::default().fg(Color::BLACK).bg(Color::WHITE);
-    for x in 0..w {
-      grid.draw_text(Rect::new(x, 0, 1, 1), " ", bar_attrs);
-    }
-    grid.draw_text(Rect::new(1, 0, w.saturating_sub(2), 1), title, title_attrs);
+    grid.draw_line(title_row, " dekit", bar_attrs);
 
     // Task list
     if self.tasks.is_empty() {
-      let msg = "No tasks";
       let attrs = Attrs::default().fg(Color::Idx(245));
-      grid.draw_text(Rect::new(2, 2, w.saturating_sub(4), 1), msg, attrs);
+      grid.draw_text(area.inner((1, 2)), "No tasks", attrs);
     } else {
-      let max_rows = (h.saturating_sub(2)) as usize;
-      let start = if self.selected >= max_rows {
-        self.selected - max_rows + 1
-      } else {
-        0
-      };
+      let max_rows = area.height as usize;
+      let start = scroll_offset(self.selected, self.tasks.len(), max_rows);
 
       for (i, task) in self.tasks.iter().enumerate().skip(start).take(max_rows)
       {
-        let row = (i - start + 1) as u16;
+        let Some(row) = area.row((i - start) as u16) else {
+          break;
+        };
         let is_selected = i == self.selected;
-
-        let line_attrs = if is_selected {
-          Attrs::default().bg(Color::Idx(236))
+        let bg = if is_selected {
+          Color::Idx(236)
         } else {
-          Attrs::default()
+          Color::Default
         };
 
-        if is_selected {
-          for x in 0..w {
-            grid.draw_text(Rect::new(x, row, 1, 1), " ", line_attrs);
-          }
-        }
+        let (status_col, path_col) = row.inner((0, 1)).split_v(2);
 
-        // Status indicator
         let (status_char, status_color) = match task.status {
           TaskStatus::Running => ("●", Color::GREEN),
           TaskStatus::Down => ("○", Color::RED),
         };
-        let status_attrs = if is_selected {
-          Attrs::default().fg(status_color).bg(Color::Idx(236))
-        } else {
-          Attrs::default().fg(status_color)
-        };
-        grid.draw_text(Rect::new(1, row, 2, 1), status_char, status_attrs);
-
-        // Task path
-        grid.draw_text(
-          Rect::new(3, row, w.saturating_sub(4), 1),
-          &task.path,
-          line_attrs,
+        grid.draw_line(
+          status_col,
+          status_char,
+          Attrs::default().fg(status_color).bg(bg),
         );
+        grid.draw_line(path_col, &task.path, Attrs::default().bg(bg));
       }
     }
 
     // Bottom help line
-    let help = " j/k:navigate  q:quit ";
     let help_attrs = Attrs::default().fg(Color::Idx(245));
-    grid.draw_text(Rect::new(0, h - 1, w, 1), help, help_attrs);
+    grid.draw_line(help_row, " j/k:navigate  q:quit", help_attrs);
 
     // Send diffs to clients
     for client in &mut self.clients {

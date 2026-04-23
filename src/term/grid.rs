@@ -716,6 +716,26 @@ impl Grid {
     }
   }
 
+  /// Like `draw_text`, but fills the remaining width of `area` with spaces.
+  pub fn draw_line(&mut self, area: Rect, text: &str, attrs: Attrs) -> Rect {
+    let used = self.draw_text(area, text, attrs);
+    let remaining_x = area.x + used.width;
+    let remaining_w = area.width.saturating_sub(used.width);
+    if remaining_w > 0 {
+      self.fill_area(
+        Rect::new(remaining_x, area.y, remaining_w, 1),
+        ' ',
+        attrs,
+      );
+    }
+    Rect {
+      x: area.x,
+      y: area.y,
+      width: area.width,
+      height: 1,
+    }
+  }
+
   pub fn fill_area(&mut self, area: Rect, c: char, attrs: Attrs) {
     for col in area.x..area.x + area.width {
       for row in area.y..area.y + area.height {
@@ -779,6 +799,20 @@ impl Rect {
     }
   }
 
+  /// Returns a 1-height sub-rect for the `n`-th row (0-indexed) within this
+  /// rect. Returns `None` if `n >= self.height`.
+  pub fn row(self, n: u16) -> Option<Self> {
+    if n >= self.height {
+      return None;
+    }
+    Some(Rect {
+      x: self.x,
+      y: self.y + n,
+      width: self.width,
+      height: 1,
+    })
+  }
+
   pub fn split_h(self, len: u16) -> (Self, Self) {
     let len = len.min(self.height);
     let top = Rect {
@@ -839,6 +873,24 @@ impl Rect {
       height: (self.height as i32 + offset) as u16,
       ..self
     }
+  }
+}
+
+/// Computes the scroll offset so that `selected` is visible within a viewport
+/// of `viewport_height` items. Returns the index of the first visible item.
+pub fn scroll_offset(
+  selected: usize,
+  item_count: usize,
+  viewport_height: usize,
+) -> usize {
+  if item_count == 0 || viewport_height == 0 {
+    return 0;
+  }
+  let max_start = item_count.saturating_sub(viewport_height);
+  if selected >= viewport_height {
+    (selected - viewport_height + 1).min(max_start)
+  } else {
+    0
   }
 }
 
