@@ -12,7 +12,7 @@ use crate::daemon::{receiver::MsgReceiver, sender::MsgSender};
 use crate::error::ResultLogger;
 use crate::kernel::{
   kernel::Kernel,
-  task::{NoopTask, TaskInit, TaskStatus},
+  task::{NoopTask, TaskDef},
 };
 use crate::mprocs::app::{client_loop, create_app_task, ClientId};
 use crate::mprocs::config::{
@@ -244,7 +244,7 @@ async fn run_app() -> anyhow::Result<()> {
       #[cfg(unix)]
       crate::process::unix_processes_waiter::UnixProcessesWaiter::init()?;
       let mut kernel = Kernel::new();
-      kernel.spawn_task(|pc| {
+      kernel.register_task(TaskDef::default(), |pc| {
         let app_task_id = create_app_task(config, keymap, &pc);
 
         let app_sender = pc.get_task_sender(app_task_id);
@@ -257,13 +257,7 @@ async fn run_app() -> anyhow::Result<()> {
           .await
         });
 
-        TaskInit {
-          task: Box::new(NoopTask),
-          stop_on_quit: false,
-          status: TaskStatus::Down,
-          deps: Vec::new(),
-          path: None,
-        }
+        Box::new(NoopTask)
       });
       tokio::spawn(async {
         kernel.run().await;

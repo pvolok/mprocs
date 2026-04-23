@@ -13,7 +13,7 @@ use super::{
   },
   path_trie::PathTrie,
   task::{
-    DepInfo, Task, TaskCmd, TaskDef, TaskHandle, TaskId, TaskInit, TaskNotify,
+    DepInfo, Task, TaskCmd, TaskDef, TaskHandle, TaskId, TaskNotify,
     TaskStatus,
   },
 };
@@ -45,62 +45,6 @@ impl Kernel {
       rev_deps: HashMap::new(),
       listeners: Default::default(),
       path_trie: PathTrie::new(),
-    }
-  }
-
-  pub fn spawn_task<F>(&mut self, f: F) -> TaskId
-  where
-    F: FnOnce(TaskContext) -> TaskInit,
-  {
-    let task_id = TaskId(
-      self
-        .next_task_id
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-    );
-    self.spawn_task_with_id(task_id, f);
-    task_id
-  }
-
-  pub fn spawn_task_with_id<F>(&mut self, task_id: TaskId, f: F)
-  where
-    F: FnOnce(TaskContext) -> TaskInit,
-  {
-    let kernel_sender =
-      TaskContext::new(self.next_task_id.clone(), task_id, self.sender.clone());
-    let init = f(kernel_sender);
-    let path = init.path.clone();
-    let mut task_handle = TaskHandle {
-      task_id,
-      task: init.task,
-
-      stop_on_quit: init.stop_on_quit,
-      status: init.status,
-
-      deps: HashMap::new(),
-
-      path: init.path,
-      vt: None,
-    };
-
-    for dep_id in &init.deps {
-      task_handle.deps.insert(
-        *dep_id,
-        DepInfo {
-          status: self
-            .tasks
-            .get(dep_id)
-            .map_or(TaskStatus::Down, |d| d.status),
-        },
-      );
-      self.rev_deps.entry(*dep_id).or_default().insert(task_id);
-    }
-
-    self.tasks.insert(task_id, task_handle);
-
-    if let Some(path) = path {
-      if let Err(err) = self.path_trie.insert(&path, task_id) {
-        log::error!("Path conflict while spawning task: {}", err);
-      }
     }
   }
 
@@ -188,9 +132,6 @@ impl Kernel {
           }
         }
 
-        KernelCommand::AddTask(task_id, create_task) => {
-          self.spawn_task_with_id(task_id, create_task);
-        }
         KernelCommand::RegisterTask(task_id, def, factory) => {
           self.register_task_with_id(task_id, def, factory);
         }

@@ -6,9 +6,7 @@ use crate::{
   kernel::kernel_message::{
     KernelCommand, KernelQuery, KernelQueryResponse, TaskContext,
   },
-  kernel::task::{
-    ChannelTask, TaskCmd, TaskId, TaskInit, TaskNotify, TaskStatus,
-  },
+  kernel::task::{TaskCmd, TaskDef, TaskId, TaskNotify, TaskStatus},
   protocol::{CltToSrv, SrvToClt},
   server::server_message::ServerMessage,
   term::{
@@ -260,13 +258,15 @@ impl DkApp {
 }
 
 pub fn create_dk_app_task(pc: &TaskContext) -> TaskId {
-  pc.add_task(Box::new(|pc| {
-    log::debug!("Creating dk app task (id: {})", pc.task_id.0);
-    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-    let pc_clone = pc.clone();
-    tokio::spawn(async move {
+  pc.spawn_async(
+    TaskDef {
+      status: TaskStatus::Running,
+      ..Default::default()
+    },
+    |pc, receiver| async move {
+      log::debug!("Creating dk app task (id: {})", pc.task_id.0);
       let app = DkApp {
-        pc: pc_clone,
+        pc,
         pr: receiver,
         clients: Vec::new(),
         grid: Grid::new(
@@ -284,13 +284,6 @@ pub fn create_dk_app_task(pc: &TaskContext) -> TaskId {
         selected: 0,
       };
       app.run().await;
-    });
-    TaskInit {
-      task: Box::new(ChannelTask::new(sender)),
-      stop_on_quit: false,
-      status: TaskStatus::Running,
-      deps: Vec::new(),
-      path: None,
-    }
-  }))
+    },
+  )
 }

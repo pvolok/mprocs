@@ -10,7 +10,7 @@ use crate::{
   error::ResultLogger,
   kernel::{
     kernel_message::{KernelCommand, TaskContext, TaskSender},
-    task::{ChannelTask, TaskCmd, TaskId, TaskInit, TaskNotify, TaskStatus},
+    task::{TaskCmd, TaskDef, TaskId, TaskNotify, TaskStatus},
   },
   protocol::{CltToSrv, SrvToClt},
   server::server_message::ServerMessage,
@@ -1186,26 +1186,21 @@ pub fn create_app_task(
   keymap: Keymap,
   pc: &TaskContext,
 ) -> TaskId {
-  pc.add_task(Box::new(|pc| {
-    log::debug!("Creating app task (id: {})", pc.task_id.0);
-    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-    tokio::spawn(async {
-      let pc = pc;
+  pc.spawn_async(
+    TaskDef {
+      status: TaskStatus::Running,
+      ..Default::default()
+    },
+    |pc, receiver| async move {
+      log::debug!("Creating app task (id: {})", pc.task_id.0);
       let r = server_main(config, keymap, receiver, pc.clone()).await;
       match r {
         Ok(()) => (),
         Err(err) => log::error!("App task finished with error: {:?}", err),
       };
       pc.send(KernelCommand::Quit);
-    });
-    TaskInit {
-      task: Box::new(ChannelTask::new(sender)),
-      stop_on_quit: false,
-      status: TaskStatus::Running,
-      deps: Vec::new(),
-      path: None,
-    }
-  }))
+    },
+  )
 }
 
 pub async fn server_main(

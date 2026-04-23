@@ -10,7 +10,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::term::Parser;
 
-use super::task::{Task, TaskCmd, TaskDef, TaskId, TaskInit, TaskStatus};
+use super::task::{Task, TaskCmd, TaskDef, TaskId, TaskStatus};
 use super::task_path::TaskPath;
 
 pub struct KernelMessage {
@@ -21,7 +21,6 @@ pub struct KernelMessage {
 pub enum KernelCommand {
   Quit,
 
-  AddTask(TaskId, Box<dyn FnOnce(TaskContext) -> TaskInit + Send>),
   RegisterTask(
     TaskId,
     TaskDef,
@@ -136,23 +135,6 @@ impl TaskContext {
         .next_task_id
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
     )
-  }
-
-  pub fn add_task(
-    &self,
-    f: Box<dyn FnOnce(TaskContext) -> TaskInit + Send>,
-  ) -> TaskId {
-    let task_id = self.alloc_id();
-    self.add_task_with_id(task_id, f)
-  }
-
-  pub fn add_task_with_id(
-    &self,
-    task_id: TaskId,
-    f: Box<dyn FnOnce(TaskContext) -> TaskInit + Send>,
-  ) -> TaskId {
-    self.send(KernelCommand::AddTask(task_id, f));
-    task_id
   }
 
   pub fn register(

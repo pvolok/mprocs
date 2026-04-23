@@ -101,14 +101,6 @@ pub enum TaskStatus {
   Running,
 }
 
-pub struct TaskInit {
-  pub task: Box<dyn Task>,
-  pub stop_on_quit: bool,
-  pub status: TaskStatus,
-  pub deps: Vec<TaskId>,
-  pub path: Option<TaskPath>,
-}
-
 pub struct DepInfo {
   pub status: TaskStatus,
 }

@@ -8,7 +8,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::{KernelCommand, TaskContext};
-use crate::kernel::task::{ChannelTask, TaskCmd, TaskId, TaskInit, TaskStatus};
+use crate::kernel::task::{ChannelTask, TaskCmd, TaskDef, TaskId};
 use crate::kernel::task_path::TaskPath;
 use crate::mprocs::config::ProcConfig;
 use crate::mprocs::proc_log_config::LogConfig;
@@ -56,8 +56,14 @@ pub fn launch_proc(
   size: Rect,
 ) -> ProcView {
   let cfg_ = cfg.clone();
-  let child_id = parent_ks.add_task_with_id(
+  let child_id = parent_ks.register_with_id(
     task_id,
+    TaskDef {
+      stop_on_quit: true,
+      deps,
+      path,
+      ..Default::default()
+    },
     Box::new(move |ks| {
       let (cmd_sender, cmd_receiver) = tokio::sync::mpsc::unbounded_channel();
 
@@ -67,13 +73,7 @@ pub fn launch_proc(
         proc_main_loop(ks, task_id, &cfg, size, cmd_receiver).await;
       });
 
-      TaskInit {
-        task: Box::new(ChannelTask::new(cmd_sender)),
-        stop_on_quit: true,
-        status: TaskStatus::Down,
-        deps,
-        path,
-      }
+      Box::new(ChannelTask::new(cmd_sender))
     }),
   );
 

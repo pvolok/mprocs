@@ -20,7 +20,7 @@ use crate::{
     kernel_message::{
       KernelCommand, KernelQuery, KernelQueryResponse, TaskContext,
     },
-    task::{NoopTask, TaskCmd, TaskInit, TaskStatus},
+    task::{NoopTask, TaskCmd, TaskDef, TaskStatus},
     task_path::TaskPath,
   },
   lualib::init_std,
@@ -59,7 +59,7 @@ async fn run_server(working_dir: PathBuf) -> anyhow::Result<()> {
   let mut kernel = Kernel::new();
 
   let socket_path = lock_guard.socket_path().to_path_buf();
-  kernel.spawn_task(move |pc| {
+  kernel.register_task(TaskDef::default(), move |pc| {
     let app_task_id = create_dk_app_task(&pc);
 
     let app_sender = pc.get_task_sender(app_task_id);
@@ -99,13 +99,7 @@ async fn run_server(working_dir: PathBuf) -> anyhow::Result<()> {
       }
     });
 
-    TaskInit {
-      task: Box::new(NoopTask),
-      stop_on_quit: false,
-      status: TaskStatus::Down,
-      deps: Vec::new(),
-      path: None,
-    }
+    Box::new(NoopTask)
   });
 
   kernel.run().await;
