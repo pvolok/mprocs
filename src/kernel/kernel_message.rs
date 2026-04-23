@@ -26,6 +26,7 @@ pub enum KernelCommand {
     TaskDef,
     Box<dyn FnOnce(TaskContext) -> Box<dyn Task> + Send>,
   ),
+  RemoveTask(TaskId),
   TaskCmd(TaskId, TaskCmd),
 
   TaskCmdByPath(TaskPath, TaskCmd),
@@ -158,14 +159,30 @@ impl TaskContext {
 
   pub fn spawn_async<F, Fut>(&self, def: TaskDef, f: F) -> TaskId
   where
-    F: FnOnce(TaskContext, tokio::sync::mpsc::UnboundedReceiver<TaskCmd>)
-      -> Fut
+    F: FnOnce(TaskContext, tokio::sync::mpsc::UnboundedReceiver<TaskCmd>) -> Fut
+      + Send
+      + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+  {
+    let task_id = self.alloc_id();
+    self.spawn_async_with_id(task_id, def, f)
+  }
+
+  pub fn spawn_async_with_id<F, Fut>(
+    &self,
+    task_id: TaskId,
+    def: TaskDef,
+    f: F,
+  ) -> TaskId
+  where
+    F: FnOnce(TaskContext, tokio::sync::mpsc::UnboundedReceiver<TaskCmd>) -> Fut
       + Send
       + 'static,
     Fut: std::future::Future<Output = ()> + Send + 'static,
   {
     use super::task::ChannelTask;
-    self.register(
+    self.register_with_id(
+      task_id,
       def,
       Box::new(|ctx| {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();

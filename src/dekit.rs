@@ -20,7 +20,7 @@ use crate::{
     kernel_message::{
       KernelCommand, KernelQuery, KernelQueryResponse, TaskContext,
     },
-    task::{NoopTask, TaskCmd, TaskDef, TaskStatus},
+    task::{TaskCmd, TaskStatus},
     task_path::TaskPath,
   },
   lualib::init_std,
@@ -56,50 +56,46 @@ async fn run_server(working_dir: PathBuf) -> anyhow::Result<()> {
 
   #[cfg(unix)]
   crate::process::unix_processes_waiter::UnixProcessesWaiter::init()?;
-  let mut kernel = Kernel::new();
+  let kernel = Kernel::new();
+  let pc = kernel.context();
 
   let socket_path = lock_guard.socket_path().to_path_buf();
-  kernel.register_task(TaskDef::default(), move |pc| {
-    let app_task_id = create_dk_app_task(&pc);
+  let app_task_id = create_dk_app_task(&pc);
+  let app_sender = pc.get_task_sender(app_task_id);
 
-    let app_sender = pc.get_task_sender(app_task_id);
+  tokio::spawn(async move {
+    let mut last_client_id = 0;
 
-    tokio::spawn(async move {
-      let mut last_client_id = 0;
-
-      let mut server_socket = match bind_server_socket(&socket_path).await {
-        Ok(server_socket) => {
-          log::info!("Server is listening.");
-          server_socket
+    let mut server_socket = match bind_server_socket(&socket_path).await {
+      Ok(server_socket) => {
+        log::info!("Server is listening.");
+        server_socket
+      }
+      Err(err) => {
+        log::error!("Failed to bind the server: {:?}", err);
+        pc.send(KernelCommand::Quit);
+        return;
+      }
+    };
+    log::debug!("Waiting for clients...");
+    loop {
+      match server_socket.accept().await {
+        Ok((sender, receiver)) => {
+          last_client_id += 1;
+          let client_id = ClientId(last_client_id);
+          let app_sender = app_sender.clone();
+          let pc = pc.clone();
+          tokio::spawn(async move {
+            dispatch_connection(client_id, app_sender, pc, sender, receiver)
+              .await;
+          });
         }
         Err(err) => {
-          log::error!("Failed to bind the server: {:?}", err);
-          pc.send(KernelCommand::Quit);
-          return;
-        }
-      };
-      log::debug!("Waiting for clients...");
-      loop {
-        match server_socket.accept().await {
-          Ok((sender, receiver)) => {
-            last_client_id += 1;
-            let client_id = ClientId(last_client_id);
-            let app_sender = app_sender.clone();
-            let pc = pc.clone();
-            tokio::spawn(async move {
-              dispatch_connection(client_id, app_sender, pc, sender, receiver)
-                .await;
-            });
-          }
-          Err(err) => {
-            log::info!("Server socket accept error: {}", err);
-            break;
-          }
+          log::info!("Server socket accept error: {}", err);
+          break;
         }
       }
-    });
-
-    Box::new(NoopTask)
+    }
   });
 
   kernel.run().await;

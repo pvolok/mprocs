@@ -12,14 +12,53 @@ use super::task_path::TaskPath;
 pub struct TaskId(pub usize);
 
 pub trait Task: Send + 'static {
-  fn handle_cmd(&mut self, cmd: TaskCmd);
+  fn handle_cmd(&mut self, cmd: TaskCmd, fx: &mut Effects);
+}
+
+pub enum TaskEffect {
+  Started,
+  Stopped(u32),
+  UpdatedScreen(Option<SharedVt>),
+  Rendered,
+  Remove,
+}
+
+pub struct Effects(Vec<TaskEffect>);
+
+impl Effects {
+  pub fn new() -> Self {
+    Self(Vec::new())
+  }
+
+  pub fn started(&mut self) {
+    self.0.push(TaskEffect::Started);
+  }
+
+  pub fn stopped(&mut self, code: u32) {
+    self.0.push(TaskEffect::Stopped(code));
+  }
+
+  pub fn updated_screen(&mut self, vt: Option<SharedVt>) {
+    self.0.push(TaskEffect::UpdatedScreen(vt));
+  }
+
+  pub fn rendered(&mut self) {
+    self.0.push(TaskEffect::Rendered);
+  }
+
+  pub fn remove(&mut self) {
+    self.0.push(TaskEffect::Remove);
+  }
+
+  pub fn drain(&mut self) -> std::vec::Drain<'_, TaskEffect> {
+    self.0.drain(..)
+  }
 }
 
 pub enum TaskCmd {
   Start,
   Stop,
   Kill,
-  Notify(TaskId, TaskNotify),
   Msg(Box<dyn Any + Send>),
 }
 
@@ -35,26 +74,37 @@ impl fmt::Debug for TaskCmd {
       TaskCmd::Start => write!(f, "Start"),
       TaskCmd::Stop => write!(f, "Stop"),
       TaskCmd::Kill => write!(f, "Kill"),
-      TaskCmd::Notify(id, n) => write!(f, "Notify({:?}, {:?})", id, n),
       TaskCmd::Msg(_) => write!(f, "Msg(...)"),
     }
   }
 }
 
+pub struct TaskNotification {
+  pub from: TaskId,
+  pub notify: TaskNotify,
+}
+
+#[derive(Clone)]
 pub enum TaskNotify {
+  Added(Option<TaskPath>, TaskStatus),
   Started,
   Stopped(u32),
   Rendered,
   ScreenChanged(Option<SharedVt>),
+  Removed,
 }
 
 impl fmt::Debug for TaskNotify {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
+      TaskNotify::Added(path, status) => {
+        write!(f, "Added({:?}, {:?})", path, status)
+      }
       TaskNotify::Started => write!(f, "Started"),
       TaskNotify::Stopped(code) => write!(f, "Stopped({})", code),
       TaskNotify::Rendered => write!(f, "Rendered"),
       TaskNotify::ScreenChanged(_) => write!(f, "ScreenChanged(...)"),
+      TaskNotify::Removed => write!(f, "Removed"),
     }
   }
 }
@@ -70,15 +120,9 @@ impl ChannelTask {
 }
 
 impl Task for ChannelTask {
-  fn handle_cmd(&mut self, cmd: TaskCmd) {
+  fn handle_cmd(&mut self, cmd: TaskCmd, _fx: &mut Effects) {
     let _ = self.sender.send(cmd);
   }
-}
-
-pub struct NoopTask;
-
-impl Task for NoopTask {
-  fn handle_cmd(&mut self, _cmd: TaskCmd) {}
 }
 
 pub struct TaskHandle {

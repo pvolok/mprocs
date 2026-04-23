@@ -4,7 +4,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::{KernelCommand, SharedVt, TaskContext};
-use crate::kernel::task::{Task, TaskCmd, TaskDef};
+use crate::kernel::task::{Effects, Task, TaskCmd, TaskDef};
 use crate::kernel::task_path::TaskPath;
 use crate::process::NativeProcess;
 use crate::process::process::Process as _;
@@ -23,7 +23,6 @@ enum WorkerCmd {
 }
 
 pub struct ProcTask {
-  ctx: TaskContext,
   worker_tx: UnboundedSender<WorkerCmd>,
   exit_code: Option<u32>,
   stdout_eof: bool,
@@ -53,7 +52,6 @@ impl ProcTask {
         ctx.send(KernelCommand::TaskStarted);
 
         Box::new(ProcTask {
-          ctx,
           worker_tx,
           exit_code: None,
           stdout_eof: false,
@@ -62,17 +60,17 @@ impl ProcTask {
     );
   }
 
-  fn maybe_report_stopped(&self) {
+  fn maybe_stopped(&self, fx: &mut Effects) {
     if let Some(code) = self.exit_code {
       if self.stdout_eof {
-        self.ctx.send(KernelCommand::TaskStopped(code));
+        fx.stopped(code);
       }
     }
   }
 }
 
 impl Task for ProcTask {
-  fn handle_cmd(&mut self, cmd: TaskCmd) {
+  fn handle_cmd(&mut self, cmd: TaskCmd, fx: &mut Effects) {
     match cmd {
       TaskCmd::Start => {}
       TaskCmd::Stop | TaskCmd::Kill => {
@@ -82,17 +80,16 @@ impl Task for ProcTask {
         let msg = match msg.downcast::<WorkerExited>() {
           Ok(exited) => {
             self.exit_code = Some(exited.0);
-            self.maybe_report_stopped();
+            self.maybe_stopped(fx);
             return;
           }
           Err(msg) => msg,
         };
         if msg.downcast::<WorkerStdoutEof>().is_ok() {
           self.stdout_eof = true;
-          self.maybe_report_stopped();
+          self.maybe_stopped(fx);
         }
       }
-      _ => {}
     }
   }
 }

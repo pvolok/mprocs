@@ -10,10 +10,7 @@ use crate::client::client_main;
 use crate::daemon::{receiver::MsgReceiver, sender::MsgSender};
 #[cfg(unix)]
 use crate::error::ResultLogger;
-use crate::kernel::{
-  kernel::Kernel,
-  task::{NoopTask, TaskDef},
-};
+use crate::kernel::kernel::Kernel;
 use crate::mprocs::app::{client_loop, create_app_task, ClientId};
 use crate::mprocs::config::{
   CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig,
@@ -243,22 +240,20 @@ async fn run_app() -> anyhow::Result<()> {
 
       #[cfg(unix)]
       crate::process::unix_processes_waiter::UnixProcessesWaiter::init()?;
-      let mut kernel = Kernel::new();
-      kernel.register_task(TaskDef::default(), |pc| {
-        let app_task_id = create_app_task(config, keymap, &pc);
+      let kernel = Kernel::new();
+      let pc = kernel.context();
+      let app_task_id = create_app_task(config, keymap, &pc);
 
-        let app_sender = pc.get_task_sender(app_task_id);
-        tokio::spawn(async move {
-          client_loop(
-            ClientId(1),
-            app_sender,
-            (srv_to_clt_sender, clt_to_srv_receiver),
-          )
-          .await
-        });
-
-        Box::new(NoopTask)
+      let app_sender = pc.get_task_sender(app_task_id);
+      tokio::spawn(async move {
+        client_loop(
+          ClientId(1),
+          app_sender,
+          (srv_to_clt_sender, clt_to_srv_receiver),
+        )
+        .await
       });
+
       tokio::spawn(async {
         kernel.run().await;
         #[cfg(unix)]

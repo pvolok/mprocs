@@ -8,7 +8,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::{KernelCommand, TaskContext};
-use crate::kernel::task::{ChannelTask, TaskCmd, TaskDef, TaskId};
+use crate::kernel::task::{TaskCmd, TaskDef, TaskId};
 use crate::kernel::task_path::TaskPath;
 use crate::mprocs::config::ProcConfig;
 use crate::mprocs::proc_log_config::LogConfig;
@@ -56,7 +56,7 @@ pub fn launch_proc(
   size: Rect,
 ) -> ProcView {
   let cfg_ = cfg.clone();
-  let child_id = parent_ks.register_with_id(
+  let child_id = parent_ks.spawn_async_with_id(
     task_id,
     TaskDef {
       stop_on_quit: true,
@@ -64,17 +64,11 @@ pub fn launch_proc(
       path,
       ..Default::default()
     },
-    Box::new(move |ks| {
-      let (cmd_sender, cmd_receiver) = tokio::sync::mpsc::unbounded_channel();
-
+    move |ks, cmd_receiver| async move {
       let cfg = cfg_;
-      tokio::spawn(async move {
-        let task_id = ks.task_id;
-        proc_main_loop(ks, task_id, &cfg, size, cmd_receiver).await;
-      });
-
-      Box::new(ChannelTask::new(cmd_sender))
-    }),
+      let task_id = ks.task_id;
+      proc_main_loop(ks, task_id, &cfg, size, cmd_receiver).await;
+    },
   );
 
   ProcView::new(child_id, cfg)
@@ -121,9 +115,6 @@ async fn proc_main_loop(
             } else {
               log::error!("Proc received unknown Msg");
             }
-          }
-          TaskCmd::Notify(_, _) => {
-            log::warn!("Proc received TaskCmd::Notify");
           }
         }
         if rendered {

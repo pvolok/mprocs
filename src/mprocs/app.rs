@@ -10,7 +10,7 @@ use crate::{
   error::ResultLogger,
   kernel::{
     kernel_message::{KernelCommand, TaskContext, TaskSender},
-    task::{TaskCmd, TaskDef, TaskId, TaskNotify, TaskStatus},
+    task::{TaskCmd, TaskDef, TaskId, TaskNotification, TaskNotify, TaskStatus},
   },
   protocol::{CltToSrv, SrvToClt},
   server::server_message::ServerMessage,
@@ -820,7 +820,9 @@ impl App {
         }
       }
       AppEvent::RemoveProc { id } => {
-        self.state.procs.retain(|p| p.is_up() || p.id() != *id);
+        let id = *id;
+        self.state.procs.retain(|p| p.is_up() || p.id() != id);
+        self.pc.send(KernelCommand::RemoveTask(id));
         loop_action.render();
       }
 
@@ -937,108 +939,125 @@ impl App {
     match command {
       TaskCmd::Start | TaskCmd::Stop | TaskCmd::Kill => (),
 
-      TaskCmd::Msg(msg) => match msg.downcast::<AppEvent>() {
-        Ok(app_event) => {
-          self.handle_event(loop_action, &app_event);
-        }
-        Err(msg) => match msg.downcast::<ServerMessage>() {
+      TaskCmd::Msg(msg) => {
+        let msg = match msg.downcast::<AppEvent>() {
+          Ok(app_event) => {
+            self.handle_event(loop_action, &app_event);
+            return;
+          }
+          Err(msg) => msg,
+        };
+        let msg = match msg.downcast::<ServerMessage>() {
           Ok(server_msg) => {
             let r = self.handle_server_message(loop_action, *server_msg);
             if let Err(err) = r {
               log::debug!("ServerMessage error: {:?}", err);
             }
+            return;
           }
-          Err(_msg) => {
-            log::error!("App received unknown Msg");
-          }
-        },
+          Err(msg) => msg,
+        };
+        if let Ok(n) = msg.downcast::<TaskNotification>() {
+          self.handle_notification(loop_action, n.from, n.notify);
+          return;
+        }
+        log::error!("App received unknown Msg");
       },
+    }
+  }
 
-      TaskCmd::Notify(task_id, notify) => match notify {
-        TaskNotify::Started => {
-          if let Some(proc) = self.state.get_proc_mut(task_id) {
-            proc.is_up = true;
-            proc.last_start = Some(Instant::now());
-            match proc.target_state {
-              TargetState::None => (),
-              TargetState::Started => {
-                proc.target_state = TargetState::None;
-              }
-              TargetState::Stopped => {
-                self.pc.send(KernelCommand::TaskCmd(task_id, TaskCmd::Stop));
-              }
+  fn handle_notification(
+    &mut self,
+    loop_action: &mut LoopAction,
+    task_id: TaskId,
+    notify: TaskNotify,
+  ) {
+    match notify {
+      TaskNotify::Added(_, _) => {}
+      TaskNotify::Started => {
+        if let Some(proc) = self.state.get_proc_mut(task_id) {
+          proc.is_up = true;
+          proc.last_start = Some(Instant::now());
+          match proc.target_state {
+            TargetState::None => (),
+            TargetState::Started => {
+              proc.target_state = TargetState::None;
             }
-            loop_action.render();
+            TargetState::Stopped => {
+              self.pc.send(KernelCommand::TaskCmd(task_id, TaskCmd::Stop));
+            }
           }
+          loop_action.render();
         }
-        TaskNotify::Stopped(exit_code) => {
-          if let Some(proc) = self.state.get_proc_mut(task_id) {
-            proc.is_up = false;
-            proc.exit_code = Some(exit_code);
+      }
+      TaskNotify::Stopped(exit_code) => {
+        if let Some(proc) = self.state.get_proc_mut(task_id) {
+          proc.is_up = false;
+          proc.exit_code = Some(exit_code);
 
-            let restart = match proc.target_state {
-              TargetState::None if proc.cfg.autorestart && exit_code != 0 => {
-                match proc.last_start {
-                  Some(last_start) => {
-                    let elapsed_time =
-                      Instant::now().duration_since(last_start);
-                    elapsed_time.as_secs_f64() > RESTART_THRESHOLD_SECONDS
-                  }
-                  None => true,
+          let restart = match proc.target_state {
+            TargetState::None if proc.cfg.autorestart && exit_code != 0 => {
+              match proc.last_start {
+                Some(last_start) => {
+                  let elapsed_time =
+                    Instant::now().duration_since(last_start);
+                  elapsed_time.as_secs_f64() > RESTART_THRESHOLD_SECONDS
                 }
-              }
-              TargetState::None => false,
-              TargetState::Started => true,
-              TargetState::Stopped => {
-                proc.target_state = TargetState::None;
-                false
-              }
-            };
-            if restart {
-              self
-                .pc
-                .send(KernelCommand::TaskCmd(task_id, TaskCmd::Start));
-            }
-
-            match proc.target_state {
-              TargetState::None => (),
-              TargetState::Started => (),
-              TargetState::Stopped => {
-                proc.target_state = TargetState::None;
+                None => true,
               }
             }
-
-            if !restart {
-              if self.state.all_procs_down() {
-                if let Some(event) = self.config.on_all_finished.clone() {
-                  self.handle_event(loop_action, &event);
-                }
-              }
+            TargetState::None => false,
+            TargetState::Started => true,
+            TargetState::Stopped => {
+              proc.target_state = TargetState::None;
+              false
             }
-
-            loop_action.render();
+          };
+          if restart {
+            self
+              .pc
+              .send(KernelCommand::TaskCmd(task_id, TaskCmd::Start));
           }
+
+          match proc.target_state {
+            TargetState::None => (),
+            TargetState::Started => (),
+            TargetState::Stopped => {
+              proc.target_state = TargetState::None;
+            }
+          }
+
+          if !restart {
+            if self.state.all_procs_down() {
+              if let Some(event) = self.config.on_all_finished.clone() {
+                self.handle_event(loop_action, &event);
+              }
+            }
+          }
+
+          loop_action.render();
         }
-        TaskNotify::ScreenChanged(vt) => {
-          if let Some(proc) = self.state.get_proc_mut(task_id) {
-            proc.vt = vt;
+      }
+      TaskNotify::ScreenChanged(vt) => {
+        if let Some(proc) = self.state.get_proc_mut(task_id) {
+          proc.vt = vt;
+          proc.changed = true;
+          loop_action.render();
+        }
+      }
+      TaskNotify::Rendered => {
+        let is_current = self
+          .state
+          .get_current_proc()
+          .is_some_and(|p| p.id() == task_id);
+        if let Some(proc) = self.state.get_proc_mut(task_id) {
+          if !is_current {
             proc.changed = true;
-            loop_action.render();
           }
+          loop_action.render();
         }
-        TaskNotify::Rendered => {
-          let is_current = self
-            .state
-            .get_current_proc()
-            .is_some_and(|p| p.id() == task_id);
-          if let Some(proc) = self.state.get_proc_mut(task_id) {
-            if !is_current {
-              proc.changed = true;
-            }
-            loop_action.render();
-          }
-        }
-      },
+      }
+      TaskNotify::Removed => {}
     }
   }
 

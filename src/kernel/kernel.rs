@@ -13,8 +13,8 @@ use super::{
   },
   path_trie::PathTrie,
   task::{
-    DepInfo, Task, TaskCmd, TaskDef, TaskHandle, TaskId, TaskNotify,
-    TaskStatus,
+    DepInfo, Effects, Task, TaskCmd, TaskDef, TaskEffect, TaskHandle, TaskId,
+    TaskNotification, TaskNotify, TaskStatus,
   },
 };
 
@@ -46,6 +46,10 @@ impl Kernel {
       listeners: Default::default(),
       path_trie: PathTrie::new(),
     }
+  }
+
+  pub fn context(&self) -> TaskContext {
+    TaskContext::new(self.next_task_id.clone(), TaskId(0), self.sender.clone())
   }
 
   pub fn register_task(
@@ -95,13 +99,16 @@ impl Kernel {
       self.rev_deps.entry(*dep_id).or_default().insert(task_id);
     }
 
+    let status = handle.status;
     self.tasks.insert(task_id, handle);
 
-    if let Some(path) = path {
-      if let Err(err) = self.path_trie.insert(&path, task_id) {
+    if let Some(ref path) = path {
+      if let Err(err) = self.path_trie.insert(path, task_id) {
         log::error!("Path conflict while registering task: {}", err);
       }
     }
+
+    self.notify_listeners(task_id, TaskNotify::Added(path, status));
   }
 
   pub async fn run(mut self) {
@@ -122,9 +129,11 @@ impl Kernel {
 
           let task_ids: Vec<TaskId> = self.tasks.keys().copied().collect();
           for task_id in task_ids {
+            let mut fx = Effects::new();
             if let Some(task) = self.tasks.get_mut(&task_id) {
-              task.task.handle_cmd(TaskCmd::Stop);
+              task.task.handle_cmd(TaskCmd::Stop, &mut fx);
             }
+            self.apply_effects(task_id, &mut fx);
           }
 
           if self.is_ready_to_quit() {
@@ -136,6 +145,7 @@ impl Kernel {
           self.register_task_with_id(task_id, def, factory);
         }
         KernelCommand::TaskCmd(task_id, cmd) => {
+          let mut fx = Effects::new();
           if let Some(task) = self.tasks.get_mut(&task_id) {
             match cmd {
               TaskCmd::Start => {
@@ -144,16 +154,17 @@ impl Kernel {
                   .iter()
                   .all(|(_, dep)| dep.status == TaskStatus::Running);
                 if all_deps_ready {
-                  task.task.handle_cmd(cmd);
+                  task.task.handle_cmd(cmd, &mut fx);
                 }
               }
-              TaskCmd::Stop | TaskCmd::Kill => {
-                task.task.handle_cmd(cmd);
-              }
               _ => {
-                task.task.handle_cmd(cmd);
+                task.task.handle_cmd(cmd, &mut fx);
               }
             }
+          }
+          self.apply_effects(task_id, &mut fx);
+          if self.quitting && self.is_ready_to_quit() {
+            break;
           }
         }
 
@@ -228,94 +239,24 @@ impl Kernel {
         }
 
         KernelCommand::TaskStarted => {
-          // Went from DOWN to UP.
-          let mut started = false;
-          if let Some(task) = self.tasks.get_mut(&msg.from) {
-            match task.status {
-              TaskStatus::Down => {
-                started = true;
-              }
-              TaskStatus::Running => (),
-            }
-            task.status = TaskStatus::Running;
-          }
-
-          if started {
-            if let Some(rev_deps) = self.rev_deps.get(&msg.from) {
-              for rev_dep_id in rev_deps {
-                if let Some(rev_dep) = self.tasks.get_mut(rev_dep_id) {
-                  let mut all_deps_ready = true;
-                  for (dep_id, dep) in &mut rev_dep.deps {
-                    if *dep_id == msg.from {
-                      dep.status = TaskStatus::Running;
-                    }
-                    if dep.status != TaskStatus::Running {
-                      all_deps_ready = false;
-                    }
-                  }
-                  if all_deps_ready {
-                    self
-                      .sender
-                      .send(KernelMessage {
-                        from: TaskId(0),
-                        command: KernelCommand::TaskCmd(
-                          *rev_dep_id,
-                          TaskCmd::Start,
-                        ),
-                      })
-                      .log_ignore();
-                  }
-                }
-              }
-            }
-          }
-
-          for listener_id in self.listeners.iter() {
-            if let Some(listener) = self.tasks.get_mut(&listener_id) {
-              listener
-                .task
-                .handle_cmd(TaskCmd::Notify(msg.from, TaskNotify::Started));
-            }
-          }
+          self.apply_effect(msg.from, TaskEffect::Started);
         }
         KernelCommand::TaskStopped(exit_code) => {
-          if let Some(task) = self.tasks.get_mut(&msg.from) {
-            task.status = TaskStatus::Down;
-          }
-
-          for listener_id in self.listeners.iter() {
-            if let Some(listener) = self.tasks.get_mut(&listener_id) {
-              listener.task.handle_cmd(TaskCmd::Notify(
-                msg.from,
-                TaskNotify::Stopped(exit_code),
-              ));
-            }
-          }
-
+          self.apply_effect(msg.from, TaskEffect::Stopped(exit_code));
           if self.quitting && self.is_ready_to_quit() {
             break;
           }
         }
         KernelCommand::TaskUpdatedScreen(vt) => {
-          if let Some(task) = self.tasks.get_mut(&msg.from) {
-            task.vt = vt.clone();
-          }
-          for listener_id in self.listeners.iter() {
-            if let Some(listener) = self.tasks.get_mut(&listener_id) {
-              listener.task.handle_cmd(TaskCmd::Notify(
-                msg.from,
-                TaskNotify::ScreenChanged(vt.clone()),
-              ));
-            }
-          }
+          self.apply_effect(msg.from, TaskEffect::UpdatedScreen(vt));
         }
         KernelCommand::TaskRendered => {
-          for listener_id in self.listeners.iter() {
-            if let Some(listener) = self.tasks.get_mut(&listener_id) {
-              listener
-                .task
-                .handle_cmd(TaskCmd::Notify(msg.from, TaskNotify::Rendered));
-            }
+          self.apply_effect(msg.from, TaskEffect::Rendered);
+        }
+        KernelCommand::RemoveTask(task_id) => {
+          self.apply_effect(task_id, TaskEffect::Remove);
+          if self.quitting && self.is_ready_to_quit() {
+            break;
           }
         }
 
@@ -328,6 +269,118 @@ impl Kernel {
       }
     }
     log::debug!("After kernel loop.");
+  }
+
+  fn apply_effects(&mut self, task_id: TaskId, fx: &mut Effects) {
+    for effect in fx.drain() {
+      self.apply_effect(task_id, effect);
+    }
+  }
+
+  fn apply_effect(&mut self, task_id: TaskId, effect: TaskEffect) {
+    match effect {
+      TaskEffect::Started => {
+        let mut started = false;
+        if let Some(task) = self.tasks.get_mut(&task_id) {
+          if task.status == TaskStatus::Down {
+            started = true;
+          }
+          task.status = TaskStatus::Running;
+        }
+
+        if started {
+          if let Some(rev_deps) = self.rev_deps.get(&task_id) {
+            for rev_dep_id in rev_deps {
+              if let Some(rev_dep) = self.tasks.get_mut(rev_dep_id) {
+                let mut all_deps_ready = true;
+                for (dep_id, dep) in &mut rev_dep.deps {
+                  if *dep_id == task_id {
+                    dep.status = TaskStatus::Running;
+                  }
+                  if dep.status != TaskStatus::Running {
+                    all_deps_ready = false;
+                  }
+                }
+                if all_deps_ready {
+                  self
+                    .sender
+                    .send(KernelMessage {
+                      from: TaskId(0),
+                      command: KernelCommand::TaskCmd(
+                        *rev_dep_id,
+                        TaskCmd::Start,
+                      ),
+                    })
+                    .log_ignore();
+                }
+              }
+            }
+          }
+        }
+
+        self.notify_listeners(task_id, TaskNotify::Started);
+      }
+
+      TaskEffect::Stopped(exit_code) => {
+        if let Some(task) = self.tasks.get_mut(&task_id) {
+          task.status = TaskStatus::Down;
+        }
+        self.notify_listeners(task_id, TaskNotify::Stopped(exit_code));
+      }
+
+      TaskEffect::UpdatedScreen(vt) => {
+        if let Some(task) = self.tasks.get_mut(&task_id) {
+          task.vt = vt.clone();
+        }
+        self.notify_listeners(task_id, TaskNotify::ScreenChanged(vt));
+      }
+
+      TaskEffect::Rendered => {
+        self.notify_listeners(task_id, TaskNotify::Rendered);
+      }
+
+      TaskEffect::Remove => {
+        if let Some(handle) = self.tasks.remove(&task_id) {
+          if let Some(path) = &handle.path {
+            self.path_trie.remove(path);
+          }
+
+          for dep_id in handle.deps.keys() {
+            if let Some(set) = self.rev_deps.get_mut(dep_id) {
+              set.remove(&task_id);
+            }
+          }
+
+          if let Some(dependents) = self.rev_deps.remove(&task_id) {
+            for dep_id in &dependents {
+              if let Some(other) = self.tasks.get_mut(dep_id) {
+                other.deps.remove(&task_id);
+              }
+            }
+          }
+
+          self.listeners.remove(&task_id);
+        }
+
+        self.notify_listeners(task_id, TaskNotify::Removed);
+      }
+    }
+  }
+
+  fn notify_listeners(&mut self, from: TaskId, notify: TaskNotify) {
+    for listener_id in self.listeners.iter() {
+      if let Some(listener) = self.tasks.get_mut(listener_id) {
+        let mut fx = Effects::new();
+        listener.task.handle_cmd(
+          TaskCmd::msg(TaskNotification {
+            from,
+            notify: notify.clone(),
+          }),
+          &mut fx,
+        );
+        // TODO: Effects are ignored.
+      }
+    }
   }
 
   fn is_ready_to_quit(&self) -> bool {

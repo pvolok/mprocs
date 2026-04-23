@@ -6,7 +6,9 @@ use crate::{
   kernel::kernel_message::{
     KernelCommand, KernelQuery, KernelQueryResponse, TaskContext,
   },
-  kernel::task::{TaskCmd, TaskDef, TaskId, TaskNotify, TaskStatus},
+  kernel::task::{
+    TaskCmd, TaskDef, TaskId, TaskNotification, TaskNotify, TaskStatus,
+  },
   protocol::{CltToSrv, SrvToClt},
   server::server_message::ServerMessage,
   term::{
@@ -18,6 +20,7 @@ use crate::{
 };
 
 struct DkTaskEntry {
+  id: TaskId,
   path: String,
   status: TaskStatus,
 }
@@ -61,18 +64,51 @@ impl DkApp {
   async fn handle_cmd(&mut self, cmd: TaskCmd) -> bool {
     match cmd {
       TaskCmd::Msg(msg) => {
-        if let Ok(server_msg) = msg.downcast::<ServerMessage>() {
-          return self.handle_server_msg(*server_msg).await;
+        let msg = match msg.downcast::<ServerMessage>() {
+          Ok(server_msg) => return self.handle_server_msg(*server_msg).await,
+          Err(msg) => msg,
+        };
+        if let Ok(n) = msg.downcast::<TaskNotification>() {
+          return self.handle_notification(n.from, n.notify);
         }
         false
       }
-      TaskCmd::Notify(_task_id, notify) => match notify {
-        TaskNotify::Started | TaskNotify::Stopped(_) => {
-          self.refresh_tasks().await;
-          true
+      _ => false,
+    }
+  }
+
+  fn handle_notification(&mut self, from: TaskId, notify: TaskNotify) -> bool {
+    match notify {
+      TaskNotify::Added(path, status) => {
+        let path = path
+          .map(|p| p.to_string())
+          .unwrap_or_else(|| format!("<task:{}>", from.0));
+        self.tasks.push(DkTaskEntry {
+          id: from,
+          path,
+          status,
+        });
+        true
+      }
+      TaskNotify::Started => {
+        if let Some(entry) = self.tasks.iter_mut().find(|t| t.id == from) {
+          entry.status = TaskStatus::Running;
         }
-        _ => false,
-      },
+        true
+      }
+      TaskNotify::Stopped(_) => {
+        if let Some(entry) = self.tasks.iter_mut().find(|t| t.id == from) {
+          entry.status = TaskStatus::Down;
+        }
+        true
+      }
+      TaskNotify::Removed => {
+        self.tasks.retain(|t| t.id != from);
+        if self.selected >= self.tasks.len() && !self.tasks.is_empty() {
+          self.selected = self.tasks.len() - 1;
+        }
+        true
+      }
       _ => false,
     }
   }
@@ -147,6 +183,7 @@ impl DkApp {
       self.tasks = list
         .into_iter()
         .map(|t| DkTaskEntry {
+          id: t.id,
           path: t
             .path
             .map(|p| p.to_string())
