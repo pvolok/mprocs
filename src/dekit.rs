@@ -13,7 +13,7 @@ use crate::{
     sender::MsgSender,
     socket::{bind_server_socket, connect_client_socket},
   },
-  dk_app::create_dk_app_task,
+  console::create_console_task,
   js::js_vm::JsVm,
   kernel::{
     kernel::Kernel,
@@ -60,7 +60,7 @@ async fn run_server(working_dir: PathBuf) -> anyhow::Result<()> {
   let pc = kernel.context();
 
   let socket_path = lock_guard.socket_path().to_path_buf();
-  let app_task_id = create_dk_app_task(&pc);
+  let app_task_id = create_console_task(&pc);
   let app_sender = pc.get_task_sender(app_task_id);
 
   tokio::spawn(async move {

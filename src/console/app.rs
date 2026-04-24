@@ -20,24 +20,24 @@ use crate::{
   },
 };
 
-struct DkTaskEntry {
+struct ConsoleTaskEntry {
   id: TaskId,
   path: String,
   status: TaskStatus,
 }
 
-struct DkApp {
+struct Console {
   pc: TaskContext,
   pr: UnboundedReceiver<TaskCmd>,
   clients: Vec<ClientHandle>,
   grid: Grid,
   screen_size: Size,
 
-  tasks: Vec<DkTaskEntry>,
+  tasks: Vec<ConsoleTaskEntry>,
   selected: usize,
 }
 
-impl DkApp {
+impl Console {
   async fn run(mut self) {
     self.pc.send(KernelCommand::ListenTaskUpdates);
     self.refresh_tasks().await;
@@ -84,7 +84,7 @@ impl DkApp {
         let path = path
           .map(|p| p.to_string())
           .unwrap_or_else(|| format!("<task:{}>", from.0));
-        self.tasks.push(DkTaskEntry {
+        self.tasks.push(ConsoleTaskEntry {
           id: from,
           path,
           status,
@@ -183,7 +183,7 @@ impl DkApp {
     if let Ok(KernelQueryResponse::TaskList(list)) = rx.await {
       self.tasks = list
         .into_iter()
-        .map(|t| DkTaskEntry {
+        .map(|t| ConsoleTaskEntry {
           id: t.id,
           path: t
             .path
@@ -274,15 +274,15 @@ impl DkApp {
   }
 }
 
-pub fn create_dk_app_task(pc: &TaskContext) -> TaskId {
+pub fn create_console_task(pc: &TaskContext) -> TaskId {
   pc.spawn_async(
     TaskDef {
       status: TaskStatus::Running,
       ..Default::default()
     },
     |pc, receiver| async move {
-      log::debug!("Creating dk app task (id: {})", pc.task_id.0);
-      let app = DkApp {
+      log::debug!("Creating console task (id: {})", pc.task_id.0);
+      let app = Console {
         pc,
         pr: receiver,
         clients: Vec::new(),

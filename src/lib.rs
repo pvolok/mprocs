@@ -2,7 +2,7 @@ mod client;
 mod clipboard;
 pub mod config;
 mod daemon;
-mod dk_app;
+mod console;
 pub mod dekit;
 mod error;
 mod js;
