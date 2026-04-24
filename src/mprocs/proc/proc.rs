@@ -322,6 +322,7 @@ impl Proc {
         }
       }
       StopSignal::HardKill => self.kill().await,
+      StopSignal::Cmd(shell) => self.run_stop_cmd(shell),
     }
   }
 
@@ -337,7 +338,49 @@ impl Proc {
         }
       }
       StopSignal::HardKill => self.kill().await,
+      StopSignal::Cmd(shell) => self.run_stop_cmd(shell),
     }
+  }
+
+  /// Spawn the configured stop command as a separate subprocess. Inherits
+  /// the proc's cwd and env so commands like `podman compose down` target
+  /// the same project. Output is discarded. The main proc is expected to
+  /// exit on its own once the command takes effect.
+  fn run_stop_cmd(&self, shell: String) {
+    let cwd = self.spec.cwd.clone();
+    let env = self.spec.env.clone();
+    tokio::spawn(async move {
+      #[cfg(windows)]
+      let mut cmd = {
+        let mut c = tokio::process::Command::new("pwsh.exe");
+        c.arg("-Command").arg(&shell);
+        c
+      };
+      #[cfg(not(windows))]
+      let mut cmd = {
+        let mut c = tokio::process::Command::new("/bin/sh");
+        c.arg("-c").arg(&shell);
+        c
+      };
+      if let Some(cwd) = &cwd {
+        cmd.current_dir(cwd);
+      }
+      for (k, v) in &env {
+        match v {
+          Some(v) => {
+            cmd.env(k, v);
+          }
+          None => {
+            cmd.env_remove(k);
+          }
+        }
+      }
+      cmd.stdout(std::process::Stdio::null());
+      cmd.stderr(std::process::Stdio::null());
+      if let Err(e) = cmd.status().await {
+        log::warn!("Stop command failed: {}", e);
+      }
+    });
   }
 
   #[cfg(not(windows))]

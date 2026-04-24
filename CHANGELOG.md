@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Add `{cmd: <shell>}` value for `stop` to run a shell command as the stop
+  action (useful for tools like `podman compose` that don't respond to
+  signals reliably)
+
 ## 0.9.2 - 2026-03-21
 
 - Fixed Cyrillic input
