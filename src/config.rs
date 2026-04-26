@@ -1,79 +1,50 @@
-use std::ffi::OsString;
+use std::path::Path;
 
-use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use anyhow::Result;
 
-use crate::process::process_spec::ProcessSpec;
-use crate::term::key::Key;
+use crate::cfg::{CfgCx, CfgDoc, CfgNode, FromCfg};
 
-#[derive(Clone)]
+const CONFIG_FILE: &str = "dekit.yaml";
+
+#[derive(Debug, Default)]
+pub struct Config {
+  pub procs: Vec<ProcConfig>,
+}
+
+#[derive(Debug)]
 pub struct ProcConfig {
   pub name: String,
-  pub cmd: CmdConfig,
-  pub cwd: Option<OsString>,
-  pub env: Option<IndexMap<String, Option<String>>>,
-  pub autostart: bool,
-  pub autorestart: bool,
-  pub stop: StopSignal,
-  pub deps: Vec<String>,
-  pub mouse_scroll_speed: usize,
-  pub scrollback_len: usize,
+  pub cmd: Vec<String>,
+  pub cwd: Option<String>,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum CmdConfig {
-  Cmd { cmd: Vec<String> },
-  Shell { shell: String },
-}
-
-#[derive(Clone, Debug, Default)]
-pub enum StopSignal {
-  SIGINT,
-  #[default]
-  SIGTERM,
-  SIGKILL,
-  SendKeys(Vec<Key>),
-  HardKill,
-}
-
-impl From<&ProcConfig> for ProcessSpec {
-  fn from(cfg: &ProcConfig) -> Self {
-    let mut cmd = match &cfg.cmd {
-      CmdConfig::Cmd { cmd } => ProcessSpec::from_argv(cmd.clone()),
-      CmdConfig::Shell { shell } => cmd_from_shell(shell),
-    };
-
-    if let Some(env) = &cfg.env {
-      for (k, v) in env {
-        if let Some(v) = v {
-          cmd.env(k, v);
-        } else {
-          cmd.env_remove(k);
-        }
-      }
+impl Config {
+  pub fn load(working_dir: &Path) -> Result<Self> {
+    let path = working_dir.join(CONFIG_FILE);
+    if !path.exists() {
+      return Ok(Self::default());
     }
-
-    if let Some(cwd) = &cfg.cwd {
-      cmd.cwd(cwd.to_string_lossy());
-    } else if let Ok(cwd) = std::env::current_dir() {
-      cmd.cwd(cwd.to_string_lossy());
-    }
-
-    cmd
+    let cx = CfgCx::new(working_dir.to_path_buf());
+    let doc = CfgDoc::load(&path, &cx)?;
+    doc.root().parse(&cx)
   }
 }
 
-#[cfg(windows)]
-fn cmd_from_shell(shell: &str) -> ProcessSpec {
-  ProcessSpec::from_argv(vec![
-    "pwsh.exe".into(),
-    "-Command".into(),
-    shell.into(),
-  ])
+impl FromCfg for Config {
+  fn from_cfg(node: &CfgNode<'_>, cx: &CfgCx) -> Result<Self> {
+    let obj = node.as_obj()?;
+    let procs = obj.default("procs", Vec::new(), cx)?;
+    Ok(Self { procs })
+  }
 }
 
-#[cfg(not(windows))]
-fn cmd_from_shell(shell: &str) -> ProcessSpec {
-  ProcessSpec::from_argv(vec!["/bin/sh".into(), "-c".into(), shell.into()])
+impl FromCfg for ProcConfig {
+  fn from_cfg(node: &CfgNode<'_>, cx: &CfgCx) -> Result<Self> {
+    let obj = node.as_obj()?;
+    Ok(Self {
+      name: obj.required("name", cx)?,
+      cmd: obj.required("cmd", cx)?,
+      cwd: obj.optional("cwd", cx)?,
+    })
+  }
 }

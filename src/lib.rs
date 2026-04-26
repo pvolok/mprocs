@@ -1,6 +1,7 @@
+mod cfg;
 mod client;
 mod clipboard;
-pub mod config;
+mod config;
 mod daemon;
 mod console;
 pub mod dekit;

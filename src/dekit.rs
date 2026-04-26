@@ -438,9 +438,26 @@ pub async fn dekit_main() -> anyhow::Result<()> {
       }
     }
     Some(("up", _sub_m)) => {
-      // let working_dir = std::env::current_dir()?;
-      // TODO: load config, spawn default process set via RPC
-      println!("up: not yet implemented");
+      let working_dir = std::env::current_dir()?;
+      let config = crate::config::Config::load(&working_dir)?;
+      if config.procs.is_empty() {
+        println!("No procs in dekit.yaml.");
+      } else {
+        for proc in &config.procs {
+          let path = format!("/{}", proc.name);
+          let req = DkRequest::Spawn {
+            path: path.clone(),
+            cmd: proc.cmd.clone(),
+            cwd: proc.cwd.clone(),
+          };
+          let resp = rpc_request(&working_dir, req, true).await?;
+          match resp {
+            DkResponse::Ok => println!("Spawned {}.", path),
+            DkResponse::Error(e) => eprintln!("Error spawning {}: {}", path, e),
+            _ => eprintln!("Unexpected response for {}", path),
+          }
+        }
+      }
     }
     Some(("down", _sub_m)) => {
       let working_dir = std::env::current_dir()?;
