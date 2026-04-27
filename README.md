@@ -162,8 +162,11 @@ settings in the _global_ config.
     environment variable.
   - **autostart**: _bool_ - Start process when mprocs starts. Default: _true_.
   - **autorestart**: _bool_ - Restart process when it exits. Default: false. Note: If process exits within 1 second of starting, it will not be restarted.
-  - **stop**: _"SIGINT"|"SIGTERM"|"SIGKILL"|{send-keys: array<key>}|"hard-kill"_ -
-    A way to stop a process (using `x` key or when quitting mprocs).
+  - **stop**: _"SIGINT"|"SIGTERM"|"SIGKILL"|{send-keys: array<key>}|{cmd: string}|"hard-kill"_ -
+    A way to stop a process (using `x` key or when quitting mprocs). The `cmd`
+    form runs a shell command (e.g. `podman compose down`) instead of
+    signaling the proc. The proc is expected to exit on its own once the
+    command takes effect.
   - **log**: _bool|string|object|null_ - Process logging config. A string is a
     shorthand for `{ dir: ... }`. `true` enables logging with defaults.
     - **dir**: _string|null_ - Directory for per-process log files.

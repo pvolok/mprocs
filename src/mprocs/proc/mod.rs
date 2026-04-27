@@ -19,6 +19,12 @@ pub enum StopSignal {
   SIGKILL,
   SendKeys(Vec<Key>),
   HardKill,
+  /// Run a shell command as the stop action. Useful for tools like
+  /// `podman compose` that don't reliably respond to signals but do have
+  /// an explicit teardown command (e.g. `podman compose down`). The main
+  /// process is expected to exit on its own once the stop command
+  /// completes (e.g. `compose up` exits when containers go away).
+  Cmd(String),
 }
 
 impl StopSignal {
@@ -36,6 +42,12 @@ impl StopSignal {
           if let Some(keys) = map.get("send-keys") {
             let keys: Vec<Key> = serde_yaml::from_value(keys.clone())?;
             return Ok(Self::SendKeys(keys));
+          }
+          if let Some(cmd) = map.get("cmd") {
+            if let serde_yaml::Value::String(shell) = cmd {
+              return Ok(Self::Cmd(shell.clone()));
+            }
+            bail!("Expected 'cmd' to be a string");
           }
         }
       }
