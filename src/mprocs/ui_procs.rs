@@ -106,7 +106,14 @@ pub fn render_procs(
           Cow::from(format!(" DOWN ({})", exit_code)),
           attrs.clone().fg(Color::BRIGHT_RED),
         ),
-        None => (Cow::from(" DOWN "), attrs.clone().fg(Color::BRIGHT_RED)),
+        None => {
+          // Process never started - check if autostart is false
+          if !proc.cfg.autostart {
+            (Cow::from(" DOWN "), attrs.clone().fg(Color::BRIGHT_BLACK))
+          } else {
+            (Cow::from(" DOWN "), attrs.clone().fg(Color::BRIGHT_RED))
+          }
+        }
       }
     };
     let status_width = status_text.width() as u16;
