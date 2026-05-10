@@ -36,7 +36,6 @@ shows output of each command separately and allows to interact with processes
   - [cargo (All platforms)](#cargo-all-platforms)
   - [scoop (Windows)](#scoop-windows)
   - [AUR (Arch Linux)](#aur-arch-linux)
-  - [MPR (Debian/Ubuntu)](#mpr-debianubuntu)
 - [Usage](#usage)
   - [Config](#config)
     - [Keymap](#keymap)
@@ -102,14 +101,6 @@ yay mprocs
 
 ```sh
 yay mprocs-bin
-```
-
-### MPR (Debian/Ubuntu)
-
-```sh
-git clone 'https://mpr.makedeb.org/mprocs'
-cd mprocs/
-makedeb -si
 ```
 
 ## Usage
