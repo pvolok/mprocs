@@ -24,7 +24,7 @@ impl Modal for QuitModal {
   }
 
   fn size(&self) -> (u16, u16) {
-    (22, 7)
+    (22, 6)
   }
 
   fn draw_content(&self, grid: &mut Grid, area: Rect) {

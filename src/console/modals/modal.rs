@@ -31,17 +31,17 @@ pub trait Modal {
     let y = area.height.saturating_sub(height) / 2;
     let modal_rect = Rect::new(x, y, width, height);
 
+    let border_color = color!("#bee6f4");
     let bg = color!("#1a1a2e");
-    let border_attrs = Attrs::default().fg(color!("#5588bb")).bg(bg);
+    let border_attrs = Attrs::default().fg(border_color).bg(bg);
     grid.fill_area(modal_rect.inner(1), ' ', Attrs::default().bg(bg));
-    grid.draw_block(modal_rect, &BorderType::Plain.chars(), border_attrs);
+    grid.draw_block(modal_rect, &BorderType::Thick.chars(), border_attrs);
 
-    let title_attrs =
-      Attrs::default().fg(color!("#e0e0e0")).bg(bg).set_bold(true);
-    let title_area = Rect::new(x + 2, y + 1, width - 4, 1);
-    grid.draw_text(title_area, self.title(), title_attrs);
+    let title_attrs = Attrs::default().fg(border_color).bg(bg).set_bold(true);
+    let title_area = Rect::new(x + 1, y, width - 4, 1);
+    grid.draw_text(title_area, &format!(" {} ", self.title()), title_attrs);
 
-    let content_area = Rect::new(x + 2, y + 3, width - 4, height - 4);
+    let content_area = Rect::new(x + 2, y + 2, width - 4, height - 4);
     self.draw_content(grid, content_area);
   }
 }
