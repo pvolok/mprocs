@@ -329,6 +329,16 @@ Copy mode:
 - `j` or `↓` - Move cursor down
 - `h` or `←` - Move cursor left
 
+#### How to use the command menu
+
+Press `p` to open the command menu, a searchable modal showing all available commands with their key bindings. This is useful for discovering commands or when you forget a key binding.
+
+1. Press `p` to open the command menu.
+2. Type to filter commands by name or description.
+3. Use arrow keys or `C-n`/`C-p` to navigate.
+4. Press `Enter` to execute the selected command.
+5. Press `Esc` to close the menu without executing a command.
+
 #### How to copy text
 
 1. Press `v` to enter copy mode.
