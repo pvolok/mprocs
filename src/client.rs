@@ -1,7 +1,7 @@
-use std::io::{stdout, Write};
+use tokio::io::AsyncWriteExt;
 
-use crate::term::key::{Key, KeyEventKind};
 use crate::term::TermEvent;
+use crate::term::key::{Key, KeyEventKind};
 use crate::term_driver::TermDriver;
 use crate::{
   daemon::{receiver::MsgReceiver, sender::MsgSender},
@@ -36,6 +36,8 @@ async fn client_main_loop(
     TermEvent(std::io::Result<Option<TermEvent>>),
   }
 
+  let mut stdout = tokio::io::stdout();
+
   loop {
     let event = tokio::select! {
       msg = receiver.recv() => {
@@ -49,13 +51,13 @@ async fn client_main_loop(
       LocalEvent::ServerMsg(msg) => match msg {
         Some(msg) => match msg {
           SrvToClt::Print(text) => {
-            std::io::stdout().write_all(text.as_bytes())?;
+            stdout.write_all(text.as_bytes()).await?;
           }
           SrvToClt::Flush => {
-            stdout().flush()?;
+            stdout.flush().await?;
           }
           SrvToClt::Quit => break,
-          SrvToClt::Rpc(_) => {},
+          SrvToClt::Rpc(_) => {}
         },
         _ => break,
       },
@@ -69,6 +71,10 @@ async fn client_main_loop(
       },
     }
   }
+
+  // Make sure any buffered bytes hit the terminal before TermDriver::drop
+  // restores its state.
+  let _ = stdout.flush().await;
 
   Ok(())
 }
