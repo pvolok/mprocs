@@ -193,15 +193,26 @@ impl App {
           modal.render(grid);
         }
 
-        for client_handle in &mut self.clients {
+        let mut dead_clients: Vec<usize> = Vec::new();
+        for (idx, client_handle) in self.clients.iter_mut().enumerate() {
           let mut out = String::new();
           client_handle.differ.diff(&mut out, grid).log_ignore();
-          client_handle
+          if client_handle
             .sender
             .send(SrvToClt::Print(out))
             .await
-            .unwrap();
-          client_handle.sender.send(SrvToClt::Flush).await.unwrap();
+            .is_err()
+            || client_handle
+              .sender
+              .send(SrvToClt::Flush)
+              .await
+              .is_err()
+          {
+            dead_clients.push(idx);
+          }
+        }
+        for idx in dead_clients.into_iter().rev() {
+          self.clients.swap_remove(idx);
         }
       }
 
