@@ -217,9 +217,25 @@ impl App {
       }
 
       let mut loop_action = LoopAction::default();
-      self.pr.recv_many(&mut command_buf, 512).await;
+      // Drain the inbox aggressively before the next render so a backed-up
+      // pipeline (e.g. after the terminal was occluded and paused draining)
+      // collapses into a single render of the latest state rather than
+      // replaying every intermediate frame. Without this cap-bump and the
+      // inner short-circuit, a user-input event like ForceQuit can sit
+      // behind tens of thousands of TaskRendered notifications waiting for
+      // the renderer to catch up frame-by-frame.
+      self.pr.recv_many(&mut command_buf, 16384).await;
+      while command_buf.len() < 16384 {
+        match self.pr.try_recv() {
+          Ok(cmd) => command_buf.push(cmd),
+          Err(_) => break,
+        }
+      }
       for command in command_buf.drain(..) {
         self.handle_proc_command(&mut loop_action, command);
+        if matches!(loop_action, LoopAction::ForceQuit) {
+          break;
+        }
       }
 
       if self.state.quitting && self.state.all_procs_down() {
