@@ -72,8 +72,6 @@ async fn client_main_loop(
     }
   }
 
-  // Make sure any buffered bytes hit the terminal before TermDriver::drop
-  // restores its state.
   let _ = stdout.flush().await;
 
   Ok(())
