@@ -390,18 +390,12 @@ mod tests {
 
     let settings = Settings::default();
 
-    // We need to change cwd to the temp dir because load_procfile_procs looks for "Procfile" in CWD
-    let original_cwd = std::env::current_dir().unwrap();
-    std::env::set_current_dir(&temp_dir).unwrap();
-
-    let procs = load_procfile_procs("Procfile", &settings).unwrap();
-
-    std::env::set_current_dir(original_cwd).unwrap();
+    let procs =
+      load_procfile_procs(procfile_path.to_str().unwrap(), &settings).unwrap();
 
     assert_eq!(procs.len(), 2);
     assert!(procs.iter().any(|p| p.name == "web"));
     assert!(procs.iter().any(|p| p.name == "worker"));
-    // Verify autostart is false
     assert!(!procs[0].autostart);
 
     std::fs::remove_dir_all(&temp_dir).unwrap();
@@ -428,12 +422,8 @@ mod tests {
 
     let settings = Settings::default();
 
-    let original_cwd = std::env::current_dir().unwrap();
-    std::env::set_current_dir(&temp_dir).unwrap();
-
-    let procs = load_procfile_procs("Procfile", &settings).unwrap();
-
-    std::env::set_current_dir(original_cwd).unwrap();
+    let procs =
+      load_procfile_procs(procfile_path.to_str().unwrap(), &settings).unwrap();
 
     assert_eq!(procs.len(), 2);
 
