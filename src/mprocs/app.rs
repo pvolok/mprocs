@@ -5,23 +5,6 @@ use futures::{future::FutureExt, select};
 use serde::{Deserialize, Serialize};
 use tokio::{io::AsyncReadExt, sync::mpsc::UnboundedReceiver};
 
-use crate::{
-  daemon::{receiver::MsgReceiver, sender::MsgSender},
-  error::ResultLogger,
-  kernel::{
-    kernel_message::{KernelCommand, TaskContext, TaskSender},
-    task::{TaskCmd, TaskDef, TaskId, TaskNotification, TaskNotify, TaskStatus},
-  },
-  protocol::{CltToSrv, SrvToClt},
-  server::server_message::ServerMessage,
-  term::{
-    Grid, MouseProtocolMode, ScreenDiffer, Size, TermEvent,
-    attrs::Attrs,
-    grid::Rect,
-    key::{Key, KeyEventKind},
-    mouse::{MouseButton, MouseEventKind},
-  },
-};
 use crate::mprocs::{
   config::{CmdConfig, Config, ProcConfig, ServerConfig},
   event::{AppEvent, CopyMove},
@@ -43,6 +26,25 @@ use crate::mprocs::{
   ui_term::{render_term, term_check_hit},
   ui_zoom_tip::render_zoom_tip,
   widgets::list::ListState,
+};
+use crate::{
+  daemon::{receiver::MsgReceiver, sender::MsgSender},
+  error::ResultLogger,
+  kernel::{
+    kernel_message::{KernelCommand, TaskContext, TaskSender},
+    task::{
+      TaskCmd, TaskDef, TaskId, TaskNotification, TaskNotify, TaskStatus,
+    },
+  },
+  protocol::{CltToSrv, SrvToClt},
+  server::server_message::ServerMessage,
+  term::{
+    Grid, MouseProtocolMode, ScreenDiffer, Size, TermEvent,
+    attrs::Attrs,
+    grid::Rect,
+    key::{Key, KeyEventKind},
+    mouse::{MouseButton, MouseEventKind},
+  },
 };
 
 #[derive(Debug, Default, PartialEq)]
@@ -200,8 +202,12 @@ impl App {
             .sender
             .send(SrvToClt::Print(out))
             .await
-            .unwrap();
-          client_handle.sender.send(SrvToClt::Flush).await.unwrap();
+            .log_ignore();
+          client_handle
+            .sender
+            .send(SrvToClt::Flush)
+            .await
+            .log_ignore();
         }
       }
 
@@ -947,7 +953,7 @@ impl App {
           return;
         }
         log::error!("App received unknown Msg");
-      },
+      }
     }
   }
 
@@ -984,8 +990,7 @@ impl App {
             TargetState::None if proc.cfg.autorestart && exit_code != 0 => {
               match proc.last_start {
                 Some(last_start) => {
-                  let elapsed_time =
-                    Instant::now().duration_since(last_start);
+                  let elapsed_time = Instant::now().duration_since(last_start);
                   elapsed_time.as_secs_f64() > RESTART_THRESHOLD_SECONDS
                 }
                 None => true,

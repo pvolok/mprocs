@@ -4,6 +4,7 @@
   action (useful for tools like `podman compose` that don't respond to
   signals reliably)
 - Fix client hang under terminal backpressure by using async stdout writes
+- Fix server panic when a client disconnects during render
 
 ## 0.9.2 - 2026-03-21
 
