@@ -18,7 +18,6 @@ pub trait Task: Send + 'static {
 pub enum TaskEffect {
   Started,
   Stopped(u32),
-  Rendered,
   Remove,
 }
 
@@ -35,10 +34,6 @@ impl Effects {
 
   pub fn stopped(&mut self, code: u32) {
     self.0.push(TaskEffect::Stopped(code));
-  }
-
-  pub fn rendered(&mut self) {
-    self.0.push(TaskEffect::Rendered);
   }
 
   pub fn remove(&mut self) {
@@ -84,7 +79,6 @@ pub enum TaskNotify {
   Added(Option<TaskPath>, TaskStatus, Option<SharedVt>),
   Started,
   Stopped(u32),
-  Rendered,
   Removed,
 }
 
@@ -96,7 +90,6 @@ impl fmt::Debug for TaskNotify {
       }
       TaskNotify::Started => write!(f, "Started"),
       TaskNotify::Stopped(code) => write!(f, "Stopped({})", code),
-      TaskNotify::Rendered => write!(f, "Rendered"),
       TaskNotify::Removed => write!(f, "Removed"),
     }
   }

@@ -236,7 +236,7 @@ impl Screen {
     self.mouse_protocol_mode
   }
 
-  fn grid(&self) -> &super::grid::Grid {
+  pub fn grid(&self) -> &super::grid::Grid {
     if self.mode(MODE_ALTERNATE_SCREEN) {
       &self.alternate_grid
     } else {
@@ -244,7 +244,7 @@ impl Screen {
     }
   }
 
-  fn grid_mut(&mut self) -> &mut super::grid::Grid {
+  pub fn grid_mut(&mut self) -> &mut super::grid::Grid {
     if self.mode(MODE_ALTERNATE_SCREEN) {
       &mut self.alternate_grid
     } else {

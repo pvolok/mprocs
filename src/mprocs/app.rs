@@ -35,11 +35,12 @@ use crate::{
     task::{
       TaskCmd, TaskDef, TaskId, TaskNotification, TaskNotify, TaskStatus,
     },
+    task_screen::{FramedScreenNotify, TaskScreenCmd},
   },
   protocol::{CltToSrv, SrvToClt},
   server::server_message::ServerMessage,
   term::{
-    Grid, MouseProtocolMode, ScreenDiffer, Size, TermEvent,
+    Grid, MouseProtocolMode, ScreenDiffer, Size, TermEvent, Winsize,
     attrs::Attrs,
     grid::Rect,
     key::{Key, KeyEventKind},
@@ -163,12 +164,18 @@ impl App {
 
       let term_size = layout.term_area().size();
       if term_size != last_term_size {
+        let observer_id = self.pc.task_id;
         for proc_handle in &mut self.state.procs {
           self.pc.send(KernelCommand::TaskCmd(
             proc_handle.id(),
-            TaskCmd::msg(ProcMsg::Resize {
-              w: term_size.width,
-              h: term_size.height,
+            TaskCmd::msg(TaskScreenCmd::Resize {
+              size: Winsize {
+                x: term_size.width,
+                y: term_size.height,
+                x_px: 0,
+                y_px: 0,
+              },
+              observer_id,
             }),
           ));
         }
@@ -241,6 +248,22 @@ impl App {
     Ok(())
   }
 
+  fn observe_proc(&self, proc_id: TaskId, size: Rect) {
+    let sender = self.pc.get_task_sender(self.pc.task_id);
+    self.pc.send(KernelCommand::TaskCmd(
+      proc_id,
+      TaskCmd::msg(TaskScreenCmd::Observe {
+        size: Winsize {
+          x: size.width,
+          y: size.height,
+          x_px: 0,
+          y_px: 0,
+        },
+        sender,
+      }),
+    ));
+  }
+
   fn start_procs(&mut self, size: Rect) -> anyhow::Result<()> {
     let mut id_map = HashMap::with_capacity(self.config.procs.len());
     for proc_cfg in &self.config.procs {
@@ -265,6 +288,10 @@ impl App {
         launch_proc(&self.pc, proc_cfg.clone(), *task_id, deps, None, size)
       })
       .collect::<Vec<_>>();
+
+    for proc in &procs {
+      self.observe_proc(proc.id(), size);
+    }
 
     self.state.procs.append(&mut procs);
 
@@ -776,14 +803,16 @@ impl App {
           scrollback_len: self.config.scrollback_len,
           log: self.config.proc_log.clone(),
         };
+        let term_area = self.get_layout().term_area();
         let proc_handle = launch_proc(
           &pc,
           proc_config,
           self.pc.alloc_id(),
           Vec::new(),
           None,
-          self.get_layout().term_area(),
+          term_area,
         );
+        self.observe_proc(proc_handle.id(), term_area);
         self.state.procs.push(proc_handle);
 
         loop_action.render();
@@ -798,6 +827,7 @@ impl App {
           log::error!("TODO: Copy deps for duplicate proc.");
           let proc_handle =
             launch_proc(&pc, cfg, self.pc.alloc_id(), Vec::new(), None, size);
+          self.observe_proc(proc_handle.id(), size);
           self.state.procs.push(proc_handle);
           loop_action.render();
         }
@@ -948,12 +978,50 @@ impl App {
           }
           Err(msg) => msg,
         };
+        let msg = match msg.downcast::<FramedScreenNotify>() {
+          Ok(notify) => {
+            self.handle_screen_notify(loop_action, *notify);
+            return;
+          }
+          Err(msg) => msg,
+        };
         if let Ok(n) = msg.downcast::<TaskNotification>() {
           self.handle_notification(loop_action, n.from, n.notify);
           return;
         }
         log::error!("App received unknown Msg");
       }
+    }
+  }
+
+  fn handle_screen_notify(
+    &mut self,
+    loop_action: &mut LoopAction,
+    notify: FramedScreenNotify,
+  ) {
+    match notify {
+      FramedScreenNotify::ObserveStarted { task_id } => {
+        let is_current = self
+          .state
+          .get_current_proc()
+          .is_some_and(|p| p.id() == task_id);
+        if is_current {
+          loop_action.render();
+        }
+      }
+      FramedScreenNotify::Render { task_id } => {
+        let is_current = self
+          .state
+          .get_current_proc()
+          .is_some_and(|p| p.id() == task_id);
+        if let Some(proc) = self.state.get_proc_mut(task_id) {
+          if !is_current {
+            proc.changed = true;
+          }
+          loop_action.render();
+        }
+      }
+      FramedScreenNotify::Bell { .. } => (),
     }
   }
 
@@ -1025,18 +1093,6 @@ impl App {
             }
           }
 
-          loop_action.render();
-        }
-      }
-      TaskNotify::Rendered => {
-        let is_current = self
-          .state
-          .get_current_proc()
-          .is_some_and(|p| p.id() == task_id);
-        if let Some(proc) = self.state.get_proc_mut(task_id) {
-          if !is_current {
-            proc.changed = true;
-          }
           loop_action.render();
         }
       }

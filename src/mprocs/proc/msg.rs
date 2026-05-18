@@ -11,8 +11,6 @@ pub enum ProcMsg {
   ScrollDown,
   ScrollUpLines { n: usize },
   ScrollDownLines { n: usize },
-
-  Resize { w: u16, h: u16 },
 }
 
 #[derive(Debug)]

@@ -43,7 +43,6 @@ pub enum KernelCommand {
   // Task reporting
   TaskStarted,
   TaskStopped(u32),
-  TaskRendered,
 }
 
 pub enum KernelQuery {

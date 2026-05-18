@@ -4,7 +4,7 @@ use anyhow::{anyhow, bail};
 use clap::{Arg, Command};
 use rquickjs::CatchResultExt;
 
-use crate::mprocs::app::{ClientHandle, ClientId};
+use crate::mprocs::app::ClientId;
 use crate::{
   client::client_main,
   console::create_console_task,
@@ -25,7 +25,6 @@ use crate::{
   },
   lualib::init_std,
   protocol::{CltToSrv, DkRequest, DkResponse, DkTaskInfo, SrvToClt},
-  server::server_message::ServerMessage,
   term::Size,
 };
 
@@ -51,7 +50,7 @@ async fn run_server(
   let pc = kernel.context();
 
   let socket_path = lock_guard.socket_path().to_path_buf();
-  let app_task_id = create_console_task(&pc);
+  let (app_task_id, console_vt) = create_console_task(&pc);
   let app_sender = pc.get_task_sender(app_task_id);
 
   spawn_configured_procs(&pc, &working_dir);
@@ -78,9 +77,19 @@ async fn run_server(
           let client_id = ClientId(last_client_id);
           let app_sender = app_sender.clone();
           let pc = pc.clone();
+          let console_task_id = app_task_id;
+          let console_vt = console_vt.clone();
           tokio::spawn(async move {
-            dispatch_connection(client_id, app_sender, pc, sender, receiver)
-              .await;
+            dispatch_connection(
+              client_id,
+              app_sender,
+              pc,
+              console_task_id,
+              console_vt,
+              sender,
+              receiver,
+            )
+            .await;
           });
         }
         Err(err) => {
@@ -145,7 +154,7 @@ fn spawn_configured_procs(pc: &TaskContext, working_dir: &Path) {
     } else {
       spec.cwd(working_dir.to_string_lossy());
     }
-    crate::task::proc_task::ProcTask::spawn(pc, path, spec);
+    crate::task::proc_task::spawn_proc_task(pc, path, spec);
   }
 }
 
@@ -154,6 +163,8 @@ async fn dispatch_connection(
   client_id: ClientId,
   app_sender: crate::kernel::kernel_message::TaskSender,
   pc: TaskContext,
+  console_task_id: crate::kernel::task::TaskId,
+  console_vt: crate::kernel::kernel_message::SharedVt,
   mut sender: MsgSender<SrvToClt>,
   mut receiver: MsgReceiver<CltToSrv>,
 ) {
@@ -166,38 +177,16 @@ async fn dispatch_connection(
       let _ = sender.send(SrvToClt::Rpc(resp)).await;
     }
     Some(Ok(CltToSrv::Init { width, height })) => {
-      let handle =
-        ClientHandle::create(client_id, sender, Size { width, height });
-      match handle {
-        Ok(handle) => {
-          app_sender
-            .send(TaskCmd::msg(ServerMessage::ClientConnected { handle }));
-        }
-        Err(err) => {
-          log::error!("Client creation error: {:?}", err);
-          return;
-        }
-      }
-      // Forward subsequent messages to app.
-      loop {
-        let msg = if let Some(msg) = receiver.recv().await {
-          msg
-        } else {
-          break;
-        };
-        match msg {
-          Ok(msg) => {
-            app_sender.send(TaskCmd::msg(ServerMessage::ClientMessage {
-              client_id,
-              msg,
-            }));
-          }
-          Err(_err) => break,
-        }
-      }
-      app_sender.send(TaskCmd::msg(ServerMessage::ClientDisconnected {
+      crate::console::spawn_client_task(
+        &pc,
+        console_task_id,
+        console_vt,
+        app_sender,
         client_id,
-      }));
+        Size { width, height },
+        sender,
+        receiver,
+      );
     }
     _ => {
       log::warn!("Unexpected first message from client");
@@ -278,7 +267,7 @@ async fn handle_rpc(
       } else if let Ok(cwd) = std::env::current_dir() {
         spec.cwd(cwd.to_string_lossy());
       }
-      crate::task::proc_task::ProcTask::spawn(pc, task_path, spec);
+      crate::task::proc_task::spawn_proc_task(pc, task_path, spec);
       DkResponse::Ok
     }
   };

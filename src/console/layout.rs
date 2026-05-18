@@ -166,6 +166,13 @@ impl Layout {
     out
   }
 
+  pub fn area(&mut self, id: PaneId) -> Option<Rect> {
+    if self.dirty {
+      self.relayout();
+    }
+    self.nodes.get(&id).map(|n| n.area)
+  }
+
   pub fn pane_mut(&mut self, id: PaneId) -> &mut dyn Pane {
     match &mut self.nodes.get_mut(&id).expect("no such pane").kind {
       NodeKind::Leaf { pane } => pane.as_mut(),

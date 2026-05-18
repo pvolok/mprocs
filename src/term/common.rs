@@ -20,7 +20,7 @@ pub enum CursorStyle {
   SteadyBar = 6,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Winsize {
   pub x: u16,
   pub y: u16,

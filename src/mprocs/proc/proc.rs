@@ -10,6 +10,7 @@ use crate::error::ResultLogger;
 use crate::kernel::kernel_message::{KernelCommand, SharedVt, TaskContext};
 use crate::kernel::task::{TaskCmd, TaskDef, TaskId};
 use crate::kernel::task_path::TaskPath;
+use crate::kernel::task_screen::{TaskScreen, TaskScreenCmd, TaskScreenEffect};
 use crate::mprocs::config::ProcConfig;
 use crate::mprocs::proc_log_config::LogConfig;
 use crate::process::process::Process as _;
@@ -18,7 +19,7 @@ use crate::term::encode::{encode_key, encode_mouse_event, KeyCodeEncodeModes};
 use crate::term::grid::Rect;
 use crate::term::key::Key;
 use crate::term::mouse::{MouseEvent, MouseEventKind};
-use crate::term::{MouseProtocolMode, Parser, VtEvent};
+use crate::term::{MouseProtocolMode, Parser};
 
 use super::inst::Inst;
 use super::msg::{ProcEvent, ProcMsg};
@@ -88,9 +89,11 @@ async fn proc_main_loop(
 ) -> ProcView {
   let (internal_sender, mut internal_receiver) =
     tokio::sync::mpsc::unbounded_channel();
-  let mut proc = Proc::new(task_id, cfg, vt, internal_sender, size).await;
+  let mut proc =
+    Proc::new(task_id, cfg, vt.clone(), internal_sender, size).await;
 
-  let mut vt_events_buf = Vec::new();
+  let mut task_screen = TaskScreen::new(task_id, vt);
+  let mut screen_effects: Vec<TaskScreenEffect> = Vec::new();
 
   loop {
     enum NextValue {
@@ -115,16 +118,26 @@ async fn proc_main_loop(
           TaskCmd::Stop => proc.stop().await,
           TaskCmd::Kill => proc.kill().await,
           TaskCmd::Msg(msg) => {
-            if let Ok(proc_msg) = msg.downcast::<ProcMsg>() {
-              proc.handle_msg(*proc_msg, &mut rendered).await;
-            } else {
-              log::error!("Proc received unknown Msg");
-            }
+            let msg = match msg.downcast::<ProcMsg>() {
+              Ok(proc_msg) => {
+                proc.handle_msg(*proc_msg, &mut rendered).await;
+                continue;
+              }
+              Err(msg) => msg,
+            };
+            let msg = match msg.downcast::<TaskScreenCmd>() {
+              Ok(cmd) => {
+                task_screen.handle_cmd(*cmd, &mut screen_effects);
+                apply_screen_effects(&mut screen_effects, &mut proc).await;
+                continue;
+              }
+              Err(msg) => msg,
+            };
+            let _ = msg;
+            log::error!("Proc received unknown Msg");
           }
         }
-        if rendered {
-          ks.send(KernelCommand::TaskRendered);
-        }
+        let _ = rendered;
       }
       NextValue::Cmd(None) => (),
       NextValue::Internal(Some(proc_event)) => match proc_event {
@@ -163,23 +176,8 @@ async fn proc_main_loop(
             writer.flush().await.log_ignore();
           }
 
-          if let Ok(mut vt) = proc.vt.write() {
-            vt.screen.process(bytes, &mut vt_events_buf);
-            drop(vt);
-          }
-          for vt_event in vt_events_buf.drain(..) {
-            match vt_event {
-              VtEvent::Bell => {
-                //
-              }
-              VtEvent::Reply(s) => {
-                if let ProcState::Some(inst) = &mut proc.inst {
-                  inst.process.write_all(s.as_bytes()).await.log_ignore();
-                }
-              }
-            };
-          }
-          ks.send(KernelCommand::TaskRendered);
+          task_screen.process(bytes, &mut screen_effects);
+          apply_screen_effects(&mut screen_effects, &mut proc).await;
         }
       }
       NextValue::Read(Err(e)) => {
@@ -195,6 +193,27 @@ async fn proc_main_loop(
           }
           ProcState::None => {}
         };
+      }
+    }
+  }
+}
+
+async fn apply_screen_effects(
+  effects: &mut Vec<TaskScreenEffect>,
+  proc: &mut Proc,
+) {
+  for fx in effects.drain(..) {
+    match fx {
+      TaskScreenEffect::Reply(s) => {
+        if let ProcState::Some(inst) = &mut proc.inst {
+          inst.process.write_all(s.as_bytes()).await.log_ignore();
+        }
+      }
+      TaskScreenEffect::Resize(ws) => {
+        proc.resize(Size {
+          width: ws.x,
+          height: ws.y,
+        });
       }
     }
   }
@@ -529,14 +548,6 @@ impl Proc {
       }
       ProcMsg::ScrollDownLines { n } => {
         self.scroll_down_lines(n);
-        *rendered = true;
-      }
-
-      ProcMsg::Resize { w, h } => {
-        self.resize(Size {
-          width: w,
-          height: h,
-        });
         *rendered = true;
       }
     }

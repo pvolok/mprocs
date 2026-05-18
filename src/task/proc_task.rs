@@ -1,113 +1,53 @@
 use std::future::pending;
 
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::{KernelCommand, SharedVt, TaskContext};
-use crate::kernel::task::{Effects, Task, TaskCmd, TaskDef};
+use crate::kernel::task::{TaskCmd, TaskDef};
 use crate::kernel::task_path::TaskPath;
+use crate::kernel::task_screen::{TaskScreen, TaskScreenCmd, TaskScreenEffect};
 use crate::process::NativeProcess;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
-use crate::term::{Parser, VtEvent, Winsize};
+use crate::term::{Parser, Winsize};
 
-// Messages from async worker -> in-kernel ProcTask
+struct ProcExited(u32);
 
-struct WorkerExited(u32);
-struct WorkerStdoutEof;
-
-// Commands from in-kernel ProcTask -> async worker
-
-enum WorkerCmd {
-  Kill,
+pub fn spawn_proc_task(
+  parent: &TaskContext,
+  task_path: TaskPath,
+  spec: ProcessSpec,
+) {
+  let vt = SharedVt::new(Parser::new(24, 80, 1000));
+  let task_vt = vt.clone();
+  let task_id = parent.alloc_id();
+  parent.spawn_async_with_id(
+    task_id,
+    TaskDef {
+      stop_on_quit: true,
+      path: Some(task_path),
+      vt: Some(vt),
+      ..Default::default()
+    },
+    move |ctx, receiver| async move {
+      proc_main(ctx, receiver, spec, task_vt).await;
+    },
+  );
 }
 
-pub struct ProcTask {
-  worker_tx: UnboundedSender<WorkerCmd>,
-  exit_code: Option<u32>,
-  stdout_eof: bool,
-}
-
-impl ProcTask {
-  pub fn spawn(parent: &TaskContext, task_path: TaskPath, spec: ProcessSpec) {
-    let vt = SharedVt::new(Parser::new(24, 80, 1000));
-    let task_vt = vt.clone();
-    parent.register_with_id(
-      parent.alloc_id(),
-      TaskDef {
-        stop_on_quit: true,
-        path: Some(task_path),
-        vt: Some(vt),
-        ..Default::default()
-      },
-      Box::new(move |ctx| {
-        let (worker_tx, worker_rx) = tokio::sync::mpsc::unbounded_channel();
-
-        let worker_ctx = ctx.clone();
-        tokio::spawn(async move {
-          proc_worker(worker_ctx, spec, task_vt, worker_rx).await;
-        });
-
-        ctx.send(KernelCommand::TaskStarted);
-
-        Box::new(ProcTask {
-          worker_tx,
-          exit_code: None,
-          stdout_eof: false,
-        })
-      }),
-    );
-  }
-
-  fn maybe_stopped(&self, fx: &mut Effects) {
-    if let Some(code) = self.exit_code {
-      if self.stdout_eof {
-        fx.stopped(code);
-      }
-    }
-  }
-}
-
-impl Task for ProcTask {
-  fn handle_cmd(&mut self, cmd: TaskCmd, fx: &mut Effects) {
-    match cmd {
-      TaskCmd::Start => {}
-      TaskCmd::Stop | TaskCmd::Kill => {
-        let _ = self.worker_tx.send(WorkerCmd::Kill);
-      }
-      TaskCmd::Msg(msg) => {
-        let msg = match msg.downcast::<WorkerExited>() {
-          Ok(exited) => {
-            self.exit_code = Some(exited.0);
-            self.maybe_stopped(fx);
-            return;
-          }
-          Err(msg) => msg,
-        };
-        if msg.downcast::<WorkerStdoutEof>().is_ok() {
-          self.stdout_eof = true;
-          self.maybe_stopped(fx);
-        }
-      }
-    }
-  }
-}
-
-async fn proc_worker(
+async fn proc_main(
   ctx: TaskContext,
+  mut receiver: UnboundedReceiver<TaskCmd>,
   spec: ProcessSpec,
   vt: SharedVt,
-  mut cmd_rx: tokio::sync::mpsc::UnboundedReceiver<WorkerCmd>,
 ) {
-  let width: u16 = 80;
-  let height: u16 = 24;
-
   let mut process = match spawn_native(
     &ctx,
     &spec,
     Winsize {
-      x: width,
-      y: height,
+      x: 80,
+      y: 24,
       x_px: 0,
       y_px: 0,
     },
@@ -115,22 +55,24 @@ async fn proc_worker(
     Ok(p) => p,
     Err(err) => {
       log::error!("Process spawn error: {}", err);
-      ctx.send_self_custom(WorkerExited(255));
-      ctx.send_self_custom(WorkerStdoutEof);
+      ctx.send(KernelCommand::TaskStopped(255));
       return;
     }
   };
 
+  ctx.send(KernelCommand::TaskStarted);
+
+  let mut task_screen = TaskScreen::new(ctx.task_id, vt);
+  let mut screen_effects: Vec<TaskScreenEffect> = Vec::new();
   let mut read_buf = [0u8; 8 * 1024];
-  let mut vt_events = Vec::new();
   let mut stdout_eof = false;
+  let mut exit_code: Option<u32> = None;
 
   loop {
     enum Next {
-      Cmd(Option<WorkerCmd>),
+      Cmd(Option<TaskCmd>),
       Read(std::io::Result<usize>),
     }
-
     let read_fut = async {
       if stdout_eof {
         pending().await
@@ -138,39 +80,84 @@ async fn proc_worker(
         process.read(&mut read_buf).await
       }
     };
-
     let next = tokio::select! {
-      cmd = cmd_rx.recv() => Next::Cmd(cmd),
+      cmd = receiver.recv() => Next::Cmd(cmd),
       n = read_fut => Next::Read(n),
     };
 
     match next {
-      Next::Cmd(Some(WorkerCmd::Kill)) => {
-        process.kill().await.log_ignore();
-      }
       Next::Cmd(None) => break,
+      Next::Cmd(Some(cmd)) => match cmd {
+        TaskCmd::Start => {}
+        TaskCmd::Stop | TaskCmd::Kill => {
+          process.kill().await.log_ignore();
+        }
+        TaskCmd::Msg(msg) => {
+          let msg = match msg.downcast::<ProcExited>() {
+            Ok(exited) => {
+              exit_code = Some(exited.0);
+              if stdout_eof {
+                ctx.send(KernelCommand::TaskStopped(exited.0));
+              }
+              continue;
+            }
+            Err(msg) => msg,
+          };
+          let msg = match msg.downcast::<TaskScreenCmd>() {
+            Ok(cmd) => {
+              task_screen.handle_cmd(*cmd, &mut screen_effects);
+              apply_effects(
+                &mut screen_effects,
+                &mut process,
+                task_screen.vt(),
+              )
+              .await;
+              continue;
+            }
+            Err(msg) => msg,
+          };
+          let _ = msg;
+          log::error!("ProcTask received unknown Msg");
+        }
+      },
 
       Next::Read(Ok(0)) => {
         stdout_eof = true;
-        ctx.send_self_custom(WorkerStdoutEof);
+        if let Some(code) = exit_code {
+          ctx.send(KernelCommand::TaskStopped(code));
+        }
       }
       Next::Read(Ok(n)) => {
-        let bytes = &read_buf[..n];
-        if let Ok(mut parser) = vt.write() {
-          parser.screen.process(bytes, &mut vt_events);
-          drop(parser);
-        }
-        for ev in vt_events.drain(..) {
-          if let VtEvent::Reply(s) = ev {
-            process.write_all(s.as_bytes()).await.log_ignore();
-          }
-        }
-        ctx.send(KernelCommand::TaskRendered);
+        task_screen.process(&read_buf[..n], &mut screen_effects);
+        apply_effects(&mut screen_effects, &mut process, task_screen.vt())
+          .await;
       }
       Next::Read(Err(e)) => {
         log::error!("Process read error: {}", e);
         stdout_eof = true;
-        ctx.send_self_custom(WorkerStdoutEof);
+        if let Some(code) = exit_code {
+          ctx.send(KernelCommand::TaskStopped(code));
+        }
+      }
+    }
+  }
+}
+
+async fn apply_effects(
+  effects: &mut Vec<TaskScreenEffect>,
+  process: &mut NativeProcess,
+  vt: &SharedVt,
+) {
+  for effect in effects.drain(..) {
+    match effect {
+      TaskScreenEffect::Reply(s) => {
+        process.write_all(s.as_bytes()).await.log_ignore();
+      }
+      TaskScreenEffect::Resize(size) => {
+        if let Ok(mut parser) = vt.write() {
+          parser.set_size(size.y, size.x);
+        }
+        process.resize(size).log_ignore();
       }
     }
   }
@@ -191,7 +178,7 @@ fn spawn_native(
       size,
       Box::new(move |wait_status| {
         let code = wait_status.exit_status().unwrap_or(212) as u32;
-        exit_ctx.send_self_custom(WorkerExited(code));
+        exit_ctx.send_self_custom(ProcExited(code));
       }),
     )?)
   }
@@ -205,7 +192,7 @@ fn spawn_native(
       size,
       Box::new(move |exit_code| {
         let code = exit_code.unwrap_or(213) as u32;
-        exit_ctx.send_self_custom(WorkerExited(code));
+        exit_ctx.send_self_custom(ProcExited(code));
       }),
     )
     .context("WinProcess::spawn")

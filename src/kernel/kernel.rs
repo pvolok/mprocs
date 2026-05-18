@@ -249,9 +249,6 @@ impl Kernel {
             break;
           }
         }
-        KernelCommand::TaskRendered => {
-          self.apply_effect(msg.from, TaskEffect::Rendered);
-        }
         KernelCommand::RemoveTask(task_id) => {
           self.apply_effect(task_id, TaskEffect::Remove);
           if self.quitting && self.is_ready_to_quit() {
@@ -325,10 +322,6 @@ impl Kernel {
           task.status = TaskStatus::Down;
         }
         self.notify_listeners(task_id, TaskNotify::Stopped(exit_code));
-      }
-
-      TaskEffect::Rendered => {
-        self.notify_listeners(task_id, TaskNotify::Rendered);
       }
 
       TaskEffect::Remove => {
