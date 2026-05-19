@@ -308,7 +308,7 @@ fn acquire_flock(file: &std::fs::File) -> anyhow::Result<()> {
     LockFileEx(
       handle,
       LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
-      0,
+      Some(0),
       1,
       0,
       &mut overlapped,
@@ -334,7 +334,7 @@ fn try_acquire_flock(file: &std::fs::File) -> bool {
     LockFileEx(
       handle,
       LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
-      0,
+      Some(0),
       1,
       0,
       &mut overlapped,

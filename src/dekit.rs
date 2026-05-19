@@ -61,7 +61,15 @@ async fn run_server(
     let mut server_socket = match bind_server_socket(&socket_path).await {
       Ok(server_socket) => {
         log::info!("Server is listening.");
-        server_socket
+        #[cfg(unix)]
+        {
+          server_socket
+        }
+        #[cfg(windows)]
+        {
+          let (sock, _addr) = server_socket;
+          sock
+        }
       }
       Err(err) => {
         log::error!("Failed to bind the server: {:?}", err);

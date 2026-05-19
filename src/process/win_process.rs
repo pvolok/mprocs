@@ -44,7 +44,7 @@ use windows::{
 
 use crate::{
   error::ResultLogger, kernel::task::TaskId, process::process::Process,
-  term_types::winsize::Winsize,
+  term::Winsize,
 };
 
 use super::process_spec::ProcessSpec;

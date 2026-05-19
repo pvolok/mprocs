@@ -87,7 +87,8 @@ impl TermDriver {
       stdout.write_all(b"\x1B[?1006h")?;
     }
 
-    // Query kitty keyboard protocol.
+    // Query kitty keyboard protocol. Skipped on Windows (issue #215).
+    #[cfg(unix)]
     stdout.write_all(b"\x1B[?u")?;
     // Query device.
     stdout.write_all(b"\x1B[c")?;
@@ -178,8 +179,8 @@ impl TermDriver {
       let (sender, events) = tokio::sync::mpsc::unbounded_channel();
       unsafe {
         std::thread::spawn(move || {
-          let stdin = match windows::Win32::System::Console::GetStdHandle(
-            windows::Win32::System::Console::STD_INPUT_HANDLE,
+          let stdin = match ::windows::Win32::System::Console::GetStdHandle(
+            ::windows::Win32::System::Console::STD_INPUT_HANDLE,
           ) {
             Ok(stdin) => stdin,
             Err(err) => {
@@ -189,10 +190,10 @@ impl TermDriver {
           };
           let mut input_parser = InputParser::new();
           let mut buf =
-            [windows::Win32::System::Console::INPUT_RECORD::default(); 128];
+            [::windows::Win32::System::Console::INPUT_RECORD::default(); 128];
           loop {
             let mut count = 0;
-            match windows::Win32::System::Console::ReadConsoleInputA(
+            match ::windows::Win32::System::Console::ReadConsoleInputA(
               stdin, &mut buf, &mut count,
             ) {
               Ok(()) => (),
@@ -382,7 +383,7 @@ impl TermDriver {
     unsafe {
       use std::os::windows::io::AsRawHandle;
 
-      use windows::Win32::{
+      use ::windows::Win32::{
         Foundation::HANDLE,
         System::Console::{
           GetConsoleScreenBufferInfo, CONSOLE_SCREEN_BUFFER_INFO,
