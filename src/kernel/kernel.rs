@@ -105,7 +105,7 @@ impl Kernel {
 
     if let Some(ref path) = path {
       if let Err(err) = self.path_trie.insert(path, task_id) {
-        log::error!("Path conflict while registering task: {}", err);
+        log::warn!("Path conflict while registering task: {}", err);
       }
     }
 
@@ -117,7 +117,7 @@ impl Kernel {
       let msg = if let Some(msg) = self.receiver.recv().await {
         msg
       } else {
-        log::warn!("Kernel receiver returned None.");
+        log::debug!("Kernel receiver returned None.");
         break;
       };
 
@@ -194,7 +194,7 @@ impl Kernel {
                 task.path = Some(path);
               }
               Err(err) => {
-                log::error!("Path conflict: {}", err);
+                log::warn!("Path conflict: {}", err);
               }
             }
           }

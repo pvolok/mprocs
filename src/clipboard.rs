@@ -92,7 +92,7 @@ fn copy_impl(s: &str, provider: &Provider) -> Result<()> {
         &mut child.stdin.as_ref().unwrap(),
         s.as_bytes(),
       ) {
-        log::error!("Failed to write into copy process: {:?}", e);
+        log::warn!("Failed to write into copy process: {:?}", e);
       }
       child.wait()?;
     }

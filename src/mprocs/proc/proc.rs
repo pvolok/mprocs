@@ -181,7 +181,7 @@ async fn proc_main_loop(
         }
       }
       NextValue::Read(Err(e)) => {
-        log::error!("Process read() error: {}", e);
+        log::warn!("Process read() error: {}", e);
         match &mut proc.inst {
           ProcState::Some(inst) => {
             inst.stdout_eof = true;
@@ -274,7 +274,7 @@ impl Proc {
     let inst = match spawned {
       Ok(inst) => ProcState::Some(inst),
       Err(err) => {
-        log::error!("Process spawn error: {}", err);
+        log::warn!("Process spawn error: {}", err);
         ProcState::None
       }
     };
@@ -352,7 +352,7 @@ impl Proc {
   #[cfg(windows)]
   pub async fn stop(&mut self) {
     match self.stop_signal.clone() {
-      StopSignal::SIGINT => log::warn!("SIGINT signal is ignored on Windows"),
+      StopSignal::SIGINT => log::debug!("SIGINT signal is ignored on Windows"),
       StopSignal::SIGTERM => self.kill().await,
       StopSignal::SIGKILL => self.kill().await,
       StopSignal::SendKeys(keys) => {

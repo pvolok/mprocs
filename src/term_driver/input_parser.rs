@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context};
+use anyhow::{Context, anyhow, bail};
 
 use crate::term::{
   key::{
@@ -96,7 +96,7 @@ impl InputParser {
                 }
                 _ => {
                   consumed = i;
-                  log::error!("Input parsing error.");
+                  log::debug!("Input parsing error.");
                 }
               }
             }
@@ -123,7 +123,7 @@ impl InputParser {
                     }));
                   }
                   Err(err) => {
-                    log::error!("'CSI M bxy' error: {}", err);
+                    log::debug!("'CSI M bxy' error: {}", err);
                   }
                 }
               } else {
@@ -154,7 +154,7 @@ impl InputParser {
                   }
                 }
                 Err(err) => {
-                  log::error!("Parse esc-char key error: {}", err);
+                  log::debug!("Parse esc-char key error: {}", err);
                 }
               }
               consumed = i;
@@ -170,7 +170,7 @@ impl InputParser {
               }
             }
             Err(err) => {
-              log::error!("Parse char key error: {}", err);
+              log::debug!("Parse char key error: {}", err);
             }
           }
           consumed = i;
@@ -245,7 +245,7 @@ where
       i += 1;
       buf[i - 1]
     } else {
-      log::error!("CSI is incomplete. Ignoring.");
+      log::debug!("CSI is incomplete. Ignoring.");
       return Some(i);
     }
   } else {
@@ -255,7 +255,7 @@ where
 
   match parse_csi_impl(buf, params, intermediates, final_, is_raw_mode, f) {
     Ok(()) => (),
-    Err(err) => log::error!("CSI error: {}", err),
+    Err(err) => log::debug!("CSI error: {}", err),
   }
 
   Some(i)

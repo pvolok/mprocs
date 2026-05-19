@@ -54,7 +54,7 @@ async fn proc_main(
   ) {
     Ok(p) => p,
     Err(err) => {
-      log::error!("Process spawn error: {}", err);
+      log::warn!("Process spawn error: {}", err);
       ctx.send(KernelCommand::TaskStopped(255));
       return;
     }
@@ -133,7 +133,7 @@ async fn proc_main(
           .await;
       }
       Next::Read(Err(e)) => {
-        log::error!("Process read error: {}", e);
+        log::warn!("Process read error: {}", e);
         stdout_eof = true;
         if let Some(code) = exit_code {
           ctx.send(KernelCommand::TaskStopped(code));

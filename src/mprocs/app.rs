@@ -572,13 +572,13 @@ impl App {
         loop_action.render();
       }
       TermEvent::FocusGained => {
-        log::warn!("Ignore input event: {:?}", event);
+        log::debug!("Ignore input event: {:?}", event);
       }
       TermEvent::FocusLost => {
-        log::warn!("Ignore input event: {:?}", event);
+        log::debug!("Ignore input event: {:?}", event);
       }
       TermEvent::Paste(_) => {
-        log::warn!("Ignore input event: {:?}", event);
+        log::debug!("Ignore input event: {:?}", event);
       }
     }
   }
@@ -824,7 +824,7 @@ impl App {
         };
         if let Some(cfg) = cfg {
           let size = self.get_layout().term_area();
-          log::error!("TODO: Copy deps for duplicate proc.");
+          log::debug!("TODO: Copy deps for duplicate proc.");
           let proc_handle =
             launch_proc(&pc, cfg, self.pc.alloc_id(), Vec::new(), None, size);
           self.observe_proc(proc_handle.id(), size);
@@ -1160,7 +1160,7 @@ pub async fn client_loop(
     MsgReceiver<CltToSrv>,
   ),
 ) {
-  log::info!("client_loop: server_receiver.recv()");
+  log::debug!("client_loop: server_receiver.recv()");
   let init_msg = server_receiver.recv().await;
   match init_msg {
     Some(Ok(CltToSrv::Init { width, height })) => {

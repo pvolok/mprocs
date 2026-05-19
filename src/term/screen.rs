@@ -568,7 +568,7 @@ impl Screen {
       1 => self.grid_mut().erase_all_backward(attrs),
       2 => self.grid_mut().erase_all(attrs),
       n => {
-        log::warn!("Unhandled ED mode: {n}");
+        log::debug!("Unhandled ED mode: {n}");
       }
     }
   }
@@ -709,7 +709,7 @@ impl Screen {
                   }
                 }
                 _ => {
-                  log::warn!(
+                  log::debug!(
                     "Ignored nF: ESC {}",
                     String::from_utf8_lossy(&buf[start - 1..pos]),
                   );
@@ -778,7 +778,7 @@ impl Screen {
                 self.process_csi(events, params, intermediate, *final_);
               } else {
                 let seq1 = &buf[seq_start + 1..pos + 1];
-                log::error!(
+                log::debug!(
                   "Corrupt CSI sequence: ESC {}  - {:?}",
                   String::from_utf8_lossy(seq1),
                   seq1,
@@ -832,7 +832,7 @@ impl Screen {
               self.ris();
             }
             c => {
-              log::warn!(
+              log::debug!(
                 "Unhandled ESC {} ({:?})",
                 c,
                 char::from_u32(c.into())
@@ -858,7 +858,7 @@ impl Screen {
                 self.text(char);
               }
               Err(e) => {
-                log::error!("Invalid utf-8 char: {char_bytes:?} {e}");
+                log::debug!("Invalid utf-8 char: {char_bytes:?} {e}");
               }
             }
           } else {
@@ -1007,7 +1007,7 @@ impl Screen {
           // It's SD if only one parameter
           self.grid_mut().scroll_down(amount);
         } else {
-          log::warn!("Ignored CSI {params} T");
+          log::debug!("Ignored CSI {params} T");
         }
       }
       ("", _, "", b'X') => {
@@ -1148,7 +1148,7 @@ impl Screen {
               self.attrs.bgcolor = Color::Idx(n - 100 + 8);
             }
             n => {
-              log::warn!("Ignored SGR: {}", n);
+              log::debug!("Ignored SGR: {}", n);
             }
           }
         }
@@ -1272,7 +1272,7 @@ impl Screen {
             events.push(VtEvent::Reply(s));
           }
           n => {
-            log::warn!("Ignored DSR: {}", n);
+            log::debug!("Ignored DSR: {}", n);
           }
         }
       }
@@ -1341,7 +1341,7 @@ impl Screen {
 }
 
 fn csi_todo(params: &str, intermediate: &str, final_: u8) {
-  log::warn!(
+  log::debug!(
     "CSI not implemented: ESC [ {} {} {}",
     params,
     intermediate,

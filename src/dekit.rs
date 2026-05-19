@@ -101,7 +101,7 @@ async fn run_server(
           });
         }
         Err(err) => {
-          log::info!("Server socket accept error: {}", err);
+          log::debug!("Server socket accept error: {}", err);
           break;
         }
       }

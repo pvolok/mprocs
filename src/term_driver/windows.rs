@@ -90,7 +90,7 @@ fn decode_key_record<F: FnMut(InternalTermEvent)>(
   if is_alt_code(record) {
     match uchar {
       surrogate @ 0xD800..=0xDFFF => {
-        log::error!("Unhandled surrogate key record.");
+        log::debug!("Unhandled surrogate key record.");
         return;
       }
       unicode_scalar_value => {
@@ -150,7 +150,7 @@ fn decode_key_record<F: FnMut(InternalTermEvent)>(
           get_char_for_key(record).map(KeyCode::Char)
         }
         surrogate @ 0xD800..=0xDFFF => {
-          log::error!("Unhandled surrogate key record.");
+          log::debug!("Unhandled surrogate key record.");
           return;
         }
         unicode_scalar_value => {

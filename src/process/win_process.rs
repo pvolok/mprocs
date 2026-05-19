@@ -334,7 +334,6 @@ impl Process for WinProcess {
 
   async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
     let count = self.reader.read(buf).await?;
-    log::debug!("read ({})", count);
     Ok(count)
   }
 

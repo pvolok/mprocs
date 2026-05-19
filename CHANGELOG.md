@@ -6,6 +6,7 @@
 - Fix client hang under terminal backpressure by using async stdout writes
 - Fix server panic when a client disconnects during render
 - Fix arrow key double-fire on Windows Terminal Preview (#215)
+- Less noicy logs, mprocs.log is only created on "error" level logs
 
 ## 0.9.2 - 2026-03-21
 

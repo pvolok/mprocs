@@ -117,7 +117,7 @@ impl TaskContext {
       from: self.task_id,
       command,
     }) {
-      log::info!(
+      log::debug!(
         "Failed to send kernel message (task_id: {}). Channel is closed.",
         self.task_id.0,
       );
