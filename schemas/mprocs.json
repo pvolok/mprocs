@@ -1,0 +1,437 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/pvolok/mprocs/master/schemas/mprocs.json",
+  "title": "mprocs Configuration Schema",
+  "description": "Schema for mprocs (https://github.com/pvolok/mprocs) configuration files (YAML/JSON).",
+  "type": "object",
+  "properties": {
+    "procs": {
+      "type": "object",
+      "description": "Processes to run. Only allowed in local config.",
+      "additionalProperties": {
+        "$ref": "#/definitions/procConfig"
+      }
+    },
+    "server": {
+      "type": "string",
+      "description": "TCP address for the mprocs server to bind to (e.g. \"127.0.0.1:4040\")."
+    },
+    "hide_keymap_window": {
+      "type": "boolean",
+      "description": "Hide the pane at the bottom of the screen showing key bindings."
+    },
+    "mouse_scroll_speed": {
+      "type": "integer",
+      "description": "Number of lines to scroll per one mouse scroll."
+    },
+    "scrollback": {
+      "type": "integer",
+      "description": "Scrollback buffer size in lines. Default: 1000."
+    },
+    "proc_list_width": {
+      "type": "integer",
+      "description": "Process list window width."
+    },
+    "proc_list_title": {
+      "type": "string",
+      "description": "Title shown above the process list."
+    },
+    "proc_log": {
+      "$ref": "#/definitions/logConfig",
+      "description": "Default logging config for processes. Per-process `log` values merge with this."
+    },
+    "on_all_finished": {
+      "$ref": "#/definitions/appEvent",
+      "description": "Event to fire when all processes have finished."
+    },
+    "keymap_procs": {
+      "$ref": "#/definitions/keymap",
+      "description": "Key bindings for process list."
+    },
+    "keymap_term": {
+      "$ref": "#/definitions/keymap",
+      "description": "Key bindings for terminal window."
+    },
+    "keymap_copy": {
+      "$ref": "#/definitions/keymap",
+      "description": "Key bindings for copy mode."
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "procConfig": {
+      "description": "Process configuration. A string is a shell command shorthand; an array is a cmd argv shorthand; null disables the process; an object is the full form.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "title": "Process Configuration",
+          "properties": {
+            "shell": {
+              "description": "Shell command to run (exactly one of shell or cmd must be provided).",
+              "oneOf": [
+                {
+                  "$ref": "#/definitions/selectOperator"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "cmd": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Array of command and args to run (exactly one of shell or cmd must be provided)."
+            },
+            "cwd": {
+              "type": "string",
+              "description": "Set working directory for the process. Prefix <CONFIG_DIR> will be replaced with the path of the directory where the config is located."
+            },
+            "env": {
+              "type": "object",
+              "description": "Set env variables. Object keys are variable names. Assign variable to null, to clear variables inherited from parent process.",
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/definitions/selectOperator"
+                  }
+                ]
+              }
+            },
+            "add_path": {
+              "description": "Add entries to the PATH environment variable.",
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "$ref": "#/definitions/selectOperator"
+                }
+              ]
+            },
+            "autostart": {
+              "type": "boolean",
+              "description": "Start process when mprocs starts. Default: true."
+            },
+            "autorestart": {
+              "type": "boolean",
+              "description": "Restart process when it exits. Default: false. Note: If process exits within 1 second of starting, it will not be restarted."
+            },
+            "stop": {
+              "description": "How to stop the process (using the `x` key or when quitting mprocs).",
+              "oneOf": [
+                {
+                  "enum": ["SIGINT", "SIGTERM", "SIGKILL", "hard-kill"]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "send-keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["send-keys"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "cmd": {
+                      "type": "string",
+                      "description": "Shell command to run to stop the process (e.g. `podman compose down`)."
+                    }
+                  },
+                  "required": ["cmd"],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "deps": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Names of processes this process depends on."
+            },
+            "log": {
+              "$ref": "#/definitions/logConfig",
+              "description": "Per-process logging config. Merges with the top-level `proc_log` config."
+            }
+          },
+          "oneOf": [
+            {
+              "required": ["shell"]
+            },
+            {
+              "required": ["cmd"]
+            }
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "logConfig": {
+      "description": "Logging config. `true` enables defaults; `false` disables; a string is shorthand for `{ dir: ... }`; an object is the full form. Paths support the <CONFIG_DIR> prefix.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable or disable logging. Default: true."
+            },
+            "dir": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Directory for per-process log files."
+            },
+            "file": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Log file path (relative to `dir` when both are set). Supports {name}, {id}, {pid}, {ts} placeholders. Default: \"{name}.log\"."
+            },
+            "mode": {
+              "enum": ["append", "truncate"],
+              "description": "Whether to append to or replace an existing log file. Default: \"append\"."
+            },
+            "append": {
+              "type": "boolean",
+              "description": "Deprecated alias for `mode`. true = append, false = truncate. Cannot be combined with `mode`."
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "appEvent": {
+      "description": "An mprocs command/event. Discriminated by the `c` tag (e.g. {c: quit}, {c: send-key, key: \"<C-c>\"}, {c: batch, cmds: [...]}).",
+      "type": "object",
+      "required": ["c"],
+      "oneOf": [
+        {
+          "title": "Batch",
+          "properties": {
+            "c": {"const": "batch"},
+            "cmds": {
+              "type": "array",
+              "items": {"$ref": "#/definitions/appEvent"},
+              "description": "Sub-events to dispatch in order."
+            }
+          },
+          "required": ["c", "cmds"],
+          "additionalProperties": false
+        },
+        {
+          "title": "Select process by index",
+          "properties": {
+            "c": {"const": "select-proc"},
+            "index": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Process index (0-based)."
+            }
+          },
+          "required": ["c", "index"],
+          "additionalProperties": false
+        },
+        {
+          "title": "Rename current process",
+          "properties": {
+            "c": {"const": "rename-proc"},
+            "name": {"type": "string"}
+          },
+          "required": ["c", "name"],
+          "additionalProperties": false
+        },
+        {
+          "title": "Add a new process",
+          "properties": {
+            "c": {"const": "add-proc"},
+            "cmd": {"type": "string", "description": "Shell command to run."},
+            "name": {"type": "string", "description": "Optional process name."}
+          },
+          "required": ["c", "cmd"],
+          "additionalProperties": false
+        },
+        {
+          "title": "Scroll down N lines",
+          "properties": {
+            "c": {"const": "scroll-down-lines"},
+            "n": {"type": "integer", "minimum": 0}
+          },
+          "required": ["c", "n"],
+          "additionalProperties": false
+        },
+        {
+          "title": "Scroll up N lines",
+          "properties": {
+            "c": {"const": "scroll-up-lines"},
+            "n": {"type": "integer", "minimum": 0}
+          },
+          "required": ["c", "n"],
+          "additionalProperties": false
+        },
+        {
+          "title": "Move copy-mode cursor",
+          "properties": {
+            "c": {"const": "copy-mode-move"},
+            "dir": {
+              "enum": ["Up", "Right", "Left", "Down"],
+              "description": "Direction (note: PascalCase)."
+            }
+          },
+          "required": ["c", "dir"],
+          "additionalProperties": false
+        },
+        {
+          "title": "Send a key to the focused terminal",
+          "properties": {
+            "c": {"const": "send-key"},
+            "key": {
+              "type": "string",
+              "pattern": "^<[^>]+>$",
+              "description": "Key spec, e.g. \"<C-c>\", \"<Enter>\"."
+            }
+          },
+          "required": ["c", "key"],
+          "additionalProperties": false
+        },
+        {
+          "title": "Simple command (no payload)",
+          "properties": {
+            "c": {
+              "enum": [
+                "quit",
+                "quit-or-ask",
+                "force-quit",
+                "toggle-focus",
+                "focus-procs",
+                "focus-term",
+                "zoom",
+                "show-commands-menu",
+                "next-proc",
+                "prev-proc",
+                "start-proc",
+                "term-proc",
+                "kill-proc",
+                "restart-proc",
+                "restart-all",
+                "force-restart-proc",
+                "force-restart-all",
+                "show-add-proc",
+                "show-rename-proc",
+                "duplicate-proc",
+                "show-remove-proc",
+                "close-current-modal",
+                "scroll-down",
+                "scroll-up",
+                "copy-mode-enter",
+                "copy-mode-leave",
+                "copy-mode-end",
+                "copy-mode-copy",
+                "toggle-keymap-window"
+              ]
+            }
+          },
+          "required": ["c"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "keymap": {
+      "type": "object",
+      "description": "Keymap configuration. Allowed keys: `reset` and keybinds shaped like `<...>` (e.g. `<C-a>`, `<Enter>`).",
+      "properties": {
+        "reset": {
+          "type": "boolean",
+          "description": "Clear key bindings from previous levels."
+        }
+      },
+      "patternProperties": {
+        "^<[^>]+>$": {
+          "description": "Keybind to target. Use null to unbind.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/appEvent"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "selectOperator": {
+      "type": "object",
+      "description": "Operator for OS-specific configurations.",
+      "properties": {
+        "$select": {
+          "description": "Parameter the select is targeting.",
+          "const": "os"
+        },
+        "$else": {
+          "description": "Default value used when no OS matches.",
+          "type": "string"
+        }
+      },
+      "patternProperties": {
+        "^(windows|macos|linux|android|freebsd|openbsd|netbsd|dragonfly|solaris|illumos|ios)$": {
+          "type": "string",
+          "description": "Value specific to OS."
+        }
+      },
+      "required": ["$select"],
+      "additionalProperties": false
+    }
+  }
+}

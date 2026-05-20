@@ -172,26 +172,24 @@ where
             append.error_at("Use either `mode` or `append`, not both"),
           );
         }
-        (Some(mode), None) => match mode.as_str()? {
+        (Some(mode), None) => Some(match mode.as_str()? {
           "append" => LogMode::Append,
           "truncate" => LogMode::Truncate,
           _ => return Err(mode.error_at("Expected `append` or `truncate`")),
-        },
-        (None, Some(append)) => {
-          if append.as_bool()? {
-            LogMode::Append
-          } else {
-            LogMode::Truncate
-          }
-        }
-        (None, None) => LogMode::Truncate,
+        }),
+        (None, Some(append)) => Some(if append.as_bool()? {
+          LogMode::Append
+        } else {
+          LogMode::Truncate
+        }),
+        (None, None) => None,
       };
 
       Ok(Some(LogConfig {
         enabled: Some(enabled),
         dir,
         file,
-        mode: Some(mode),
+        mode,
       }))
     }
     Value::Tagged(_) => anyhow::bail!("Yaml tags are not supported"),
