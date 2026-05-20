@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.9.3 - 2026-05-20
+
 - Add `{cmd: <shell>}` value for `stop` to run a shell command as the stop
   action (useful for tools like `podman compose` that don't respond to
   signals reliably)
