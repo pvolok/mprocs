@@ -7,6 +7,7 @@
 - Fix server panic when a client disconnects during render
 - Fix arrow key double-fire on Windows Terminal Preview (#215)
 - Less noicy logs, mprocs.log is only created on "error" level logs
+- Show never-started procs in gray instead of red (#212)
 
 ## 0.9.2 - 2026-03-21
 

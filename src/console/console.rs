@@ -185,10 +185,10 @@ impl Console {
         }
         true
       }
-      TaskNotify::Stopped(_) => {
+      TaskNotify::Stopped(exit_code) => {
         if let Some(entry) = self.state.tasks.iter_mut().find(|t| t.id == from)
         {
-          entry.status = TaskStatus::Down;
+          entry.status = TaskStatus::Exited(exit_code);
         }
         true
       }

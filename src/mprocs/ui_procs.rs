@@ -106,7 +106,7 @@ pub fn render_procs(
           Cow::from(format!(" DOWN ({})", exit_code)),
           attrs.clone().fg(Color::BRIGHT_RED),
         ),
-        None => (Cow::from(" DOWN "), attrs.clone().fg(Color::BRIGHT_RED)),
+        None => (Cow::from(" DOWN "), attrs.clone().fg(Color::BRIGHT_BLACK)),
       }
     };
     let status_width = status_text.width() as u16;

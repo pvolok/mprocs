@@ -127,8 +127,9 @@ pub struct TaskHandle {
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum TaskStatus {
-  Down,
+  NotStarted,
   Running,
+  Exited(u32),
 }
 
 pub struct DepInfo {
@@ -147,7 +148,7 @@ impl Default for TaskDef {
   fn default() -> Self {
     Self {
       stop_on_quit: false,
-      status: TaskStatus::Down,
+      status: TaskStatus::NotStarted,
       deps: Vec::new(),
       path: None,
       vt: None,

@@ -94,7 +94,7 @@ impl Kernel {
           status: self
             .tasks
             .get(dep_id)
-            .map_or(TaskStatus::Down, |d| d.status),
+            .map_or(TaskStatus::NotStarted, |d| d.status),
         },
       );
       self.rev_deps.entry(*dep_id).or_default().insert(task_id);
@@ -278,7 +278,7 @@ impl Kernel {
       TaskEffect::Started => {
         let mut started = false;
         if let Some(task) = self.tasks.get_mut(&task_id) {
-          if task.status == TaskStatus::Down {
+          if task.status != TaskStatus::Running {
             started = true;
           }
           task.status = TaskStatus::Running;
@@ -319,7 +319,7 @@ impl Kernel {
 
       TaskEffect::Stopped(exit_code) => {
         if let Some(task) = self.tasks.get_mut(&task_id) {
-          task.status = TaskStatus::Down;
+          task.status = TaskStatus::Exited(exit_code);
         }
         self.notify_listeners(task_id, TaskNotify::Stopped(exit_code));
       }
