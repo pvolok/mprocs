@@ -1,4 +1,5 @@
 use std::{
+  collections::HashSet,
   fs::File,
   io::BufRead,
   io::BufReader,
@@ -152,7 +153,7 @@ async fn run_app() -> anyhow::Result<()> {
       let names = matches
         .get_one::<String>("names")
         .map_or(Vec::new(), |arg| arg.split(',').collect::<Vec<_>>());
-      let procs = cmds
+      let mut procs = cmds
         .into_iter()
         .enumerate()
         .map(|(i, cmd)| ProcConfig {
@@ -173,6 +174,7 @@ async fn run_app() -> anyhow::Result<()> {
           log: config.proc_log.clone(),
         })
         .collect::<Vec<_>>();
+      dedup_proc_names(&mut procs);
 
       config.procs = procs;
     } else if matches.get_flag("npm") {
@@ -290,7 +292,27 @@ fn load_procfile_procs(
       });
     }
   }
+  dedup_proc_names(&mut procs);
   Ok(procs)
+}
+
+fn dedup_proc_names(procs: &mut [ProcConfig]) {
+  let mut taken: HashSet<String> = HashSet::new();
+  for p in procs.iter_mut() {
+    if taken.insert(p.name.clone()) {
+      continue;
+    }
+    let base = p.name.clone();
+    let mut n: usize = 2;
+    loop {
+      let candidate = format!("{} ({})", base, n);
+      if taken.insert(candidate.clone()) {
+        p.name = candidate;
+        break;
+      }
+      n += 1;
+    }
+  }
 }
 
 fn load_config_value(

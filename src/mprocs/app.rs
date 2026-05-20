@@ -265,27 +265,31 @@ impl App {
   }
 
   fn start_procs(&mut self, size: Rect) -> anyhow::Result<()> {
-    let mut id_map = HashMap::with_capacity(self.config.procs.len());
-    for proc_cfg in &self.config.procs {
-      let task_id = self.pc.alloc_id();
-      id_map.insert(proc_cfg.name.clone(), task_id);
-    }
+    let task_ids: Vec<TaskId> =
+      self.config.procs.iter().map(|_| self.pc.alloc_id()).collect();
+    let name_to_id: HashMap<&str, TaskId> = self
+      .config
+      .procs
+      .iter()
+      .zip(task_ids.iter())
+      .map(|(p, id)| (p.name.as_str(), *id))
+      .collect();
 
     let mut procs = self
       .config
       .procs
       .iter()
-      .map(|proc_cfg| {
+      .enumerate()
+      .map(|(i, proc_cfg)| {
         let mut deps = Vec::new();
         for dep_name in &proc_cfg.deps {
-          if let Some(dep_id) = id_map.get(dep_name) {
+          if let Some(dep_id) = name_to_id.get(dep_name.as_str()) {
             deps.push(*dep_id);
           } else {
             // TODO: Show error.
           }
         }
-        let task_id = id_map.get(&proc_cfg.name).unwrap();
-        launch_proc(&self.pc, proc_cfg.clone(), *task_id, deps, None, size)
+        launch_proc(&self.pc, proc_cfg.clone(), task_ids[i], deps, None, size)
       })
       .collect::<Vec<_>>();
 
