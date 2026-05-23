@@ -1,4 +1,7 @@
-use crate::kernel::{kernel_message::SharedVt, task::TaskId};
+use crate::kernel::{
+  kernel_message::SharedVt,
+  task::{TaskId, TaskStatus},
+};
 use crate::mprocs::config::ProcConfig;
 
 use super::CopyMode;
@@ -19,8 +22,7 @@ pub struct ProcView {
   pub id: TaskId,
   pub cfg: ProcConfig,
 
-  pub is_up: bool,
-  pub exit_code: Option<u32>,
+  pub status: TaskStatus,
   pub vt: SharedVt,
   pub copy_mode: CopyMode,
 
@@ -35,8 +37,7 @@ impl ProcView {
       id,
       cfg,
 
-      is_up: false,
-      exit_code: None,
+      status: TaskStatus::NotStarted,
       vt,
       copy_mode: CopyMode::None(None),
 
@@ -55,7 +56,11 @@ impl ProcView {
   }
 
   pub fn exit_code(&self) -> Option<u32> {
-    self.exit_code
+    match self.status {
+      TaskStatus::NotStarted => None,
+      TaskStatus::Running => None,
+      TaskStatus::Exited(code) => Some(code),
+    }
   }
 
   pub fn lock_view(&'_ self) -> ProcViewFrame<'_> {
@@ -70,7 +75,11 @@ impl ProcView {
   }
 
   pub fn is_up(&self) -> bool {
-    self.is_up
+    match self.status {
+      TaskStatus::NotStarted => false,
+      TaskStatus::Running => true,
+      TaskStatus::Exited(_) => false,
+    }
   }
 
   pub fn copy_mode(&self) -> &CopyMode {

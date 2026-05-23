@@ -265,8 +265,12 @@ impl App {
   }
 
   fn start_procs(&mut self, size: Rect) -> anyhow::Result<()> {
-    let task_ids: Vec<TaskId> =
-      self.config.procs.iter().map(|_| self.pc.alloc_id()).collect();
+    let task_ids: Vec<TaskId> = self
+      .config
+      .procs
+      .iter()
+      .map(|_| self.pc.alloc_id())
+      .collect();
     let name_to_id: HashMap<&str, TaskId> = self
       .config
       .procs
@@ -1039,7 +1043,7 @@ impl App {
       TaskNotify::Added(_, _, _) => {}
       TaskNotify::Started => {
         if let Some(proc) = self.state.get_proc_mut(task_id) {
-          proc.is_up = true;
+          proc.status = TaskStatus::Running;
           proc.last_start = Some(Instant::now());
           match proc.target_state {
             TargetState::None => (),
@@ -1055,8 +1059,7 @@ impl App {
       }
       TaskNotify::Stopped(exit_code) => {
         if let Some(proc) = self.state.get_proc_mut(task_id) {
-          proc.is_up = false;
-          proc.exit_code = Some(exit_code);
+          proc.status = TaskStatus::Exited(exit_code);
 
           let restart = match proc.target_state {
             TargetState::None if proc.cfg.autorestart && exit_code != 0 => {
