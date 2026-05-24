@@ -12,6 +12,7 @@ pub mod mprocs;
 pub mod package_json;
 pub mod proc;
 pub mod proc_log_config;
+pub mod server_message;
 pub mod settings;
 pub mod state;
 pub mod ui_keymap;

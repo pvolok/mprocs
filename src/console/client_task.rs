@@ -1,8 +1,8 @@
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use crate::daemon::receiver::MsgReceiver;
-use crate::daemon::sender::MsgSender;
 use crate::error::ResultLogger;
+use crate::ipc::receiver::MsgReceiver;
+use crate::ipc::sender::MsgSender;
 use crate::kernel::kernel_message::{
   KernelCommand, SharedVt, TaskContext, TaskSender,
 };

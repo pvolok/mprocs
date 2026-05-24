@@ -47,13 +47,13 @@ impl Pane for ProcsPane {
         color!("#111111")
       };
 
-      let (status_col, path_col) = row.split_v(2);
+      let (path_col, status_col) = row.split_v(row.width.saturating_sub(3));
 
       let (status_char, status_color) = match task.status {
-        TaskStatus::Running => ("●", color!("#4ec55e")),
-        TaskStatus::NotStarted => ("○", color!("#888888")),
-        TaskStatus::Exited(0) => ("○", color!("#5a8ee0")),
-        TaskStatus::Exited(_) => ("○", color!("#e05a5a")),
+        TaskStatus::Running => (" ●", color!("#4ec55e")),
+        TaskStatus::NotStarted => (" ○", color!("#888888")),
+        TaskStatus::Exited(0) => (" ○", color!("#5a8ee0")),
+        TaskStatus::Exited(_) => (" ○", color!("#e05a5a")),
       };
       grid.draw_line(
         status_col,

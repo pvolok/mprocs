@@ -1,10 +1,10 @@
 use std::fmt::Debug;
 
 use crate::{
-  daemon::{receiver::MsgReceiver, sender::MsgSender},
+  ipc::{receiver::MsgReceiver, sender::MsgSender},
   kernel::{kernel_message::TaskSender, task::TaskCmd},
+  mprocs::server_message::ServerMessage,
   protocol::{ClientId, CltToSrv, SrvToClt},
-  server::server_message::ServerMessage,
   term::{ScreenDiffer, Size},
 };
 

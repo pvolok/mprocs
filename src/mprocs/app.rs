@@ -13,8 +13,8 @@ use crate::{
     },
     task_screen::{FramedScreenNotify, TaskScreenCmd},
   },
+  mprocs::server_message::ServerMessage,
   protocol::{CltToSrv, SrvToClt},
-  server::server_message::ServerMessage,
   term::{
     Grid, MouseProtocolMode, Size, TermEvent, Winsize,
     attrs::Attrs,

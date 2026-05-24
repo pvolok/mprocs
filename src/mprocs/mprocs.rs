@@ -7,9 +7,9 @@ use std::{
   path::{Path, PathBuf},
 };
 
-use crate::daemon::{receiver::MsgReceiver, sender::MsgSender};
 #[cfg(unix)]
 use crate::error::ResultLogger;
+use crate::ipc::{receiver::MsgReceiver, sender::MsgSender};
 use crate::kernel::kernel::Kernel;
 use crate::mprocs::app::create_app_task;
 use crate::mprocs::config::{
@@ -25,7 +25,8 @@ use crate::mprocs::proc_log_config::{LogConfig, LogMode};
 use crate::mprocs::settings::Settings;
 use crate::mprocs::yaml_val::Val;
 use crate::{
-  client::client_main, mprocs::app_client::client_loop, protocol::ClientId,
+  attach_client::client_main, mprocs::app_client::client_loop,
+  protocol::ClientId,
 };
 use anyhow::{Result, bail};
 use clap::{ArgMatches, arg, command};

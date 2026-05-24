@@ -11,11 +11,10 @@ mod unix {
   use tokio::net::{UnixListener, UnixStream};
 
   use crate::daemon::{
-    daemon::spawn_server_daemon,
     lockfile::{self, cleanup_stale, daemon_paths, read_lock_file},
-    receiver::MsgReceiver,
-    sender::MsgSender,
+    spawn::spawn_server_daemon,
   };
+  use crate::ipc::{receiver::MsgReceiver, sender::MsgSender};
 
   pub async fn bind_server_socket(
     socket_path: &Path,
@@ -126,11 +125,10 @@ mod windows {
   use tokio::net::{TcpListener, TcpStream};
 
   use crate::daemon::{
-    daemon::spawn_server_daemon,
     lockfile::{self, cleanup_stale, daemon_paths, read_lock_file},
-    receiver::MsgReceiver,
-    sender::MsgSender,
+    spawn::spawn_server_daemon,
   };
+  use crate::ipc::{receiver::MsgReceiver, sender::MsgSender};
 
   pub async fn bind_server_socket(
     _socket_path: &Path,

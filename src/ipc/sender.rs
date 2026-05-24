@@ -2,7 +2,7 @@ use std::{fmt::Debug, marker::PhantomData};
 
 use bytes::{BufMut, BytesMut};
 use futures::SinkExt;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use tokio::io::AsyncWrite;
 use tokio_util::codec::FramedWrite;
 
