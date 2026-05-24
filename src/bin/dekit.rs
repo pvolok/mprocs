@@ -1,4 +1,4 @@
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-  lib::dekit::dekit_main().await
+  lib::dekit::main::dekit_main().await
 }

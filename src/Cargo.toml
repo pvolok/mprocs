@@ -23,7 +23,7 @@ name = "mprocs"
 path = "bin/mprocs.rs"
 
 [[bin]]
-name = "dk"
+name = "dekit"
 path = "bin/dekit.rs"
 
 [lib]
