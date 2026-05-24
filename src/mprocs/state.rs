@@ -1,10 +1,10 @@
 use crate::kernel::task::TaskId;
 use crate::mprocs::{
-  app::ClientId,
   keymap::KeymapGroup,
-  proc::{view::ProcView, CopyMode},
+  proc::{CopyMode, view::ProcView},
   widgets::list::ListState,
 };
+use crate::protocol::ClientId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Scope {

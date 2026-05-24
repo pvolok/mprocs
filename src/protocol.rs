@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::term::TermEvent;
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct ClientId(pub u32);
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum SrvToClt {
   Print(String),

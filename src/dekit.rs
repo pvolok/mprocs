@@ -4,7 +4,6 @@ use anyhow::{anyhow, bail};
 use clap::{Arg, Command};
 use rquickjs::CatchResultExt;
 
-use crate::mprocs::app::ClientId;
 use crate::{
   client::client_main,
   console::create_console_task,
@@ -24,7 +23,7 @@ use crate::{
     task_path::TaskPath,
   },
   lualib::init_std,
-  protocol::{CltToSrv, DkRequest, DkResponse, DkTaskInfo, SrvToClt},
+  protocol::{ClientId, CltToSrv, DkRequest, DkResponse, DkTaskInfo, SrvToClt},
   term::Size,
 };
 

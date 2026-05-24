@@ -3,7 +3,7 @@ use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::kernel::task::TaskId;
-use crate::mprocs::app::ClientId;
+use crate::protocol::ClientId;
 use crate::term::key::Key;
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -56,7 +56,6 @@ pub enum AppEvent {
 
   SendKey { key: Key },
 }
-
 
 impl AppEvent {
   pub fn desc(&self) -> String {
@@ -113,11 +112,7 @@ impl AppEvent {
 }
 
 fn lines_str(n: usize) -> &'static str {
-  if n == 1 {
-    "line"
-  } else {
-    "lines"
-  }
+  if n == 1 { "line" } else { "lines" }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]

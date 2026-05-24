@@ -7,12 +7,11 @@ use std::{
   path::{Path, PathBuf},
 };
 
-use crate::client::client_main;
 use crate::daemon::{receiver::MsgReceiver, sender::MsgSender};
 #[cfg(unix)]
 use crate::error::ResultLogger;
 use crate::kernel::kernel::Kernel;
-use crate::mprocs::app::{ClientId, client_loop, create_app_task};
+use crate::mprocs::app::create_app_task;
 use crate::mprocs::config::{
   CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig,
 };
@@ -25,6 +24,9 @@ use crate::mprocs::proc::StopSignal;
 use crate::mprocs::proc_log_config::{LogConfig, LogMode};
 use crate::mprocs::settings::Settings;
 use crate::mprocs::yaml_val::Val;
+use crate::{
+  client::client_main, mprocs::app_client::client_loop, protocol::ClientId,
+};
 use anyhow::{Result, bail};
 use clap::{ArgMatches, arg, command};
 use serde_yaml::Value;

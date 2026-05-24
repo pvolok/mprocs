@@ -1,4 +1,6 @@
 pub mod app;
+pub mod app_client;
+pub mod app_layout;
 pub mod config;
 pub mod config_lua;
 pub mod ctl;

@@ -8,8 +8,7 @@ use crate::kernel::kernel_message::{
 };
 use crate::kernel::task::{TaskCmd, TaskDef, TaskId, TaskStatus};
 use crate::kernel::task_screen::{FramedScreenNotify, TaskScreenCmd};
-use crate::mprocs::app::ClientId;
-use crate::protocol::{CltToSrv, SrvToClt};
+use crate::protocol::{ClientId, CltToSrv, SrvToClt};
 use crate::term::{ScreenDiffer, Size, TermEvent, Winsize};
 
 pub enum ConsoleMsg {

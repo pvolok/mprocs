@@ -8,7 +8,7 @@ use super::views::procs::ProcsPane;
 use super::views::term::TermPane;
 use crate::color;
 use crate::console::state::{ConsoleState, ConsoleTaskEntry};
-use crate::mprocs::app::ClientId;
+use crate::protocol::ClientId;
 use crate::{
   kernel::kernel_message::{
     KernelCommand, KernelQuery, KernelQueryResponse, SharedVt, TaskContext,
@@ -76,7 +76,9 @@ impl Console {
     match cmd {
       TaskCmd::Msg(msg) => {
         let msg = match msg.downcast::<ConsoleMsg>() {
-          Ok(console_msg) => return self.handle_console_msg(*console_msg).await,
+          Ok(console_msg) => {
+            return self.handle_console_msg(*console_msg).await;
+          }
           Err(msg) => msg,
         };
         let msg = match msg.downcast::<TaskNotification>() {
@@ -94,9 +96,7 @@ impl Console {
           Err(msg) => msg,
         };
         if let Ok(cmd) = msg.downcast::<TaskScreenCmd>() {
-          self
-            .task_screen
-            .handle_cmd(*cmd, &mut self.screen_effects);
+          self.task_screen.handle_cmd(*cmd, &mut self.screen_effects);
           return self.apply_screen_effects();
         }
         false
@@ -229,15 +229,13 @@ impl Console {
       match action {
         ModalAction::None => {}
         ModalAction::Detach => {
-          if let Some(client) =
-            self.clients.iter().find(|c| c.id == client_id)
+          if let Some(client) = self.clients.iter().find(|c| c.id == client_id)
           {
             client.sender.send(TaskCmd::msg(ClientCmd::Quit));
           }
         }
         ModalAction::Quit => {
-          if let Some(client) =
-            self.clients.iter().find(|c| c.id == client_id)
+          if let Some(client) = self.clients.iter().find(|c| c.id == client_id)
           {
             self.task_context.send(KernelCommand::Quit);
             client.sender.send(TaskCmd::msg(ClientCmd::Quit));
@@ -383,8 +381,7 @@ impl Console {
       grid.fill_area(help_row, ' ', help_bg);
       let bindings: &[(&str, &str)] =
         &[("`", "leader"), ("C-h/j/k/l", "select pane")];
-      let mut cursor =
-        Rect::new(help_row.x + 1, help_row.y, help_row.width, 1);
+      let mut cursor = Rect::new(help_row.x + 1, help_row.y, help_row.width, 1);
       let key_attrs = def_attrs.clone().fg(color!("#7da8e8")).set_bold(true);
       let desc_attrs = def_attrs.clone().fg(color!("#dddddd"));
       let sep_attrs = def_attrs.clone().fg(color!("#888888"));
@@ -414,7 +411,8 @@ pub fn create_console_task(pc: &TaskContext) -> (TaskId, SharedVt) {
     width: 80,
     height: 24,
   };
-  let vt = SharedVt::new(Parser::new(initial_size.height, initial_size.width, 0));
+  let vt =
+    SharedVt::new(Parser::new(initial_size.height, initial_size.width, 0));
   let task_vt = vt.clone();
   let return_vt = vt.clone();
   let task_id = pc.spawn_async(

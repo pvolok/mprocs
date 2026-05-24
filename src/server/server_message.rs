@@ -1,6 +1,6 @@
 use crate::{
-  mprocs::app::{ClientHandle, ClientId},
-  protocol::CltToSrv,
+  mprocs::app_client::ClientHandle,
+  protocol::{ClientId, CltToSrv},
 };
 
 #[derive(Debug)]

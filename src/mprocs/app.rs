@@ -2,36 +2,12 @@ use std::{collections::HashMap, fmt::Debug, time::Instant};
 
 use anyhow::bail;
 use futures::{future::FutureExt, select};
-use serde::{Deserialize, Serialize};
 use tokio::{io::AsyncReadExt, sync::mpsc::UnboundedReceiver};
 
-use crate::mprocs::{
-  config::{CmdConfig, Config, ProcConfig, ServerConfig},
-  event::{AppEvent, CopyMove},
-  keymap::Keymap,
-  modal::{
-    add_proc::AddProcModal, commands_menu::CommandsMenuModal, modal::Modal,
-    quit::QuitModal, remove_proc::RemoveProcModal,
-    rename_proc::RenameProcModal,
-  },
-  proc::{
-    CopyMode, Pos, StopSignal,
-    msg::ProcMsg,
-    proc::launch_proc,
-    view::{RESTART_THRESHOLD_SECONDS, TargetState},
-  },
-  state::{Scope, State},
-  ui_keymap::render_keymap,
-  ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
-  ui_term::{render_term, term_check_hit},
-  ui_zoom_tip::render_zoom_tip,
-  widgets::list::ListState,
-};
 use crate::{
-  daemon::{receiver::MsgReceiver, sender::MsgSender},
   error::ResultLogger,
   kernel::{
-    kernel_message::{KernelCommand, TaskContext, TaskSender},
+    kernel_message::{KernelCommand, TaskContext},
     task::{
       TaskCmd, TaskDef, TaskId, TaskNotification, TaskNotify, TaskStatus,
     },
@@ -40,12 +16,39 @@ use crate::{
   protocol::{CltToSrv, SrvToClt},
   server::server_message::ServerMessage,
   term::{
-    Grid, MouseProtocolMode, ScreenDiffer, Size, TermEvent, Winsize,
+    Grid, MouseProtocolMode, Size, TermEvent, Winsize,
     attrs::Attrs,
     grid::Rect,
     key::{Key, KeyEventKind},
     mouse::{MouseButton, MouseEventKind},
   },
+};
+use crate::{
+  mprocs::{
+    app_client::ClientHandle,
+    app_layout::AppLayout,
+    config::{CmdConfig, Config, ProcConfig, ServerConfig},
+    event::{AppEvent, CopyMove},
+    keymap::Keymap,
+    modal::{
+      add_proc::AddProcModal, commands_menu::CommandsMenuModal, modal::Modal,
+      quit::QuitModal, remove_proc::RemoveProcModal,
+      rename_proc::RenameProcModal,
+    },
+    proc::{
+      CopyMode, Pos, StopSignal,
+      msg::ProcMsg,
+      proc::launch_proc,
+      view::{RESTART_THRESHOLD_SECONDS, TargetState},
+    },
+    state::{Scope, State},
+    ui_keymap::render_keymap,
+    ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
+    ui_term::{render_term, term_check_hit},
+    ui_zoom_tip::render_zoom_tip,
+    widgets::list::ListState,
+  },
+  protocol::ClientId,
 };
 
 #[derive(Debug, Default, PartialEq)]
@@ -1115,134 +1118,6 @@ impl App {
       self.state.hide_keymap_window,
       &self.config,
     )
-  }
-}
-
-struct AppLayout {
-  procs: Rect,
-  term: Rect,
-  keymap: Rect,
-  zoom_banner: Rect,
-}
-
-impl AppLayout {
-  pub fn new(
-    area: Rect,
-    zoom: bool,
-    hide_keymap_window: bool,
-    config: &Config,
-  ) -> Self {
-    let keymap_h = if zoom || hide_keymap_window { 0 } else { 3 };
-    let procs_w = if zoom {
-      0
-    } else {
-      config.proc_list_width as u16
-    };
-    let zoom_banner_h = if zoom { 1 } else { 0 };
-    let (top, keymap) = area.split_h(area.height.saturating_sub(keymap_h));
-    let (procs, term) = top.split_v(procs_w);
-    let (zoom_banner, term) = term.split_h(zoom_banner_h);
-
-    Self {
-      procs,
-      term,
-      keymap,
-      zoom_banner,
-    }
-  }
-
-  pub fn term_area(&self) -> Rect {
-    self.term.inner(1)
-  }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct ClientId(pub u32);
-
-pub async fn client_loop(
-  id: ClientId,
-  app_sender: TaskSender,
-  (client_sender, mut server_receiver): (
-    MsgSender<SrvToClt>,
-    MsgReceiver<CltToSrv>,
-  ),
-) {
-  log::debug!("client_loop: server_receiver.recv()");
-  let init_msg = server_receiver.recv().await;
-  match init_msg {
-    Some(Ok(CltToSrv::Init { width, height })) => {
-      let client_handle =
-        ClientHandle::create(id, client_sender, Size { width, height });
-      match client_handle {
-        Ok(handle) => {
-          app_sender
-            .send(TaskCmd::msg(ServerMessage::ClientConnected { handle }));
-        }
-        Err(err) => {
-          log::error!("Client creation error: {:?}", err);
-        }
-      }
-    }
-    _ => todo!(),
-  }
-
-  loop {
-    let msg = if let Some(msg) = server_receiver.recv().await {
-      msg
-    } else {
-      break;
-    };
-
-    match msg {
-      Ok(msg) => {
-        app_sender.send(TaskCmd::msg(ServerMessage::ClientMessage {
-          client_id: id,
-          msg,
-        }));
-      }
-      Err(_err) => break,
-    }
-  }
-  app_sender.send(TaskCmd::msg(ServerMessage::ClientDisconnected {
-    client_id: id,
-  }));
-}
-
-pub struct ClientHandle {
-  pub id: ClientId,
-  pub sender: MsgSender<SrvToClt>,
-  pub screen_size: Size,
-  pub differ: ScreenDiffer,
-}
-
-impl Debug for ClientHandle {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("ClientHandle")
-      .field("id", &self.id)
-      .finish()
-  }
-}
-
-impl ClientHandle {
-  pub fn create(
-    id: ClientId,
-    client_sender: MsgSender<SrvToClt>,
-    size: Size,
-  ) -> anyhow::Result<Self> {
-    Ok(Self {
-      id,
-      sender: client_sender,
-      screen_size: size,
-      differ: ScreenDiffer::new(),
-    })
-  }
-
-  pub fn size(&self) -> Size {
-    self.screen_size
-  }
-
-  pub fn resize(&mut self, size: Size) {
-    self.screen_size = size;
   }
 }
 
