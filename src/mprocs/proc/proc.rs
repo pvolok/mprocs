@@ -15,17 +15,17 @@ use crate::mprocs::config::ProcConfig;
 use crate::mprocs::proc_log_config::LogConfig;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
-use crate::term::encode::{encode_key, encode_mouse_event, KeyCodeEncodeModes};
+use crate::term::encode::{KeyCodeEncodeModes, encode_key, encode_mouse_event};
 use crate::term::grid::Rect;
 use crate::term::key::Key;
 use crate::term::mouse::{MouseEvent, MouseEventKind};
 use crate::term::{MouseProtocolMode, Parser};
 
+use super::Size;
+use super::StopSignal;
 use super::inst::Inst;
 use super::msg::{ProcEvent, ProcMsg};
 use super::view::ProcView;
-use super::Size;
-use super::StopSignal;
 
 pub struct Proc {
   pub id: TaskId,
@@ -57,8 +57,11 @@ pub fn launch_proc(
   path: Option<TaskPath>,
   size: Rect,
 ) -> ProcView {
-  let vt = SharedVt::new(Parser::new(size.height, size.width, cfg.scrollback_len));
-  let cfg_ = cfg.clone();
+  let vt =
+    SharedVt::new(Parser::new(size.height, size.width, cfg.scrollback_len));
+  let autostart = cfg.autostart;
+  let mut cfg_ = cfg.clone();
+  cfg_.autostart = false;
   let task_vt = vt.clone();
   let child_id = parent_ks.spawn_async_with_id(
     task_id,
@@ -75,6 +78,9 @@ pub fn launch_proc(
       proc_main_loop(ks, task_id, &cfg, size, task_vt, cmd_receiver).await;
     },
   );
+  if autostart {
+    parent_ks.send(KernelCommand::TaskCmd(child_id, TaskCmd::Start));
+  }
 
   ProcView::new(child_id, cfg, vt)
 }
@@ -313,9 +319,7 @@ impl Proc {
     }
   }
 
-  pub fn lock_vt(
-    &self,
-  ) -> Option<std::sync::RwLockReadGuard<'_, Parser>> {
+  pub fn lock_vt(&self) -> Option<std::sync::RwLockReadGuard<'_, Parser>> {
     self.vt.read().ok()
   }
 
@@ -551,5 +555,174 @@ impl Proc {
         *rendered = true;
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::{
+    path::Path,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+  };
+
+  use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
+
+  use super::*;
+  use crate::{
+    kernel::{
+      kernel::Kernel,
+      task::{Effects, Task},
+    },
+    mprocs::config::CmdConfig,
+  };
+
+  #[derive(Debug, PartialEq)]
+  enum RecordedCmd {
+    Start,
+    Stop,
+  }
+
+  struct RecordingTask {
+    tx: tokio::sync::mpsc::UnboundedSender<RecordedCmd>,
+  }
+
+  impl Task for RecordingTask {
+    fn handle_cmd(&mut self, cmd: TaskCmd, fx: &mut Effects) {
+      match cmd {
+        TaskCmd::Start => {
+          self.tx.send(RecordedCmd::Start).unwrap();
+          fx.started();
+        }
+        TaskCmd::Stop | TaskCmd::Kill => {
+          self.tx.send(RecordedCmd::Stop).unwrap();
+          fx.stopped(0);
+        }
+        TaskCmd::Msg(_) => {}
+      }
+    }
+  }
+
+  fn recording_task() -> (
+    UnboundedReceiver<RecordedCmd>,
+    impl FnOnce(TaskContext) -> Box<dyn Task> + 'static,
+  ) {
+    let (tx, rx) = unbounded_channel();
+    (rx, move |_| Box::new(RecordingTask { tx }))
+  }
+
+  async fn flush_kernel(pc: &TaskContext) {
+    let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+    pc.send(KernelCommand::Query(
+      crate::kernel::kernel_message::KernelQuery::ListTasks(None),
+      response_tx,
+    ));
+    tokio::time::timeout(Duration::from_secs(1), response_rx)
+      .await
+      .expect("timed out waiting for kernel query response")
+      .expect("kernel query response channel closed");
+  }
+
+  async fn recv_cmd(rx: &mut UnboundedReceiver<RecordedCmd>) -> RecordedCmd {
+    tokio::time::timeout(Duration::from_secs(1), rx.recv())
+      .await
+      .expect("timed out waiting for task command")
+      .expect("task command channel closed")
+  }
+
+  async fn assert_path_absent_for(path: &Path, duration: Duration) {
+    let deadline = Instant::now() + duration;
+    while Instant::now() < deadline {
+      assert!(
+        !path.exists(),
+        "path unexpectedly exists: {}",
+        path.display()
+      );
+      tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+  }
+
+  async fn wait_for_path(path: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+      if path.exists() {
+        return;
+      }
+      tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("timed out waiting for path: {}", path.display());
+  }
+
+  #[cfg(not(windows))]
+  #[tokio::test]
+  async fn autostart_proc_waits_for_dependencies() {
+    let mut temp_dir = std::env::temp_dir();
+    let nanos = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .unwrap()
+      .as_nanos();
+    temp_dir.push(format!(
+      "mprocs_autostart_deps_{}_{}",
+      std::process::id(),
+      nanos
+    ));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+    let marker_path = temp_dir.join("started");
+
+    let mut kernel = Kernel::new();
+    let pc = kernel.context();
+
+    let (mut provider_rx, provider_task) = recording_task();
+    let provider_id = kernel.register_task(TaskDef::default(), provider_task);
+
+    let proc_config = ProcConfig {
+      name: "dependent".to_string(),
+      cmd: CmdConfig::Shell {
+        shell: format!("printf started > {}", marker_path.display()),
+      },
+      cwd: None,
+      env: None,
+      autostart: true,
+      autorestart: false,
+      stop: StopSignal::SIGKILL,
+      deps: Vec::new(),
+      mouse_scroll_speed: 1,
+      scrollback_len: 100,
+      log: None,
+    };
+
+    let proc_view = launch_proc(
+      &pc,
+      proc_config,
+      pc.alloc_id(),
+      vec![provider_id],
+      None,
+      Rect {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 24,
+      },
+    );
+
+    let kernel_task = tokio::spawn(kernel.run());
+
+    flush_kernel(&pc).await;
+    assert_path_absent_for(&marker_path, Duration::from_millis(100)).await;
+
+    pc.send(KernelCommand::TaskCmd(provider_id, TaskCmd::Start));
+    assert_eq!(recv_cmd(&mut provider_rx).await, RecordedCmd::Start);
+
+    wait_for_path(&marker_path).await;
+
+    pc.send(KernelCommand::RemoveTask(proc_view.id()));
+    flush_kernel(&pc).await;
+
+    pc.send(KernelCommand::Quit);
+    tokio::time::timeout(Duration::from_secs(2), kernel_task)
+      .await
+      .expect("timed out waiting for kernel to quit")
+      .unwrap();
+
+    let _ = std::fs::remove_dir_all(temp_dir);
   }
 }

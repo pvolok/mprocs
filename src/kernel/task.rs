@@ -118,6 +118,7 @@ pub struct TaskHandle {
 
   pub stop_on_quit: bool,
   pub status: TaskStatus,
+  pub pending_start: bool,
 
   pub deps: HashMap<TaskId, DepInfo>,
 

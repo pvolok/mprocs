@@ -1,4 +1,5 @@
 use anyhow::{Context, anyhow, bail};
+use std::str;
 
 use crate::term::{
   key::{
