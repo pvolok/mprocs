@@ -203,9 +203,7 @@ impl Screen {
   /// exists.
   #[must_use]
   pub fn cell(&self, row: u16, col: u16) -> Option<&super::cell::Cell> {
-    self
-      .grid()
-      .visible_cell(super::grid::Pos { row, col })
+    self.grid().visible_cell(super::grid::Pos { row, col })
   }
 
   #[must_use]
@@ -956,9 +954,7 @@ impl Screen {
         let mut params = params.split(';');
         let row = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
         let col = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
-        self
-          .grid_mut()
-          .set_pos(super::grid::Pos { row, col });
+        self.grid_mut().set_pos(super::grid::Pos { row, col });
       }
       ("", _, "", b'J') => {
         // ED - Erase Display
@@ -1041,9 +1037,7 @@ impl Screen {
         let mut params = params.split(';');
         let y = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
         let x = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
-        self
-          .grid_mut()
-          .set_pos(super::grid::Pos { row: y, col: x });
+        self.grid_mut().set_pos(super::grid::Pos { row: y, col: x });
       }
       ("", _, "", b'`') => {
         // HPA - Horizontal Position Absolute
