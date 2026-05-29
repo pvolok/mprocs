@@ -1,5 +1,9 @@
 ## Unreleased
 
+## 0.9.4 - 2026-05-30
+
+- Fixed panic when terminal reports zero screen size
+
 ## 0.9.3 - 2026-05-20
 
 - Add `{cmd: <shell>}` value for `stop` to run a shell command as the stop
