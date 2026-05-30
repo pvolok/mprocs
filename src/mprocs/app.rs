@@ -1107,6 +1107,7 @@ impl App {
         }
       }
       TaskNotify::Removed => {}
+      TaskNotify::PathChanged(_, _) => {}
     }
   }
 

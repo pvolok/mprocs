@@ -201,6 +201,7 @@ impl Console {
         }
         true
       }
+      TaskNotify::PathChanged(_, _) => false,
     }
   }
 

@@ -9,6 +9,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::term::Parser;
 
+use super::sub_trie::SubMode;
 use super::task::{Task, TaskCmd, TaskDef, TaskId, TaskStatus};
 use super::task_path::TaskPath;
 
@@ -39,6 +40,9 @@ pub enum KernelCommand {
 
   ListenTaskUpdates,
   UnlistenTaskUpdates,
+
+  SubscribePath(TaskPath, SubMode),
+  UnsubscribePath(TaskPath, SubMode),
 
   // Task reporting
   TaskStarted,
@@ -196,6 +200,14 @@ impl TaskContext {
 
   pub fn set_task_path(&self, task_id: TaskId, path: TaskPath) {
     self.send(KernelCommand::SetTaskPath(task_id, path));
+  }
+
+  pub fn subscribe_path(&self, path: TaskPath, mode: SubMode) {
+    self.send(KernelCommand::SubscribePath(path, mode));
+  }
+
+  pub fn unsubscribe_path(&self, path: TaskPath, mode: SubMode) {
+    self.send(KernelCommand::UnsubscribePath(path, mode));
   }
 
   pub fn query(

@@ -71,6 +71,7 @@ impl fmt::Debug for TaskCmd {
 
 pub struct TaskNotification {
   pub from: TaskId,
+  pub from_path: Option<TaskPath>,
   pub notify: TaskNotify,
 }
 
@@ -80,6 +81,7 @@ pub enum TaskNotify {
   Started,
   Stopped(u32),
   Removed,
+  PathChanged(Option<TaskPath>, Option<TaskPath>),
 }
 
 impl fmt::Debug for TaskNotify {
@@ -91,6 +93,9 @@ impl fmt::Debug for TaskNotify {
       TaskNotify::Started => write!(f, "Started"),
       TaskNotify::Stopped(code) => write!(f, "Stopped({})", code),
       TaskNotify::Removed => write!(f, "Removed"),
+      TaskNotify::PathChanged(old, new) => {
+        write!(f, "PathChanged({:?}, {:?})", old, new)
+      }
     }
   }
 }

@@ -12,10 +12,12 @@ use super::{
     KernelCommand, KernelMessage, KernelQuery, KernelQueryResponse, TaskInfo,
   },
   path_trie::PathTrie,
+  sub_trie::SubTrie,
   task::{
     DepInfo, Effects, Task, TaskCmd, TaskDef, TaskEffect, TaskHandle, TaskId,
     TaskNotification, TaskNotify, TaskStatus,
   },
+  task_path::TaskPath,
 };
 
 pub struct Kernel {
@@ -29,6 +31,7 @@ pub struct Kernel {
   rev_deps: HashMap<TaskId, HashSet<TaskId>>,
   listeners: HashSet<TaskId>,
   path_trie: PathTrie,
+  sub_trie: SubTrie,
 }
 
 impl Kernel {
@@ -45,6 +48,7 @@ impl Kernel {
       rev_deps: HashMap::new(),
       listeners: Default::default(),
       path_trie: PathTrie::new(),
+      sub_trie: SubTrie::new(),
     }
   }
 
@@ -109,7 +113,11 @@ impl Kernel {
       }
     }
 
-    self.notify_listeners(task_id, TaskNotify::Added(path, status, vt));
+    self.notify_listeners(
+      task_id,
+      path.clone(),
+      TaskNotify::Added(path, status, vt),
+    );
   }
 
   pub async fn run(mut self) {
@@ -185,18 +193,24 @@ impl Kernel {
         }
 
         KernelCommand::SetTaskPath(task_id, path) => {
+          let old_path = self.tasks.get(&task_id).and_then(|t| t.path.clone());
+          let mut changed = false;
           if let Some(task) = self.tasks.get_mut(&task_id) {
             if let Some(old_path) = task.path.take() {
               self.path_trie.remove(&old_path);
             }
             match self.path_trie.insert(&path, task_id) {
               Ok(()) => {
-                task.path = Some(path);
+                task.path = Some(path.clone());
+                changed = true;
               }
               Err(err) => {
                 log::warn!("Path conflict: {}", err);
               }
             }
+          }
+          if changed {
+            self.notify_path_changed(task_id, old_path, Some(path));
           }
         }
 
@@ -262,6 +276,13 @@ impl Kernel {
         KernelCommand::UnlistenTaskUpdates => {
           self.listeners.remove(&msg.from);
         }
+
+        KernelCommand::SubscribePath(path, mode) => {
+          self.sub_trie.subscribe(msg.from, &path, mode);
+        }
+        KernelCommand::UnsubscribePath(path, mode) => {
+          self.sub_trie.unsubscribe(msg.from, &path, mode);
+        }
       }
     }
     log::debug!("After kernel loop.");
@@ -314,17 +335,24 @@ impl Kernel {
           }
         }
 
-        self.notify_listeners(task_id, TaskNotify::Started);
+        let from_path = self.task_path(task_id);
+        self.notify_listeners(task_id, from_path, TaskNotify::Started);
       }
 
       TaskEffect::Stopped(exit_code) => {
         if let Some(task) = self.tasks.get_mut(&task_id) {
           task.status = TaskStatus::Exited(exit_code);
         }
-        self.notify_listeners(task_id, TaskNotify::Stopped(exit_code));
+        let from_path = self.task_path(task_id);
+        self.notify_listeners(
+          task_id,
+          from_path,
+          TaskNotify::Stopped(exit_code),
+        );
       }
 
       TaskEffect::Remove => {
+        let from_path = self.task_path(task_id);
         if let Some(handle) = self.tasks.remove(&task_id) {
           if let Some(path) = &handle.path {
             self.path_trie.remove(path);
@@ -345,26 +373,73 @@ impl Kernel {
           }
 
           self.listeners.remove(&task_id);
+          self.sub_trie.remove_subscriber(task_id);
         }
 
-        self.notify_listeners(task_id, TaskNotify::Removed);
+        self.notify_listeners(task_id, from_path, TaskNotify::Removed);
       }
     }
   }
 
-  fn notify_listeners(&mut self, from: TaskId, notify: TaskNotify) {
+  fn task_path(&self, task_id: TaskId) -> Option<TaskPath> {
+    self.tasks.get(&task_id).and_then(|t| t.path.clone())
+  }
+
+  fn notify_listeners(
+    &mut self,
+    from: TaskId,
+    from_path: Option<TaskPath>,
+    notify: TaskNotify,
+  ) {
+    let mut targets = self.listeners.clone();
+    if let Some(path) = &from_path {
+      self.sub_trie.collect(path, &mut targets);
+    }
+    self.deliver(from, from_path, notify, targets);
+  }
+
+  /// Notify subscribers of both the old and new locations that a task moved.
+  fn notify_path_changed(
+    &mut self,
+    from: TaskId,
+    old: Option<TaskPath>,
+    new: Option<TaskPath>,
+  ) {
+    let mut targets = self.listeners.clone();
+    if let Some(old) = &old {
+      self.sub_trie.collect(old, &mut targets);
+    }
+    if let Some(new) = &new {
+      self.sub_trie.collect(new, &mut targets);
+    }
+    self.deliver(
+      from,
+      new.clone(),
+      TaskNotify::PathChanged(old, new),
+      targets,
+    );
+  }
+
+  fn deliver(
+    &mut self,
+    from: TaskId,
+    from_path: Option<TaskPath>,
+    notify: TaskNotify,
+    targets: HashSet<TaskId>,
+  ) {
     let mut all_fx: Vec<(TaskId, Effects)> = Vec::new();
-    for listener_id in self.listeners.iter() {
-      if let Some(listener) = self.tasks.get_mut(listener_id) {
+    for listener_id in targets {
+      if let Some(listener) = self.tasks.get_mut(&listener_id) {
         let mut fx = Effects::new();
         listener.task.handle_cmd(
           TaskCmd::msg(TaskNotification {
             from,
+            from_path: from_path.clone(),
             notify: notify.clone(),
           }),
           &mut fx,
         );
-        all_fx.push((*listener_id, fx));
+        all_fx.push((listener_id, fx));
       }
     }
     for (task_id, mut fx) in all_fx {
