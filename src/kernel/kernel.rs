@@ -398,25 +398,50 @@ impl Kernel {
     self.deliver(from, from_path, notify, targets);
   }
 
-  /// Notify subscribers of both the old and new locations that a task moved.
+  /// Translate a path change into each subscriber's own vocabulary: a task
+  /// moving into scope looks like `Added` (with full status/vt), out of scope
+  /// like `Removed`, and a move within scope like a rename.
   fn notify_path_changed(
     &mut self,
     from: TaskId,
     old: Option<TaskPath>,
     new: Option<TaskPath>,
   ) {
-    let mut targets = self.listeners.clone();
+    let (status, vt) = match self.tasks.get(&from) {
+      Some(t) => (t.status, t.vt.clone()),
+      None => return,
+    };
+
+    let mut old_targets = self.listeners.clone();
     if let Some(old) = &old {
-      self.sub_trie.collect(old, &mut targets);
+      self.sub_trie.collect(old, &mut old_targets);
     }
+    let mut new_targets = self.listeners.clone();
     if let Some(new) = &new {
-      self.sub_trie.collect(new, &mut targets);
+      self.sub_trie.collect(new, &mut new_targets);
     }
+
+    let entering: HashSet<TaskId> =
+      new_targets.difference(&old_targets).copied().collect();
+    let leaving: HashSet<TaskId> =
+      old_targets.difference(&new_targets).copied().collect();
+    let staying: HashSet<TaskId> =
+      old_targets.intersection(&new_targets).copied().collect();
+
+    if let Some(new) = &new {
+      self.deliver(
+        from,
+        Some(new.clone()),
+        TaskNotify::Added(Some(new.clone()), status, vt),
+        entering,
+      );
+    }
+    self.deliver(from, old.clone(), TaskNotify::Removed, leaving);
     self.deliver(
       from,
-      new.clone(),
+      new.clone().or_else(|| old.clone()),
       TaskNotify::PathChanged(old, new),
-      targets,
+      staying,
     );
   }
 

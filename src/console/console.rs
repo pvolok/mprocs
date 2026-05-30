@@ -14,9 +14,11 @@ use crate::{
     KernelCommand, KernelQuery, KernelQueryResponse, SharedVt, TaskContext,
     TaskSender,
   },
+  kernel::sub_trie::SubMode,
   kernel::task::{
     TaskCmd, TaskDef, TaskId, TaskNotification, TaskNotify, TaskStatus,
   },
+  kernel::task_path::TaskPath,
   kernel::task_screen::{
     FramedScreenNotify, TaskScreen, TaskScreenCmd, TaskScreenEffect,
   },
@@ -49,7 +51,9 @@ struct Console {
 
 impl Console {
   async fn run(mut self) {
-    self.task_context.send(KernelCommand::ListenTaskUpdates);
+    self
+      .task_context
+      .subscribe_path(TaskPath::new("/").unwrap(), SubMode::Subtree);
     self.refresh_tasks().await;
 
     let mut render_needed = true;
@@ -156,16 +160,22 @@ impl Console {
   fn handle_notification(&mut self, from: TaskId, notify: TaskNotify) -> bool {
     match notify {
       TaskNotify::Added(path, status, vt) => {
-        let path = path
-          .map(|p| p.to_string())
-          .unwrap_or_else(|| format!("<task:{}>", from.0));
+        let Some(path) = path else { return false };
+        let path = path.to_string();
         let has_vt = vt.is_some();
-        self.state.tasks.push(ConsoleTaskEntry {
-          id: from,
-          path,
-          status,
-          vt,
-        });
+        match self.state.tasks.iter_mut().find(|t| t.id == from) {
+          Some(entry) => {
+            entry.path = path;
+            entry.status = status;
+            entry.vt = vt;
+          }
+          None => self.state.tasks.push(ConsoleTaskEntry {
+            id: from,
+            path,
+            status,
+            vt,
+          }),
+        }
         if has_vt {
           if let Some(size) = self.term_inner_size() {
             let sender =
@@ -194,14 +204,19 @@ impl Console {
       }
       TaskNotify::Removed => {
         self.state.tasks.retain(|t| t.id != from);
-        if self.state.selected >= self.state.tasks.len()
-          && !self.state.tasks.is_empty()
-        {
-          self.state.selected = self.state.tasks.len() - 1;
+        self.state.clamp_selection();
+        true
+      }
+      TaskNotify::PathChanged(_, new) => {
+        if let Some(new) = new {
+          if let Some(entry) =
+            self.state.tasks.iter_mut().find(|t| t.id == from)
+          {
+            entry.path = new.to_string();
+          }
         }
         true
       }
-      TaskNotify::PathChanged(_, _) => false,
     }
   }
 
@@ -294,21 +309,16 @@ impl Console {
     if let Ok(KernelQueryResponse::TaskList(list)) = rx.await {
       self.state.tasks = list
         .into_iter()
-        .map(|t| ConsoleTaskEntry {
-          id: t.id,
-          path: t
-            .path
-            .map(|p| p.to_string())
-            .unwrap_or_else(|| format!("<task:{}>", t.id.0)),
-          status: t.status,
-          vt: t.vt,
+        .filter_map(|t| {
+          Some(ConsoleTaskEntry {
+            id: t.id,
+            path: t.path?.to_string(),
+            status: t.status,
+            vt: t.vt,
+          })
         })
         .collect();
-      if self.state.selected >= self.state.tasks.len()
-        && !self.state.tasks.is_empty()
-      {
-        self.state.selected = self.state.tasks.len() - 1;
-      }
+      self.state.clamp_selection();
 
       if let Some(size) = self.term_inner_size() {
         let observer_id = self.task_context.task_id;
