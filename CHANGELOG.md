@@ -1,5 +1,10 @@
 ## Unreleased
 
+## 0.9.5 - 2026-06-01
+
+- Fix unbounded memory growth when process output contains an unterminated
+  terminal control sequence (#225)
+
 ## 0.9.4 - 2026-05-30
 
 - Fixed panic when terminal reports zero screen size
