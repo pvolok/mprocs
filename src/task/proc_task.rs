@@ -10,9 +10,13 @@ use crate::kernel::task_screen::{TaskScreen, TaskScreenCmd, TaskScreenEffect};
 use crate::process::NativeProcess;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
+use crate::term::encode::{KeyCodeEncodeModes, encode_key};
+use crate::term::key::Key;
 use crate::term::{Parser, Winsize};
 
 struct ProcExited(u32);
+
+pub struct ProcInput(pub Key);
 
 pub fn spawn_proc_task(
   parent: &TaskContext,
@@ -116,6 +120,13 @@ async fn proc_main(
             }
             Err(msg) => msg,
           };
+          let msg = match msg.downcast::<ProcInput>() {
+            Ok(input) => {
+              send_key(&mut process, task_screen.vt(), input.0).await;
+              continue;
+            }
+            Err(msg) => msg,
+          };
           let _ = msg;
           log::error!("ProcTask received unknown Msg");
         }
@@ -160,6 +171,22 @@ async fn apply_effects(
         process.resize(size).log_ignore();
       }
     }
+  }
+}
+
+async fn send_key(process: &mut NativeProcess, vt: &SharedVt, key: Key) {
+  let application_cursor_keys = vt
+    .read()
+    .map(|parser| parser.screen().application_cursor())
+    .unwrap_or(false);
+  let modes = KeyCodeEncodeModes {
+    enable_csi_u_key_encoding: true,
+    application_cursor_keys,
+    newline_mode: false,
+  };
+  match encode_key(&key, modes) {
+    Ok(encoded) => process.write_all(encoded.as_bytes()).await.log_ignore(),
+    Err(_) => log::warn!("Failed to encode key: {}", key.to_string()),
   }
 }
 

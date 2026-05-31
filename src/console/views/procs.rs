@@ -1,4 +1,6 @@
 use crate::color;
+use crate::console::action::ConsoleAction;
+use crate::console::keymap::Keymap;
 use crate::console::state::ConsoleState;
 use crate::console::views::frame::draw_frame;
 use crate::console::views::pane::Pane;
@@ -8,9 +10,40 @@ use crate::term::attrs::Attrs;
 use crate::term::grid::Rect;
 use crate::term::scroll_offset;
 
-pub struct ProcsPane;
+pub struct ProcsPane {
+  keymap: Keymap<ConsoleAction>,
+}
+
+impl ProcsPane {
+  pub fn new() -> Self {
+    ProcsPane {
+      keymap: procs_keymap(),
+    }
+  }
+}
+
+fn procs_keymap() -> Keymap<ConsoleAction> {
+  use ConsoleAction::*;
+  let mut km = Keymap::new();
+  let binds = [
+    ("<j>", SelectNext),
+    ("<Down>", SelectNext),
+    ("<k>", SelectPrev),
+    ("<Up>", SelectPrev),
+    ("<q>", Quit),
+  ];
+  for (seq, action) in binds {
+    km.bind(seq, action, None)
+      .expect("invalid builtin procs keybinding");
+  }
+  km
+}
 
 impl Pane for ProcsPane {
+  fn keymap(&self) -> Option<&Keymap<ConsoleAction>> {
+    Some(&self.keymap)
+  }
+
   fn render(
     &mut self,
     grid: &mut Grid,

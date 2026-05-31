@@ -1,7 +1,8 @@
 use tokio::sync::mpsc::UnboundedReceiver;
 
+use super::action::ConsoleAction;
 use super::client_task::{ClientCmd, ConsoleMsg};
-use super::keymap::{Chord, Keymap, Step};
+use super::keymap::{Chord, Keymap, Lookup, Step};
 use super::layout::{Dir, Layout, PaneId, SizeSpec};
 use super::modals::quit_modal::QuitModal;
 use super::modals::{Modal, ModalAction};
@@ -10,6 +11,7 @@ use super::views::term::TermPane;
 use crate::color;
 use crate::console::state::{ConsoleState, ConsoleTaskEntry};
 use crate::protocol::ClientId;
+use crate::task::proc_task::ProcInput;
 use crate::{
   kernel::kernel_message::{
     KernelCommand, KernelQuery, KernelQueryResponse, SharedVt, TaskContext,
@@ -24,8 +26,10 @@ use crate::{
     FramedScreenNotify, TaskScreen, TaskScreenCmd, TaskScreenEffect,
   },
   term::{
-    Parser, Size, TermEvent, Winsize, attrs::Attrs, grid::Rect,
-    key::KeyEventKind,
+    Parser, Size, TermEvent, Winsize,
+    attrs::Attrs,
+    grid::Rect,
+    key::{Key, KeyEventKind},
   },
 };
 
@@ -34,27 +38,12 @@ struct ClientRef {
   sender: TaskSender,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum ConsoleAction {
-  SelectNext,
-  SelectPrev,
-  FocusLeft,
-  FocusDown,
-  FocusUp,
-  FocusRight,
-  Quit,
-}
-
-fn console_keymap() -> Keymap<ConsoleAction> {
+fn global_keymap() -> Keymap<ConsoleAction> {
   use ConsoleAction::*;
   let mut km = Keymap::new();
   // Both <C-_> and <C-M-_> focus a neighbor, matching the terminals that
   // deliver these chords with an extra Alt.
   let binds = [
-    ("<j>", SelectNext),
-    ("<Down>", SelectNext),
-    ("<k>", SelectPrev),
-    ("<Up>", SelectPrev),
     ("<C-h>", FocusLeft),
     ("<C-M-h>", FocusLeft),
     ("<C-j>", FocusDown),
@@ -63,11 +52,10 @@ fn console_keymap() -> Keymap<ConsoleAction> {
     ("<C-M-k>", FocusUp),
     ("<C-l>", FocusRight),
     ("<C-M-l>", FocusRight),
-    ("<q>", Quit),
   ];
   for (seq, action) in binds {
     km.bind(seq, action, None)
-      .expect("invalid builtin console keybinding");
+      .expect("invalid builtin global keybinding");
   }
   km
 }
@@ -83,7 +71,7 @@ struct Console {
   focused_pane: PaneId,
   term_pane: PaneId,
 
-  keymap: Keymap<ConsoleAction>,
+  global_keymap: Keymap<ConsoleAction>,
   chord: Chord,
 
   state: ConsoleState,
@@ -301,30 +289,44 @@ impl Console {
       return true;
     }
 
-    match self.chord.feed(&self.keymap, key) {
-      Step::Action(action) => {
-        self.dispatch(*action);
+    let action = match self.global_keymap.lookup(&[key]) {
+      Lookup::Found(b) => Some(b.action),
+      Lookup::Pending(_) | Lookup::None => {
+        match self.layout.pane_mut(self.focused_pane).keymap() {
+          Some(km) => match self.chord.feed(km, key) {
+            Step::Action(a) => Some(*a),
+            Step::Pending(_) => return true,
+            Step::Unmatched => None,
+          },
+          None => None,
+        }
       }
-      Step::Pending(_) => (),
-      Step::Unmatched => (),
+    };
+
+    if let Some(action) = action {
+      return self.dispatch(action);
     }
-    true
+
+    if self.focused_pane == self.term_pane {
+      self.send_key_to_selected(key);
+    }
+    false
   }
 
   fn dispatch(&mut self, action: ConsoleAction) -> bool {
     match action {
-      ConsoleAction::SelectNext => {
-        self.move_selection(1);
-        true
-      }
-      ConsoleAction::SelectPrev => {
-        self.move_selection(-1);
-        true
-      }
       ConsoleAction::FocusLeft => self.focus_neighbor(Dir::Left),
       ConsoleAction::FocusDown => self.focus_neighbor(Dir::Down),
       ConsoleAction::FocusUp => self.focus_neighbor(Dir::Up),
       ConsoleAction::FocusRight => self.focus_neighbor(Dir::Right),
+      ConsoleAction::SelectNext => {
+        self.state.move_selection(1);
+        true
+      }
+      ConsoleAction::SelectPrev => {
+        self.state.move_selection(-1);
+        true
+      }
       ConsoleAction::Quit => {
         self.state.quit_modal = true;
         true
@@ -336,19 +338,20 @@ impl Console {
     if let Some(next) = self.layout.neighbor(self.focused_pane, dir) {
       if next != self.focused_pane {
         self.focused_pane = next;
+        self.chord.reset();
         return true;
       }
     }
     false
   }
 
-  fn move_selection(&mut self, delta: i32) {
-    if self.state.tasks.is_empty() {
-      return;
+  fn send_key_to_selected(&self, key: Key) {
+    if let Some(entry) = self.state.tasks.get(self.state.selected) {
+      self.task_context.send(KernelCommand::TaskCmd(
+        entry.id,
+        TaskCmd::msg(ProcInput(key)),
+      ));
     }
-    let len = self.state.tasks.len() as i32;
-    let new = (self.state.selected as i32 + delta).rem_euclid(len);
-    self.state.selected = new as usize;
   }
 
   async fn refresh_tasks(&mut self) {
@@ -490,7 +493,7 @@ pub fn create_console_task(pc: &TaskContext) -> (TaskId, SharedVt) {
       let procs_pane = layout.insert(
         root,
         Dir::Right,
-        Box::new(ProcsPane),
+        Box::new(ProcsPane::new()),
         SizeSpec::Fixed(30),
       );
       let term_pane =
@@ -505,7 +508,7 @@ pub fn create_console_task(pc: &TaskContext) -> (TaskId, SharedVt) {
         layout,
         focused_pane: procs_pane,
         term_pane,
-        keymap: console_keymap(),
+        global_keymap: global_keymap(),
         chord: Chord::default(),
         state: ConsoleState {
           tasks: Vec::new(),

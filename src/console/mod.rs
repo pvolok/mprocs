@@ -1,3 +1,4 @@
+pub mod action;
 pub mod client_task;
 pub mod console;
 pub mod keymap;
