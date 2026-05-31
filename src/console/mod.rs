@@ -1,5 +1,6 @@
 pub mod client_task;
 pub mod console;
+pub mod keymap;
 mod layout;
 mod modals;
 mod state;

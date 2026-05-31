@@ -1,6 +1,7 @@
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::client_task::{ClientCmd, ConsoleMsg};
+use super::keymap::{Chord, Keymap, Step};
 use super::layout::{Dir, Layout, PaneId, SizeSpec};
 use super::modals::quit_modal::QuitModal;
 use super::modals::{Modal, ModalAction};
@@ -23,16 +24,52 @@ use crate::{
     FramedScreenNotify, TaskScreen, TaskScreenCmd, TaskScreenEffect,
   },
   term::{
-    Parser, Size, TermEvent, Winsize,
-    attrs::Attrs,
-    grid::Rect,
-    key::{KeyCode, KeyEventKind, KeyMods},
+    Parser, Size, TermEvent, Winsize, attrs::Attrs, grid::Rect,
+    key::KeyEventKind,
   },
 };
 
 struct ClientRef {
   id: ClientId,
   sender: TaskSender,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum ConsoleAction {
+  SelectNext,
+  SelectPrev,
+  FocusLeft,
+  FocusDown,
+  FocusUp,
+  FocusRight,
+  Quit,
+}
+
+fn console_keymap() -> Keymap<ConsoleAction> {
+  use ConsoleAction::*;
+  let mut km = Keymap::new();
+  // Both <C-_> and <C-M-_> focus a neighbor, matching the terminals that
+  // deliver these chords with an extra Alt.
+  let binds = [
+    ("<j>", SelectNext),
+    ("<Down>", SelectNext),
+    ("<k>", SelectPrev),
+    ("<Up>", SelectPrev),
+    ("<C-h>", FocusLeft),
+    ("<C-M-h>", FocusLeft),
+    ("<C-j>", FocusDown),
+    ("<C-M-j>", FocusDown),
+    ("<C-k>", FocusUp),
+    ("<C-M-k>", FocusUp),
+    ("<C-l>", FocusRight),
+    ("<C-M-l>", FocusRight),
+    ("<q>", Quit),
+  ];
+  for (seq, action) in binds {
+    km.bind(seq, action, None)
+      .expect("invalid builtin console keybinding");
+  }
+  km
 }
 
 struct Console {
@@ -45,6 +82,9 @@ struct Console {
   layout: Layout,
   focused_pane: PaneId,
   term_pane: PaneId,
+
+  keymap: Keymap<ConsoleAction>,
+  chord: Chord,
 
   state: ConsoleState,
 }
@@ -261,27 +301,34 @@ impl Console {
       return true;
     }
 
-    let nav_mods = key.mods == KeyMods::CONTROL
-      || key.mods == KeyMods::CONTROL | KeyMods::ALT;
+    match self.chord.feed(&self.keymap, key) {
+      Step::Action(action) => {
+        self.dispatch(*action);
+      }
+      Step::Pending(_) => (),
+      Step::Unmatched => (),
+    }
+    true
+  }
 
-    match key.code {
-      KeyCode::Char('j') | KeyCode::Down if key.mods == KeyMods::NONE => {
+  fn dispatch(&mut self, action: ConsoleAction) -> bool {
+    match action {
+      ConsoleAction::SelectNext => {
         self.move_selection(1);
         true
       }
-      KeyCode::Char('k') | KeyCode::Up if key.mods == KeyMods::NONE => {
+      ConsoleAction::SelectPrev => {
         self.move_selection(-1);
         true
       }
-      KeyCode::Char('h') if nav_mods => self.focus_neighbor(Dir::Left),
-      KeyCode::Char('j') if nav_mods => self.focus_neighbor(Dir::Down),
-      KeyCode::Char('k') if nav_mods => self.focus_neighbor(Dir::Up),
-      KeyCode::Char('l') if nav_mods => self.focus_neighbor(Dir::Right),
-      KeyCode::Char('q') if key.mods == KeyMods::NONE => {
+      ConsoleAction::FocusLeft => self.focus_neighbor(Dir::Left),
+      ConsoleAction::FocusDown => self.focus_neighbor(Dir::Down),
+      ConsoleAction::FocusUp => self.focus_neighbor(Dir::Up),
+      ConsoleAction::FocusRight => self.focus_neighbor(Dir::Right),
+      ConsoleAction::Quit => {
         self.state.quit_modal = true;
         true
       }
-      _ => false,
     }
   }
 
@@ -458,6 +505,8 @@ pub fn create_console_task(pc: &TaskContext) -> (TaskId, SharedVt) {
         layout,
         focused_pane: procs_pane,
         term_pane,
+        keymap: console_keymap(),
+        chord: Chord::default(),
         state: ConsoleState {
           tasks: Vec::new(),
           selected: 0,
