@@ -13,6 +13,7 @@ const MODE_APPLICATION_CURSOR: u8 = 0b0000_0010;
 const MODE_HIDE_CURSOR: u8 = 0b0000_0100;
 const MODE_ALTERNATE_SCREEN: u8 = 0b0000_1000;
 const MODE_BRACKETED_PASTE: u8 = 0b0001_0000;
+const MAX_PENDING_SEQUENCE_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Debug)]
 pub enum CharSet {
@@ -868,8 +869,10 @@ impl Screen {
       consumed = pos;
     }
 
-    self.feed_buf = buf;
-    self.feed_buf.drain(0..consumed);
+    let pending = &buf[consumed..];
+    if pending.len() <= MAX_PENDING_SEQUENCE_BYTES {
+      self.feed_buf.extend_from_slice(pending);
+    }
   }
 
   fn process_csi(
@@ -1367,5 +1370,29 @@ fn utf8_char_len(first_byte: u8) -> usize {
     (0xE0..=0xEF) => 3, // 1110xxxx 10xxxxxx 10xxxxxx
     (0xF0..=0xF7) => 4, // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
     (0x80..=0xBF) | (0xF8..=0xFF) => 0,
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn drops_oversized_pending_sequence() {
+    let mut screen = Screen::new(
+      Size {
+        height: 24,
+        width: 80,
+      },
+      1000,
+    );
+    let mut events = Vec::new();
+
+    screen.process(b"\x1b]", &mut events);
+    assert_eq!(screen.feed_buf, b"\x1b]");
+
+    screen.process(&vec![b'x'; MAX_PENDING_SEQUENCE_BYTES + 1], &mut events);
+
+    assert!(screen.feed_buf.is_empty());
   }
 }
