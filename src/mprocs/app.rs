@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, time::Instant};
+use std::{collections::HashMap, time::Instant};
 
 use anyhow::bail;
 use futures::{future::FutureExt, select};
@@ -274,13 +274,7 @@ impl App {
       .iter()
       .map(|_| self.pc.alloc_id())
       .collect();
-    let name_to_id: HashMap<&str, TaskId> = self
-      .config
-      .procs
-      .iter()
-      .zip(task_ids.iter())
-      .map(|(p, id)| (p.name.as_str(), *id))
-      .collect();
+    let deps_by_proc = resolve_proc_deps(&self.config.procs, &task_ids)?;
 
     let mut procs = self
       .config
@@ -288,15 +282,14 @@ impl App {
       .iter()
       .enumerate()
       .map(|(i, proc_cfg)| {
-        let mut deps = Vec::new();
-        for dep_name in &proc_cfg.deps {
-          if let Some(dep_id) = name_to_id.get(dep_name.as_str()) {
-            deps.push(*dep_id);
-          } else {
-            // TODO: Show error.
-          }
-        }
-        launch_proc(&self.pc, proc_cfg.clone(), task_ids[i], deps, None, size)
+        launch_proc(
+          &self.pc,
+          proc_cfg.clone(),
+          task_ids[i],
+          deps_by_proc[i].clone(),
+          None,
+          size,
+        )
       })
       .collect::<Vec<_>>();
 
@@ -1122,6 +1115,119 @@ impl App {
   }
 }
 
+fn resolve_proc_deps(
+  proc_configs: &[ProcConfig],
+  task_ids: &[TaskId],
+) -> anyhow::Result<Vec<Vec<TaskId>>> {
+  if proc_configs.len() != task_ids.len() {
+    bail!("Internal error: proc and task id counts differ.");
+  }
+
+  let mut name_to_id = HashMap::new();
+  let mut name_to_index = HashMap::new();
+  for (index, (proc_config, task_id)) in
+    proc_configs.iter().zip(task_ids.iter()).enumerate()
+  {
+    if name_to_id
+      .insert(proc_config.name.as_str(), *task_id)
+      .is_some()
+    {
+      bail!("Duplicate process name '{}'.", proc_config.name);
+    }
+    name_to_index.insert(proc_config.name.as_str(), index);
+  }
+
+  let mut deps_by_proc = Vec::with_capacity(proc_configs.len());
+  let mut dep_indexes_by_proc = Vec::with_capacity(proc_configs.len());
+  for proc_config in proc_configs {
+    let mut deps = Vec::with_capacity(proc_config.deps.len());
+    let mut dep_indexes = Vec::with_capacity(proc_config.deps.len());
+    for dep_name in &proc_config.deps {
+      let Some(dep_id) = name_to_id.get(dep_name.as_str()) else {
+        bail!(
+          "Process '{}' depends on unknown process '{}'.",
+          proc_config.name,
+          dep_name
+        );
+      };
+      let Some(dep_index) = name_to_index.get(dep_name.as_str()) else {
+        bail!(
+          "Process '{}' depends on unknown process '{}'.",
+          proc_config.name,
+          dep_name
+        );
+      };
+      deps.push(*dep_id);
+      dep_indexes.push(*dep_index);
+    }
+    deps_by_proc.push(deps);
+    dep_indexes_by_proc.push(dep_indexes);
+  }
+
+  validate_proc_dep_cycles(proc_configs, &dep_indexes_by_proc)?;
+
+  Ok(deps_by_proc)
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum VisitState {
+  Unvisited,
+  Visiting,
+  Visited,
+}
+
+fn validate_proc_dep_cycles(
+  proc_configs: &[ProcConfig],
+  deps_by_proc: &[Vec<usize>],
+) -> anyhow::Result<()> {
+  let mut states = vec![VisitState::Unvisited; proc_configs.len()];
+  let mut stack = Vec::new();
+
+  for index in 0..proc_configs.len() {
+    visit_proc_deps(
+      index,
+      proc_configs,
+      deps_by_proc,
+      &mut states,
+      &mut stack,
+    )?;
+  }
+
+  Ok(())
+}
+
+fn visit_proc_deps(
+  index: usize,
+  proc_configs: &[ProcConfig],
+  deps_by_proc: &[Vec<usize>],
+  states: &mut [VisitState],
+  stack: &mut Vec<usize>,
+) -> anyhow::Result<()> {
+  match states[index] {
+    VisitState::Visited => return Ok(()),
+    VisitState::Visiting => {
+      let cycle_start = stack.iter().position(|&i| i == index).unwrap_or(0);
+      let mut cycle = stack[cycle_start..]
+        .iter()
+        .map(|&i| proc_configs[i].name.as_str())
+        .collect::<Vec<_>>();
+      cycle.push(proc_configs[index].name.as_str());
+      bail!("Process dependency cycle detected: {}.", cycle.join(" -> "));
+    }
+    VisitState::Unvisited => {}
+  }
+
+  states[index] = VisitState::Visiting;
+  stack.push(index);
+  for dep_index in &deps_by_proc[index] {
+    visit_proc_deps(*dep_index, proc_configs, deps_by_proc, states, stack)?;
+  }
+  stack.pop();
+  states[index] = VisitState::Visited;
+
+  Ok(())
+}
+
 pub fn create_app_task(
   config: Config,
   keymap: Keymap,
@@ -1187,4 +1293,74 @@ pub async fn server_main(
   app.run().await?;
 
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn proc_config(name: &str, deps: &[&str]) -> ProcConfig {
+    ProcConfig {
+      name: name.to_string(),
+      cmd: CmdConfig::Shell {
+        shell: "true".to_string(),
+      },
+      cwd: None,
+      env: None,
+      autostart: false,
+      autorestart: false,
+      stop: StopSignal::default(),
+      deps: deps.iter().map(|dep| dep.to_string()).collect(),
+      mouse_scroll_speed: 1,
+      scrollback_len: 100,
+      log: None,
+    }
+  }
+
+  #[test]
+  fn resolve_proc_deps_maps_names_to_task_ids() {
+    let proc_configs = vec![
+      proc_config("db", &[]),
+      proc_config("api", &["db"]),
+      proc_config("web", &["api", "db"]),
+    ];
+    let task_ids = vec![TaskId(1), TaskId(2), TaskId(3)];
+
+    let deps = resolve_proc_deps(&proc_configs, &task_ids).unwrap();
+
+    assert_eq!(
+      deps,
+      vec![vec![], vec![TaskId(1)], vec![TaskId(2), TaskId(1)]]
+    );
+  }
+
+  #[test]
+  fn resolve_proc_deps_rejects_unknown_dependency() {
+    let proc_configs = vec![proc_config("api", &["db"])];
+    let task_ids = vec![TaskId(1)];
+
+    let err = resolve_proc_deps(&proc_configs, &task_ids).unwrap_err();
+
+    assert_eq!(
+      err.to_string(),
+      "Process 'api' depends on unknown process 'db'."
+    );
+  }
+
+  #[test]
+  fn resolve_proc_deps_rejects_dependency_cycles() {
+    let proc_configs = vec![
+      proc_config("api", &["worker"]),
+      proc_config("worker", &["db"]),
+      proc_config("db", &["api"]),
+    ];
+    let task_ids = vec![TaskId(1), TaskId(2), TaskId(3)];
+
+    let err = resolve_proc_deps(&proc_configs, &task_ids).unwrap_err();
+
+    assert_eq!(
+      err.to_string(),
+      "Process dependency cycle detected: api -> worker -> db -> api."
+    );
+  }
 }

@@ -86,6 +86,7 @@ impl Kernel {
       task,
       stop_on_quit: def.stop_on_quit,
       status: def.status,
+      pending_start: false,
       deps: HashMap::new(),
       path: def.path,
       vt: def.vt,
@@ -158,15 +159,18 @@ impl Kernel {
           if let Some(task) = self.tasks.get_mut(&task_id) {
             match cmd {
               TaskCmd::Start => {
-                let all_deps_ready = task
-                  .deps
-                  .iter()
-                  .all(|(_, dep)| dep.status == TaskStatus::Running);
-                if all_deps_ready {
+                if Self::all_deps_ready(task) {
+                  task.pending_start = false;
                   task.task.handle_cmd(cmd, &mut fx);
+                } else if task.status != TaskStatus::Running {
+                  task.pending_start = true;
                 }
               }
-              _ => {
+              TaskCmd::Stop | TaskCmd::Kill => {
+                task.pending_start = false;
+                task.task.handle_cmd(cmd, &mut fx);
+              }
+              TaskCmd::Msg(_) => {
                 task.task.handle_cmd(cmd, &mut fx);
               }
             }
@@ -305,31 +309,21 @@ impl Kernel {
           task.status = TaskStatus::Running;
         }
 
-        if started {
-          if let Some(rev_deps) = self.rev_deps.get(&task_id) {
-            for rev_dep_id in rev_deps {
-              if let Some(rev_dep) = self.tasks.get_mut(rev_dep_id) {
-                let mut all_deps_ready = true;
-                for (dep_id, dep) in &mut rev_dep.deps {
-                  if *dep_id == task_id {
-                    dep.status = TaskStatus::Running;
-                  }
-                  if dep.status != TaskStatus::Running {
-                    all_deps_ready = false;
-                  }
-                }
-                if all_deps_ready {
-                  self
-                    .sender
-                    .send(KernelMessage {
-                      from: TaskId(0),
-                      command: KernelCommand::TaskCmd(
-                        *rev_dep_id,
-                        TaskCmd::Start,
-                      ),
-                    })
-                    .log_ignore();
-                }
+        if started && let Some(rev_deps) = self.rev_deps.get(&task_id).cloned()
+        {
+          for rev_dep_id in rev_deps {
+            if let Some(rev_dep) = self.tasks.get_mut(&rev_dep_id) {
+              if let Some(dep) = rev_dep.deps.get_mut(&task_id) {
+                dep.status = TaskStatus::Running;
+              }
+              if rev_dep.pending_start && Self::all_deps_ready(rev_dep) {
+                self
+                  .sender
+                  .send(KernelMessage {
+                    from: TaskId(0),
+                    command: KernelCommand::TaskCmd(rev_dep_id, TaskCmd::Start),
+                  })
+                  .log_ignore();
               }
             }
           }
@@ -342,6 +336,17 @@ impl Kernel {
       TaskEffect::Stopped(exit_code) => {
         if let Some(task) = self.tasks.get_mut(&task_id) {
           task.status = TaskStatus::Exited(exit_code);
+          task.pending_start = false;
+        }
+
+        if let Some(rev_deps) = self.rev_deps.get(&task_id).cloned() {
+          for rev_dep_id in rev_deps {
+            if let Some(rev_dep) = self.tasks.get_mut(&rev_dep_id)
+              && let Some(dep) = rev_dep.deps.get_mut(&task_id)
+            {
+              dep.status = TaskStatus::Exited(exit_code);
+            }
+          }
         }
         let from_path = self.task_path(task_id);
         self.notify_listeners(
@@ -481,6 +486,13 @@ impl Kernel {
     }
     true
   }
+
+  fn all_deps_ready(task: &TaskHandle) -> bool {
+    task
+      .deps
+      .values()
+      .all(|dep| dep.status == TaskStatus::Running)
+  }
 }
 
 fn render_screen_ansi(screen: &crate::term::screen::Screen) -> String {
@@ -588,4 +600,267 @@ fn render_screen_ansi(screen: &crate::term::screen::Screen) -> String {
   }
 
   out
+}
+
+#[cfg(test)]
+mod tests {
+  use std::time::Duration;
+
+  use tokio::sync::mpsc::{
+    UnboundedReceiver, error::TryRecvError, unbounded_channel,
+  };
+
+  use super::*;
+
+  #[derive(Debug, PartialEq)]
+  enum RecordedCmd {
+    Start,
+    Stop,
+    Kill,
+  }
+
+  struct RecordingTask {
+    tx: UnboundedSender<RecordedCmd>,
+  }
+
+  impl Task for RecordingTask {
+    fn handle_cmd(&mut self, cmd: TaskCmd, fx: &mut Effects) {
+      match cmd {
+        TaskCmd::Start => {
+          self.tx.send(RecordedCmd::Start).unwrap();
+          fx.started();
+        }
+        TaskCmd::Stop => {
+          self.tx.send(RecordedCmd::Stop).unwrap();
+          fx.stopped(0);
+        }
+        TaskCmd::Kill => {
+          self.tx.send(RecordedCmd::Kill).unwrap();
+          fx.stopped(137);
+        }
+        TaskCmd::Msg(_) => {}
+      }
+    }
+  }
+
+  fn recording_task() -> (
+    UnboundedReceiver<RecordedCmd>,
+    impl FnOnce(TaskContext) -> Box<dyn Task> + 'static,
+  ) {
+    let (tx, rx) = unbounded_channel();
+    (rx, move |_| Box::new(RecordingTask { tx }))
+  }
+
+  async fn recv_cmd(rx: &mut UnboundedReceiver<RecordedCmd>) -> RecordedCmd {
+    tokio::time::timeout(Duration::from_secs(1), rx.recv())
+      .await
+      .expect("timed out waiting for task command")
+      .expect("task command channel closed")
+  }
+
+  async fn flush_kernel(pc: &TaskContext) {
+    let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+    pc.send(KernelCommand::Query(
+      KernelQuery::ListTasks(None),
+      response_tx,
+    ));
+    tokio::time::timeout(Duration::from_secs(1), response_rx)
+      .await
+      .expect("timed out waiting for kernel query response")
+      .expect("kernel query response channel closed");
+  }
+
+  fn assert_no_cmd(rx: &mut UnboundedReceiver<RecordedCmd>) {
+    match rx.try_recv() {
+      Ok(cmd) => panic!("unexpected task command: {cmd:?}"),
+      Err(TryRecvError::Disconnected) => panic!("task command channel closed"),
+      Err(TryRecvError::Empty) => {}
+    }
+  }
+
+  #[tokio::test]
+  async fn repro_dependency_start_does_not_start_unrequested_dependent() {
+    let mut kernel = Kernel::new();
+    let pc = kernel.context();
+
+    let (mut provider_rx, provider_task) = recording_task();
+    let provider_id = kernel.register_task(TaskDef::default(), provider_task);
+
+    let (mut dependent_rx, dependent_task) = recording_task();
+    kernel.register_task(
+      TaskDef {
+        deps: vec![provider_id],
+        ..Default::default()
+      },
+      dependent_task,
+    );
+
+    let kernel_task = tokio::spawn(kernel.run());
+
+    pc.send(KernelCommand::TaskCmd(provider_id, TaskCmd::Start));
+
+    assert_eq!(recv_cmd(&mut provider_rx).await, RecordedCmd::Start);
+    flush_kernel(&pc).await;
+    assert_no_cmd(&mut dependent_rx);
+
+    pc.send(KernelCommand::Quit);
+    tokio::time::timeout(Duration::from_secs(1), kernel_task)
+      .await
+      .expect("timed out waiting for kernel to quit")
+      .unwrap();
+  }
+
+  #[tokio::test]
+  async fn repro_stopped_dependency_blocks_later_dependent_start() {
+    let mut kernel = Kernel::new();
+    let pc = kernel.context();
+
+    let (mut provider_rx, provider_task) = recording_task();
+    let provider_id = kernel.register_task(
+      TaskDef {
+        status: TaskStatus::Running,
+        ..Default::default()
+      },
+      provider_task,
+    );
+
+    let (mut dependent_rx, dependent_task) = recording_task();
+    let dependent_id = kernel.register_task(
+      TaskDef {
+        deps: vec![provider_id],
+        ..Default::default()
+      },
+      dependent_task,
+    );
+
+    let kernel_task = tokio::spawn(kernel.run());
+
+    pc.send(KernelCommand::TaskCmd(provider_id, TaskCmd::Stop));
+
+    assert_eq!(recv_cmd(&mut provider_rx).await, RecordedCmd::Stop);
+
+    pc.send(KernelCommand::TaskCmd(dependent_id, TaskCmd::Start));
+
+    flush_kernel(&pc).await;
+    assert_no_cmd(&mut dependent_rx);
+
+    pc.send(KernelCommand::Quit);
+    tokio::time::timeout(Duration::from_secs(1), kernel_task)
+      .await
+      .expect("timed out waiting for kernel to quit")
+      .unwrap();
+  }
+
+  #[tokio::test]
+  async fn requested_dependent_starts_when_dependency_becomes_running() {
+    let mut kernel = Kernel::new();
+    let pc = kernel.context();
+
+    let (mut provider_rx, provider_task) = recording_task();
+    let provider_id = kernel.register_task(TaskDef::default(), provider_task);
+
+    let (mut dependent_rx, dependent_task) = recording_task();
+    let dependent_id = kernel.register_task(
+      TaskDef {
+        deps: vec![provider_id],
+        ..Default::default()
+      },
+      dependent_task,
+    );
+
+    let kernel_task = tokio::spawn(kernel.run());
+
+    pc.send(KernelCommand::TaskCmd(dependent_id, TaskCmd::Start));
+    flush_kernel(&pc).await;
+    assert_no_cmd(&mut dependent_rx);
+
+    pc.send(KernelCommand::TaskCmd(provider_id, TaskCmd::Start));
+
+    assert_eq!(recv_cmd(&mut provider_rx).await, RecordedCmd::Start);
+    assert_eq!(recv_cmd(&mut dependent_rx).await, RecordedCmd::Start);
+
+    pc.send(KernelCommand::Quit);
+    tokio::time::timeout(Duration::from_secs(1), kernel_task)
+      .await
+      .expect("timed out waiting for kernel to quit")
+      .unwrap();
+  }
+
+  #[tokio::test]
+  async fn pending_dependent_start_survives_task_msg() {
+    let mut kernel = Kernel::new();
+    let pc = kernel.context();
+
+    let (mut provider_rx, provider_task) = recording_task();
+    let provider_id = kernel.register_task(TaskDef::default(), provider_task);
+
+    let (mut dependent_rx, dependent_task) = recording_task();
+    let dependent_id = kernel.register_task(
+      TaskDef {
+        deps: vec![provider_id],
+        ..Default::default()
+      },
+      dependent_task,
+    );
+
+    let kernel_task = tokio::spawn(kernel.run());
+
+    pc.send(KernelCommand::TaskCmd(dependent_id, TaskCmd::Start));
+    flush_kernel(&pc).await;
+    assert_no_cmd(&mut dependent_rx);
+
+    pc.send(KernelCommand::TaskCmd(dependent_id, TaskCmd::msg(())));
+    flush_kernel(&pc).await;
+    assert_no_cmd(&mut dependent_rx);
+
+    pc.send(KernelCommand::TaskCmd(provider_id, TaskCmd::Start));
+
+    assert_eq!(recv_cmd(&mut provider_rx).await, RecordedCmd::Start);
+    assert_eq!(recv_cmd(&mut dependent_rx).await, RecordedCmd::Start);
+
+    pc.send(KernelCommand::Quit);
+    tokio::time::timeout(Duration::from_secs(1), kernel_task)
+      .await
+      .expect("timed out waiting for kernel to quit")
+      .unwrap();
+  }
+
+  #[tokio::test]
+  async fn stop_cancels_pending_dependent_start() {
+    let mut kernel = Kernel::new();
+    let pc = kernel.context();
+
+    let (mut provider_rx, provider_task) = recording_task();
+    let provider_id = kernel.register_task(TaskDef::default(), provider_task);
+
+    let (mut dependent_rx, dependent_task) = recording_task();
+    let dependent_id = kernel.register_task(
+      TaskDef {
+        deps: vec![provider_id],
+        ..Default::default()
+      },
+      dependent_task,
+    );
+
+    let kernel_task = tokio::spawn(kernel.run());
+
+    pc.send(KernelCommand::TaskCmd(dependent_id, TaskCmd::Start));
+    flush_kernel(&pc).await;
+    assert_no_cmd(&mut dependent_rx);
+
+    pc.send(KernelCommand::TaskCmd(dependent_id, TaskCmd::Stop));
+    assert_eq!(recv_cmd(&mut dependent_rx).await, RecordedCmd::Stop);
+
+    pc.send(KernelCommand::TaskCmd(provider_id, TaskCmd::Start));
+
+    assert_eq!(recv_cmd(&mut provider_rx).await, RecordedCmd::Start);
+    flush_kernel(&pc).await;
+    assert_no_cmd(&mut dependent_rx);
+
+    pc.send(KernelCommand::Quit);
+    tokio::time::timeout(Duration::from_secs(1), kernel_task)
+      .await
+      .expect("timed out waiting for kernel to quit")
+      .unwrap();
+  }
 }

@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, str};
 
 use super::{
   attrs::Attrs,
