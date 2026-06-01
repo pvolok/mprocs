@@ -47,7 +47,7 @@ static SPECIAL_CHARS: phf::Map<char, &str> = phf::phf_map! {
   '-' => "Minus",
 };
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Key {
   pub code: KeyCode,
   pub mods: KeyMods,
@@ -178,27 +178,30 @@ impl ToString for Key {
   }
 }
 
-impl Serialize for Key {
-  fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-  where
-    S: serde::Serializer,
-  {
-    serializer.serialize_str(self.to_string().as_str())
-  }
-}
+pub mod key_string {
+  use serde::{Deserialize, Deserializer, Serializer};
 
-impl<'de> Deserialize<'de> for Key {
-  fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-  where
-    D: serde::Deserializer<'de>,
-  {
+  use super::Key;
+
+  pub fn serialize<S: Serializer>(
+    key: &Key,
+    serializer: S,
+  ) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(key.to_string().as_str())
+  }
+
+  pub fn deserialize<'de, D: Deserializer<'de>>(
+    deserializer: D,
+  ) -> Result<Key, D::Error> {
     let text = String::deserialize(deserializer)?;
     Key::parse(text.as_str())
       .map_err(|err| serde::de::Error::custom(err.to_string()))
   }
 }
 
-#[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(
+  Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, PartialOrd, Serialize,
+)]
 pub enum KeyCode {
   Backspace,
   Enter,
@@ -230,7 +233,9 @@ pub enum KeyCode {
   Modifier(ModKeyCode),
 }
 
-#[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(
+  Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, PartialOrd, Serialize,
+)]
 pub enum KeyEventKind {
   Press,
   Repeat,
@@ -238,7 +243,9 @@ pub enum KeyEventKind {
 }
 
 bitflags! {
-  #[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy, Hash)]
+  #[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, PartialOrd, Serialize,
+  )]
   pub struct KeyEventState: u8 {
     /// The key event origins from the keypad.
     const KEYPAD = 0b0000_0001;
@@ -254,7 +261,9 @@ bitflags! {
   }
 }
 
-#[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(
+  Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, PartialOrd, Serialize,
+)]
 pub enum MediaKeyCode {
   Play,
   Pause,
@@ -272,7 +281,9 @@ pub enum MediaKeyCode {
 }
 
 /// Represents a modifier key (as part of [`KeyCode::Modifier`]).
-#[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(
+  Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, PartialOrd, Serialize,
+)]
 pub enum ModKeyCode {
   LeftShift,
   LeftControl,
@@ -460,5 +471,39 @@ mod tests {
     in_out("<Minus>");
     in_out("<LT>");
     in_out("<GT>");
+  }
+
+  #[test]
+  fn wire_keys_round_trip_losslessly() {
+    let keys = [
+      Key::new(KeyCode::CapsLock, KeyMods::NONE),
+      Key::new(KeyCode::NumLock, KeyMods::NONE),
+      Key::new(KeyCode::Media(MediaKeyCode::PlayPause), KeyMods::NONE),
+      Key::new_with_kind(
+        KeyCode::Modifier(ModKeyCode::LeftSuper),
+        KeyMods::SUPER,
+        KeyEventKind::Press,
+      ),
+      Key::new(KeyCode::F(13), KeyMods::CONTROL),
+      Key::new(KeyCode::Char('我'), KeyMods::NONE),
+    ];
+    for key in keys {
+      let bytes = bincode::serialize(&key).unwrap();
+      let decoded: Key = bincode::deserialize(&bytes)
+        .unwrap_or_else(|e| panic!("decode of {key:?} failed: {e}"));
+      assert_eq!(decoded, key);
+    }
+  }
+
+  #[test]
+  fn key_string_adapter_round_trips_and_is_strict() {
+    #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
+    struct Wrap(#[serde(with = "super::key_string")] Key);
+
+    let key = Key::parse("<C-a>").unwrap();
+    let yaml = serde_yaml::to_string(&Wrap(key)).unwrap();
+    assert_eq!(yaml, "<C-a>\n");
+    assert_eq!(serde_yaml::from_str::<Wrap>(&yaml).unwrap(), Wrap(key));
+    assert!(serde_yaml::from_str::<Wrap>("<Bogus>").is_err());
   }
 }

@@ -34,38 +34,33 @@ impl<T: DeserializeOwned> tokio_util::codec::Decoder for MsgDecoder<T> {
     &mut self,
     src: &mut BytesMut,
   ) -> Result<Option<Self::Item>, Self::Error> {
-    if let DecoderState::Header = self.state {
-      let len = if src.len() >= 4 {
-        src.get_u32() as usize
-      } else {
-        return Ok(None);
+    loop {
+      let len = match self.state {
+        DecoderState::Header => {
+          if src.len() < 4 {
+            return Ok(None);
+          }
+          let len = src.get_u32() as usize;
+          self.state = DecoderState::Data(len);
+          len
+        }
+        DecoderState::Data(len) => len,
       };
-      self.state = DecoderState::Data(len);
-    }
-    let len = match self.state {
-      DecoderState::Header => {
-        let len = if src.len() >= 4 {
-          src.get_u32() as usize
-        } else {
-          return Ok(None);
-        };
-        self.state = DecoderState::Data(len);
-        len
-      }
-      DecoderState::Data(len) => len,
-    };
 
-    if src.len() >= len {
-      let msg: T = bincode::deserialize(&src[..len])?;
-      if src.len() == len {
-        src.clear();
-      } else {
-        src.advance(len);
+      if src.len() < len {
+        return Ok(None);
       }
+
+      let frame = src.split_to(len);
       self.state = DecoderState::Header;
-      Ok(Some(msg))
-    } else {
-      Ok(None)
+
+      match bincode::deserialize::<T>(&frame) {
+        Ok(msg) => return Ok(Some(msg)),
+        Err(err) => {
+          log::warn!("ipc: skipping undecodable frame ({len} bytes): {err}");
+          continue;
+        }
+      }
     }
   }
 }
@@ -90,5 +85,33 @@ impl<T: DeserializeOwned + Send + 'static> MsgReceiver<T> {
 impl<T: DeserializeOwned> MsgReceiver<T> {
   pub async fn recv(&mut self) -> Option<Result<T, bincode::Error>> {
     self.reader.next().await
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use bytes::{BufMut, BytesMut};
+  use tokio_util::codec::Decoder;
+
+  use super::MsgDecoder;
+
+  fn frame(payload: &[u8]) -> BytesMut {
+    let mut b = BytesMut::new();
+    b.put_u32(payload.len() as u32);
+    b.extend_from_slice(payload);
+    b
+  }
+
+  #[test]
+  fn decode_skips_undecodable_frame() {
+    let mut decoder = MsgDecoder::<bool>::new();
+    let mut buf = BytesMut::new();
+    buf.unsplit(frame(&bincode::serialize(&true).unwrap())); // good
+    buf.unsplit(frame(&[0x05])); // bad: not a valid bool
+    buf.unsplit(frame(&bincode::serialize(&false).unwrap())); // good
+
+    assert_eq!(decoder.decode(&mut buf).unwrap(), Some(true));
+    assert_eq!(decoder.decode(&mut buf).unwrap(), Some(false));
+    assert_eq!(decoder.decode(&mut buf).unwrap(), None);
   }
 }

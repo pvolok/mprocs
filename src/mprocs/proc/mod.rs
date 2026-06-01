@@ -40,7 +40,11 @@ impl StopSignal {
       serde_yaml::Value::Mapping(map) => {
         if map.len() == 1 {
           if let Some(keys) = map.get("send-keys") {
-            let keys: Vec<Key> = serde_yaml::from_value(keys.clone())?;
+            let key_strs: Vec<String> = serde_yaml::from_value(keys.clone())?;
+            let keys = key_strs
+              .iter()
+              .map(|s| Key::parse(s))
+              .collect::<anyhow::Result<Vec<_>>>()?;
             return Ok(Self::SendKeys(keys));
           }
           if let Some(cmd) = map.get("cmd") {

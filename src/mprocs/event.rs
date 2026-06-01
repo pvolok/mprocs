@@ -54,7 +54,10 @@ pub enum AppEvent {
   CopyModeCopy,
   ToggleKeymapWindow,
 
-  SendKey { key: Key },
+  SendKey {
+    #[serde(with = "crate::term::key::key_string")]
+    key: Key,
+  },
 }
 
 impl AppEvent {
@@ -152,6 +155,18 @@ mod tests {
       })
       .unwrap(),
       "c: send-key\nkey: <C-a>\n"
+    );
+  }
+
+  #[test]
+  fn deserialize_send_key() {
+    let ev: AppEvent =
+      serde_yaml::from_str("c: send-key\nkey: <C-a>\n").unwrap();
+    assert_eq!(
+      ev,
+      AppEvent::SendKey {
+        key: Key::parse("<C-a>").unwrap()
+      }
     );
   }
 }
