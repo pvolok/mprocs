@@ -3,7 +3,7 @@ use std::fmt::Write;
 use anyhow::Result;
 
 use super::{
-  key::{Key, KeyCode, KeyMods},
+  key::{Key, KeyCode, KeyMods, MediaKeyCode, ModKeyCode},
   mouse::{MouseButton, MouseEvent, MouseEventKind},
 };
 
@@ -525,7 +525,7 @@ pub fn print_key(key: &Key) -> String {
   }
 
   match key.code() {
-    KeyCode::Backspace => buf.push_str("Backspace"),
+    KeyCode::Backspace => buf.push_str("BS"),
     KeyCode::Enter => buf.push_str("Enter"),
     KeyCode::Left => buf.push_str("Left"),
     KeyCode::Right => buf.push_str("Right"),
@@ -533,27 +533,98 @@ pub fn print_key(key: &Key) -> String {
     KeyCode::Down => buf.push_str("Down"),
     KeyCode::Home => buf.push_str("Home"),
     KeyCode::End => buf.push_str("End"),
-    KeyCode::PageUp => buf.push_str("PgUp"),
-    KeyCode::PageDown => buf.push_str("PgDn"),
+    KeyCode::PageUp => buf.push_str("PageUp"),
+    KeyCode::PageDown => buf.push_str("PageDown"),
     KeyCode::Tab => buf.push_str("Tab"),
     KeyCode::Delete => buf.push_str("Del"),
-    KeyCode::Insert => buf.push_str("Ins"),
+    KeyCode::Insert => buf.push_str("Insert"),
     KeyCode::F(n) => buf.push_str(&format!("F{}", n)),
     KeyCode::Char(ch) => buf.push(ch),
-    KeyCode::Null => buf.push_str("Null"),
+    KeyCode::Null => buf.push_str("Nul"),
     KeyCode::Esc => buf.push_str("Esc"),
-    KeyCode::CapsLock => todo!(),
-    KeyCode::ScrollLock => todo!(),
-    KeyCode::NumLock => todo!(),
-    KeyCode::PrintScreen => todo!(),
-    KeyCode::Pause => todo!(),
-    KeyCode::Menu => todo!(),
-    KeyCode::KeypadBegin => todo!(),
-    KeyCode::Media(_) => todo!(),
-    KeyCode::Modifier(_) => todo!(),
+    KeyCode::CapsLock => buf.push_str("CapsLock"),
+    KeyCode::ScrollLock => buf.push_str("ScrollLock"),
+    KeyCode::NumLock => buf.push_str("NumLock"),
+    KeyCode::PrintScreen => buf.push_str("PrintScreen"),
+    KeyCode::Pause => buf.push_str("Pause"),
+    KeyCode::Menu => buf.push_str("Menu"),
+    KeyCode::KeypadBegin => buf.push_str("KeypadBegin"),
+    KeyCode::Media(code) => buf.push_str(match code {
+      MediaKeyCode::Play => "MediaPlay",
+      MediaKeyCode::Pause => "MediaPause",
+      MediaKeyCode::PlayPause => "MediaPlayPause",
+      MediaKeyCode::Reverse => "MediaReverse",
+      MediaKeyCode::Stop => "MediaStop",
+      MediaKeyCode::FastForward => "MediaFastForward",
+      MediaKeyCode::Rewind => "MediaRewind",
+      MediaKeyCode::Next => "MediaNext",
+      MediaKeyCode::Prev => "MediaPrev",
+      MediaKeyCode::Record => "MediaRecord",
+      MediaKeyCode::VolumeDown => "VolumeDown",
+      MediaKeyCode::VolumeUp => "VolumeUp",
+      MediaKeyCode::VolumeMute => "VolumeMute",
+    }),
+    KeyCode::Modifier(code) => buf.push_str(match code {
+      ModKeyCode::LeftShift => "LeftShift",
+      ModKeyCode::LeftControl => "LeftControl",
+      ModKeyCode::LeftAlt => "LeftAlt",
+      ModKeyCode::LeftSuper => "LeftSuper",
+      ModKeyCode::LeftHyper => "LeftHyper",
+      ModKeyCode::LeftMeta => "LeftMeta",
+      ModKeyCode::RightShift => "RightShift",
+      ModKeyCode::RightControl => "RightControl",
+      ModKeyCode::RightAlt => "RightAlt",
+      ModKeyCode::RightSuper => "RightSuper",
+      ModKeyCode::RightHyper => "RightHyper",
+      ModKeyCode::RightMeta => "RightMeta",
+      // ModKeyCode::IsoLevel3Shift => "IsoLevel3Shift",
+      // ModKeyCode::IsoLevel5Shift => "IsoLevel5Shift",
+    }),
   }
 
   buf
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn print_key_handles_non_text_keys() {
+    assert_eq!(print_key(&Key::from(KeyCode::CapsLock)), "CapsLock");
+    assert_eq!(print_key(&Key::from(KeyCode::NumLock)), "NumLock");
+    assert_eq!(
+      print_key(&Key::from(KeyCode::Media(MediaKeyCode::PlayPause))),
+      "MediaPlayPause"
+    );
+    assert_eq!(
+      print_key(&Key::new(
+        KeyCode::Modifier(ModKeyCode::LeftSuper),
+        KeyMods::SUPER
+      )),
+      "LeftSuper"
+    );
+  }
+
+  #[test]
+  fn print_key_output_parses_back() {
+    let keys = [
+      Key::from(KeyCode::Backspace),
+      Key::from(KeyCode::PageUp),
+      Key::from(KeyCode::PageDown),
+      Key::from(KeyCode::Insert),
+      Key::from(KeyCode::Null),
+      Key::new(KeyCode::Char('a'), KeyMods::CONTROL | KeyMods::ALT),
+      Key::from(KeyCode::CapsLock),
+      Key::from(KeyCode::Media(MediaKeyCode::PlayPause)),
+      Key::from(KeyCode::Modifier(ModKeyCode::LeftSuper)),
+    ];
+
+    for key in keys {
+      let text = format!("<{}>", print_key(&key));
+      assert_eq!(Key::parse(&text).unwrap(), key);
+    }
+  }
 }
 
 /*

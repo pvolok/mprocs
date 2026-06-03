@@ -1,3 +1,5 @@
+use std::fmt;
+
 use anyhow::bail;
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
@@ -19,24 +21,48 @@ static KEYS: phf::Map<&'static str, KeyCode> = phf::phf_map! {
   "nul" => KeyCode::Null,
   "esc" => KeyCode::Esc,
 
+  "capslock" => KeyCode::CapsLock,
+  "scrolllock" => KeyCode::ScrollLock,
+  "numlock" => KeyCode::NumLock,
+  "printscreen" => KeyCode::PrintScreen,
+  "pause" => KeyCode::Pause,
+  "menu" => KeyCode::Menu,
+  "keypadbegin" => KeyCode::KeypadBegin,
+
+  "mediaplay" => KeyCode::Media(MediaKeyCode::Play),
+  "mediapause" => KeyCode::Media(MediaKeyCode::Pause),
+  "mediaplaypause" => KeyCode::Media(MediaKeyCode::PlayPause),
+  "mediareverse" => KeyCode::Media(MediaKeyCode::Reverse),
+  "mediastop" => KeyCode::Media(MediaKeyCode::Stop),
+  "mediafastforward" => KeyCode::Media(MediaKeyCode::FastForward),
+  "mediarewind" => KeyCode::Media(MediaKeyCode::Rewind),
+  "medianext" => KeyCode::Media(MediaKeyCode::Next),
+  "mediaprev" => KeyCode::Media(MediaKeyCode::Prev),
+  "mediarecord" => KeyCode::Media(MediaKeyCode::Record),
+  "volumedown" => KeyCode::Media(MediaKeyCode::VolumeDown),
+  "volumeup" => KeyCode::Media(MediaKeyCode::VolumeUp),
+  "volumemute" => KeyCode::Media(MediaKeyCode::VolumeMute),
+
+  "leftshift" => KeyCode::Modifier(ModKeyCode::LeftShift),
+  "leftcontrol" => KeyCode::Modifier(ModKeyCode::LeftControl),
+  "leftalt" => KeyCode::Modifier(ModKeyCode::LeftAlt),
+  "leftsuper" => KeyCode::Modifier(ModKeyCode::LeftSuper),
+  "lefthyper" => KeyCode::Modifier(ModKeyCode::LeftHyper),
+  "leftmeta" => KeyCode::Modifier(ModKeyCode::LeftMeta),
+  "rightshift" => KeyCode::Modifier(ModKeyCode::RightShift),
+  "rightcontrol" => KeyCode::Modifier(ModKeyCode::RightControl),
+  "rightalt" => KeyCode::Modifier(ModKeyCode::RightAlt),
+  "rightsuper" => KeyCode::Modifier(ModKeyCode::RightSuper),
+  "righthyper" => KeyCode::Modifier(ModKeyCode::RightHyper),
+  "rightmeta" => KeyCode::Modifier(ModKeyCode::RightMeta),
+  // "isolevel3shift" => KeyCode::Modifier(ModKeyCode::IsoLevel3Shift),
+  // "isolevel5shift" => KeyCode::Modifier(ModKeyCode::IsoLevel5Shift),
+
   "space" => KeyCode::Char(' '),
 
   "lt" => KeyCode::Char('<'),
   "gt" => KeyCode::Char('>'),
   "minus" => KeyCode::Char('-'),
-
-  "f1" => KeyCode::F(1),
-  "f2" => KeyCode::F(2),
-  "f3" => KeyCode::F(3),
-  "f4" => KeyCode::F(4),
-  "f5" => KeyCode::F(5),
-  "f6" => KeyCode::F(6),
-  "f7" => KeyCode::F(7),
-  "f8" => KeyCode::F(8),
-  "f9" => KeyCode::F(9),
-  "f10" => KeyCode::F(10),
-  "f11" => KeyCode::F(11),
-  "f12" => KeyCode::F(12),
 };
 
 static SPECIAL_CHARS: phf::Map<char, &str> = phf::phf_map! {
@@ -79,7 +105,11 @@ impl Key {
   }
 
   pub fn parse(text: &str) -> anyhow::Result<Key> {
-    KeyParser::parse(text)
+    KeySpec::parse(text).map(Into::into)
+  }
+
+  pub fn spec(self) -> KeySpec {
+    KeySpec(self)
   }
 
   pub fn code(&self) -> KeyCode {
@@ -97,13 +127,39 @@ impl From<KeyCode> for Key {
   }
 }
 
-impl ToString for Key {
-  fn to_string(&self) -> String {
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct KeySpec(pub Key);
+
+impl KeySpec {
+  pub fn parse(text: &str) -> anyhow::Result<Self> {
+    KeyParser::parse(text).map(Self)
+  }
+
+  pub fn key(self) -> Key {
+    self.0
+  }
+}
+
+impl From<Key> for KeySpec {
+  fn from(key: Key) -> Self {
+    Self(key)
+  }
+}
+
+impl From<KeySpec> for Key {
+  fn from(spec: KeySpec) -> Self {
+    spec.0
+  }
+}
+
+impl fmt::Display for KeySpec {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     let mut buf = String::new();
+    let key = self.0;
 
     buf.push('<');
 
-    let mods = self.mods;
+    let mods = key.mods;
     if mods.intersects(KeyMods::CONTROL) {
       buf.push_str("C-");
     }
@@ -114,7 +170,7 @@ impl ToString for Key {
       buf.push_str("M-");
     }
 
-    match self.code {
+    match key.code {
       KeyCode::Backspace => buf.push_str("BS"),
       KeyCode::Enter => buf.push_str("Enter"),
       KeyCode::Left => buf.push_str("Left"),
@@ -166,36 +222,68 @@ impl ToString for Key {
         };
         buf.push_str(s);
       }
-      KeyCode::Modifier(_code) => {
-        // TODO
-        buf.push_str("Nul");
+      KeyCode::Modifier(code) => {
+        let s = match code {
+          ModKeyCode::LeftShift => "LeftShift",
+          ModKeyCode::LeftControl => "LeftControl",
+          ModKeyCode::LeftAlt => "LeftAlt",
+          ModKeyCode::LeftSuper => "LeftSuper",
+          ModKeyCode::LeftHyper => "LeftHyper",
+          ModKeyCode::LeftMeta => "LeftMeta",
+          ModKeyCode::RightShift => "RightShift",
+          ModKeyCode::RightControl => "RightControl",
+          ModKeyCode::RightAlt => "RightAlt",
+          ModKeyCode::RightSuper => "RightSuper",
+          ModKeyCode::RightHyper => "RightHyper",
+          ModKeyCode::RightMeta => "RightMeta",
+          // ModKeyCode::IsoLevel3Shift => "IsoLevel3Shift",
+          // ModKeyCode::IsoLevel5Shift => "IsoLevel5Shift",
+        };
+        buf.push_str(s);
       }
     }
 
     buf.push('>');
 
-    buf
+    f.write_str(&buf)
   }
 }
 
-pub mod key_string {
-  use serde::{Deserialize, Deserializer, Serializer};
+impl Serialize for KeySpec {
+  fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+  where
+    S: serde::Serializer,
+  {
+    serializer.serialize_str(self.to_string().as_str())
+  }
+}
 
-  use super::Key;
+impl<'de> Deserialize<'de> for KeySpec {
+  fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+  where
+    D: serde::Deserializer<'de>,
+  {
+    let text = String::deserialize(deserializer)?;
+    KeySpec::parse(text.as_str())
+      .map_err(|err| serde::de::Error::custom(err.to_string()))
+  }
+}
 
-  pub fn serialize<S: Serializer>(
+pub mod key_spec {
+  use super::{Key, KeySpec};
+  use serde::{Deserialize, Serialize};
+
+  pub fn serialize<S: serde::Serializer>(
     key: &Key,
     serializer: S,
   ) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(key.to_string().as_str())
+    KeySpec::from(*key).serialize(serializer)
   }
 
-  pub fn deserialize<'de, D: Deserializer<'de>>(
+  pub fn deserialize<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
   ) -> Result<Key, D::Error> {
-    let text = String::deserialize(deserializer)?;
-    Key::parse(text.as_str())
-      .map_err(|err| serde::de::Error::custom(err.to_string()))
+    KeySpec::deserialize(deserializer).map(Into::into)
   }
 }
 
@@ -297,8 +385,8 @@ pub enum ModKeyCode {
   RightSuper,
   RightHyper,
   RightMeta,
-  IsoLevel3Shift,
-  IsoLevel5Shift,
+  // IsoLevel3Shift,
+  // IsoLevel5Shift,
 }
 
 bitflags! {
@@ -329,6 +417,13 @@ impl KeyParser<'_> {
       let code = parser.take_key()?;
       if let Some(code) = KEYS.get(code.to_ascii_lowercase().as_str()) {
         *code
+      } else if let Some(n) = code
+        .strip_prefix('f')
+        .or_else(|| code.strip_prefix('F'))
+        .and_then(|n| n.parse::<u8>().ok())
+        .filter(|n| *n > 0)
+      {
+        KeyCode::F(n)
       } else {
         let mut chars = code.chars();
         match (chars.next(), chars.next()) {
@@ -396,8 +491,6 @@ impl KeyParser<'_> {
 
 #[cfg(test)]
 mod tests {
-  use assert_matches::assert_matches;
-
   use super::*;
 
   #[test]
@@ -423,7 +516,23 @@ mod tests {
       Key::parse("<f12>").unwrap(),
       Key::new(KeyCode::F(12), KeyMods::NONE)
     );
-    assert_matches!(Key::parse("<F13>"), Err(_));
+    assert_eq!(
+      Key::parse("<F13>").unwrap(),
+      Key::new(KeyCode::F(13), KeyMods::NONE)
+    );
+
+    assert_eq!(
+      Key::parse("<CapsLock>").unwrap(),
+      Key::new(KeyCode::CapsLock, KeyMods::NONE)
+    );
+    assert_eq!(
+      Key::parse("<MediaPlayPause>").unwrap(),
+      Key::new(KeyCode::Media(MediaKeyCode::PlayPause), KeyMods::NONE)
+    );
+    assert_eq!(
+      Key::parse("<LeftSuper>").unwrap(),
+      Key::new(KeyCode::Modifier(ModKeyCode::LeftSuper), KeyMods::NONE)
+    );
 
     assert_eq!(
       Key::parse("<a>").unwrap(),
@@ -442,7 +551,7 @@ mod tests {
   #[test]
   fn parse_and_print() {
     fn in_out(key: &str) {
-      assert_eq!(Key::parse(key).unwrap().to_string(), key);
+      assert_eq!(Key::parse(key).unwrap().spec().to_string(), key);
     }
 
     in_out("<BS>");
@@ -471,6 +580,15 @@ mod tests {
     in_out("<Minus>");
     in_out("<LT>");
     in_out("<GT>");
+
+    in_out("<F13>");
+    in_out("<CapsLock>");
+    in_out("<PrintScreen>");
+    in_out("<KeypadBegin>");
+    in_out("<MediaPlayPause>");
+    in_out("<VolumeMute>");
+    in_out("<LeftSuper>");
+    in_out("<IsoLevel3Shift>");
   }
 
   #[test]
@@ -486,6 +604,12 @@ mod tests {
       ),
       Key::new(KeyCode::F(13), KeyMods::CONTROL),
       Key::new(KeyCode::Char('我'), KeyMods::NONE),
+      Key {
+        code: KeyCode::Char('a'),
+        mods: KeyMods::SHIFT,
+        kind: KeyEventKind::Repeat,
+        state: KeyEventState::CAPS_LOCK | KeyEventState::NUM_LOCK,
+      },
     ];
     for key in keys {
       let bytes = bincode::serialize(&key).unwrap();
@@ -496,14 +620,21 @@ mod tests {
   }
 
   #[test]
-  fn key_string_adapter_round_trips_and_is_strict() {
-    #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
-    struct Wrap(#[serde(with = "super::key_string")] Key);
-
+  fn key_serialization_is_structural() {
     let key = Key::parse("<C-a>").unwrap();
-    let yaml = serde_yaml::to_string(&Wrap(key)).unwrap();
+    let yaml = serde_yaml::to_string(&key).unwrap();
+    assert!(yaml.contains("code:"));
+    assert!(yaml.contains("mods:"));
+    assert_eq!(serde_yaml::from_str::<Key>(&yaml).unwrap(), key);
+  }
+
+  #[test]
+  fn key_spec_serialization_round_trips_and_is_strict() {
+    let key = Key::parse("<C-a>").unwrap();
+    let yaml = serde_yaml::to_string(&key.spec()).unwrap();
     assert_eq!(yaml, "<C-a>\n");
-    assert_eq!(serde_yaml::from_str::<Wrap>(&yaml).unwrap(), Wrap(key));
-    assert!(serde_yaml::from_str::<Wrap>("<Bogus>").is_err());
+    assert_eq!(serde_yaml::from_str::<KeySpec>(&yaml).unwrap().key(), key);
+    assert!(serde_yaml::from_str::<Key>("<Bogus>").is_err());
+    assert!(serde_yaml::from_str::<KeySpec>("<Bogus>").is_err());
   }
 }

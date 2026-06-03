@@ -454,7 +454,7 @@ impl Proc {
           self.write_all(encoder.as_bytes()).await;
         }
         Err(_) => {
-          log::warn!("Failed to encode key: {}", key.to_string());
+          log::warn!("Failed to encode key: {}", key.spec());
         }
       }
     }

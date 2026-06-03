@@ -4,17 +4,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::kernel::task::TaskId;
 use crate::protocol::ClientId;
-use crate::term::key::Key;
+use crate::term::key::{Key, key_spec};
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(tag = "c", rename_all = "kebab-case")]
 pub enum AppEvent {
-  Batch { cmds: Vec<AppEvent> },
+  Batch {
+    cmds: Vec<AppEvent>,
+  },
 
   QuitOrAsk,
   Quit,
   ForceQuit,
-  Detach { client_id: ClientId },
+  Detach {
+    client_id: ClientId,
+  },
 
   ToggleFocus,
   FocusProcs,
@@ -24,38 +28,53 @@ pub enum AppEvent {
   ShowCommandsMenu,
   NextProc,
   PrevProc,
-  SelectProc { index: usize },
+  SelectProc {
+    index: usize,
+  },
   StartProc,
   TermProc,
   KillProc,
   RestartProc,
   RestartAll,
-  RenameProc { name: String },
+  RenameProc {
+    name: String,
+  },
   ForceRestartProc,
   ForceRestartAll,
   ShowAddProc,
   ShowRenameProc,
-  AddProc { cmd: String, name: Option<String> },
+  AddProc {
+    cmd: String,
+    name: Option<String>,
+  },
   DuplicateProc,
   ShowRemoveProc,
-  RemoveProc { id: TaskId },
+  RemoveProc {
+    id: TaskId,
+  },
 
   CloseCurrentModal,
 
-  ScrollDownLines { n: usize },
-  ScrollUpLines { n: usize },
+  ScrollDownLines {
+    n: usize,
+  },
+  ScrollUpLines {
+    n: usize,
+  },
   ScrollDown,
   ScrollUp,
 
   CopyModeEnter,
   CopyModeLeave,
-  CopyModeMove { dir: CopyMove },
+  CopyModeMove {
+    dir: CopyMove,
+  },
   CopyModeEnd,
   CopyModeCopy,
   ToggleKeymapWindow,
 
   SendKey {
-    #[serde(with = "crate::term::key::key_string")]
+    #[serde(with = "key_spec")]
     key: Key,
   },
 }
@@ -109,7 +128,7 @@ impl AppEvent {
       AppEvent::CopyModeEnd => "Select end position".to_string(),
       AppEvent::CopyModeCopy => "Copy selected text".to_string(),
       AppEvent::ToggleKeymapWindow => "Toggle help".to_string(),
-      AppEvent::SendKey { key } => format!("Send {} key", key.to_string()),
+      AppEvent::SendKey { key } => format!("Send {} key", key.spec()),
     }
   }
 }

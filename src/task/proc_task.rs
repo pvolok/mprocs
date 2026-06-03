@@ -186,7 +186,7 @@ async fn send_key(process: &mut NativeProcess, vt: &SharedVt, key: Key) {
   };
   match encode_key(&key, modes) {
     Ok(encoded) => process.write_all(encoded.as_bytes()).await.log_ignore(),
-    Err(_) => log::warn!("Failed to encode key: {}", key.to_string()),
+    Err(_) => log::warn!("Failed to encode key: {}", key.spec()),
   }
 }
 

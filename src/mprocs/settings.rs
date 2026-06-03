@@ -8,7 +8,7 @@ use crate::mprocs::{
   event::{AppEvent, CopyMove},
   keymap::Keymap,
   proc_log_config::LogConfig,
-  yaml_val::{value_to_string, Val},
+  yaml_val::{Val, value_to_string},
 };
 use crate::term::key::{Key, KeyCode, KeyMods};
 
@@ -110,7 +110,9 @@ impl Settings {
         }
 
         for (key, event) in keymap {
-          let key = Key::parse(value_to_string(&key)?.as_str())?;
+          let key =
+            crate::term::key::KeySpec::parse(value_to_string(&key)?.as_str())?
+              .key();
           if event.raw().is_null() {
             into.shift_remove(&key);
           } else {

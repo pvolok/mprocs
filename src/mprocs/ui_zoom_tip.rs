@@ -2,7 +2,7 @@ use crate::mprocs::{
   event::AppEvent,
   keymap::{Keymap, KeymapGroup},
 };
-use crate::term::{attrs::Attrs, grid::Rect, Color, Grid};
+use crate::term::{Color, Grid, attrs::Attrs, grid::Rect};
 
 pub fn render_zoom_tip(area: Rect, grid: &mut Grid, keymap: &Keymap) {
   if area.height == 0 {
@@ -22,7 +22,7 @@ pub fn render_zoom_tip(area: Rect, grid: &mut Grid, keymap: &Keymap) {
   let r = if let Some(key) = key {
     grid.draw_text(
       area,
-      format!(" To exit zoom mode press {}", key.to_string()).as_str(),
+      format!(" To exit zoom mode press {}", key.spec()).as_str(),
       attrs,
     )
   } else {

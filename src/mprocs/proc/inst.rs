@@ -5,13 +5,13 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::error::ResultLogger;
 use crate::kernel::task::TaskId;
 use crate::mprocs::proc_log_config::{LogConfig, LogMode};
+use crate::process::NativeProcess;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
-use crate::process::NativeProcess;
 use crate::term::Winsize;
 
-use super::msg::ProcEvent;
 use super::Size;
+use super::msg::ProcEvent;
 
 pub struct Inst {
   pub log_writer: Option<tokio::fs::File>,

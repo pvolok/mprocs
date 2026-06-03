@@ -3,7 +3,7 @@ use std::hash::Hash;
 
 use anyhow::{Result, bail};
 
-use crate::term::key::Key;
+use crate::term::key::{Key, KeySpec};
 
 pub type KeySeq = Vec<Key>;
 
@@ -205,7 +205,7 @@ impl Chord {
 pub fn keyseq_to_string(seq: &[Key]) -> String {
   seq
     .iter()
-    .map(|key| key.to_string())
+    .map(|key| key.spec().to_string())
     .collect::<Vec<_>>()
     .join(" ")
 }
@@ -213,7 +213,8 @@ pub fn keyseq_to_string(seq: &[Key]) -> String {
 fn parse_seq(text: &str) -> Result<KeySeq> {
   let seq = text
     .split_whitespace()
-    .map(Key::parse)
+    .map(KeySpec::parse)
+    .map(|spec| spec.map(KeySpec::key))
     .collect::<Result<KeySeq>>()?;
   if seq.is_empty() {
     bail!("Empty key sequence");

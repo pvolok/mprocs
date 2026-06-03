@@ -1,16 +1,16 @@
 use std::{cell::RefCell, io::Write, rc::Rc, sync::Arc, time::Duration};
 
-use rquickjs::{function::Opt, Ctx, Exception, Function, Object};
+use rquickjs::{Ctx, Exception, Function, Object, function::Opt};
 
 use crate::{
   js::rquickjs_ext::ObjectExt,
   term::{
+    CursorStyle, Grid, ScreenDiffer, TermEvent,
     attrs::Attrs,
     color::Color,
     grid::{Pos, Rect},
     key::KeyEventKind,
     mouse::{MouseButton, MouseEventKind},
-    CursorStyle, Grid, ScreenDiffer, TermEvent,
   },
   term_driver::TermDriver,
 };
@@ -194,7 +194,7 @@ fn event_to_js<'js>(
     }
     TermEvent::Key(key) => {
       obj.set("type", "key")?;
-      obj.set("key", key.to_string())?;
+      obj.set("key", key.spec().to_string())?;
       let kind = match key.kind {
         KeyEventKind::Press => "press",
         KeyEventKind::Repeat => "repeat",

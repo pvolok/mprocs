@@ -32,7 +32,15 @@ pub async fn client_loop(
         }
       }
     }
-    _ => todo!(),
+    Some(Ok(msg)) => {
+      log::warn!("client_loop: expected init message, got {msg:?}");
+      return;
+    }
+    Some(Err(err)) => {
+      log::warn!("client_loop: failed to decode init message: {err}");
+      return;
+    }
+    None => return,
   }
 
   loop {

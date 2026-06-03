@@ -9,7 +9,7 @@ use anyhow::bail;
 use serde::{Deserialize, Serialize};
 
 use crate::mprocs::yaml_val::Val;
-use crate::term::key::Key;
+use crate::term::key::{Key, KeySpec};
 
 #[derive(Clone, Debug, Default)]
 pub enum StopSignal {
@@ -40,11 +40,8 @@ impl StopSignal {
       serde_yaml::Value::Mapping(map) => {
         if map.len() == 1 {
           if let Some(keys) = map.get("send-keys") {
-            let key_strs: Vec<String> = serde_yaml::from_value(keys.clone())?;
-            let keys = key_strs
-              .iter()
-              .map(|s| Key::parse(s))
-              .collect::<anyhow::Result<Vec<_>>>()?;
+            let keys: Vec<KeySpec> = serde_yaml::from_value(keys.clone())?;
+            let keys = keys.into_iter().map(KeySpec::key).collect();
             return Ok(Self::SendKeys(keys));
           }
           if let Some(cmd) = map.get("cmd") {
@@ -58,6 +55,38 @@ impl StopSignal {
       _ => (),
     }
     bail!("Unexpected 'stop' value: {:?}.", val.raw());
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::term::key::{KeyCode, KeyMods};
+
+  #[test]
+  fn stop_signal_send_keys_uses_key_specs() {
+    let raw: serde_yaml::Value = serde_yaml::from_str(
+      "send-keys:\n  - <C-a>\n  - <F13>\n  - <MediaPlayPause>\n",
+    )
+    .unwrap();
+    let val = Val::new(&raw).unwrap();
+
+    let keys = match StopSignal::from_val(&val).unwrap() {
+      StopSignal::SendKeys(keys) => keys,
+      other => panic!("Expected SendKeys, got {other:?}"),
+    };
+
+    assert_eq!(
+      keys,
+      vec![
+        Key::new(KeyCode::Char('a'), KeyMods::CONTROL),
+        Key::new(KeyCode::F(13), KeyMods::NONE),
+        Key::new(
+          KeyCode::Media(crate::term::key::MediaKeyCode::PlayPause),
+          KeyMods::NONE,
+        ),
+      ]
+    );
   }
 }
 
