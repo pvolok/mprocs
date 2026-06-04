@@ -19,11 +19,29 @@ struct ProcExited(u32);
 
 pub struct ProcInput(pub Key);
 
+/// How a proc task should react to `Stop` (`Kill` is always a hard kill).
+#[derive(Clone, Debug, Default)]
+pub enum StopSignal {
+  SIGINT,
+  #[default]
+  SIGTERM,
+  SIGKILL,
+  SendKeys(Vec<Key>),
+  HardKill,
+  /// Run a shell command as the stop action. Useful for tools like
+  /// `podman compose` that don't reliably respond to signals but do have
+  /// an explicit teardown command (e.g. `podman compose down`). The main
+  /// process is expected to exit on its own once the stop command
+  /// completes (e.g. `compose up` exits when containers go away).
+  Cmd(String),
+}
+
 pub fn spawn_proc_task(
   parent: &TaskContext,
   task_path: TaskPath,
   spec: ProcessSpec,
   log: Option<LogSink>,
+  stop: StopSignal,
 ) {
   let vt = SharedVt::new(Parser::new(24, 80, 1000));
   let task_vt = vt.clone();
@@ -37,7 +55,7 @@ pub fn spawn_proc_task(
       ..Default::default()
     },
     move |ctx, receiver| async move {
-      proc_main(ctx, receiver, spec, task_vt, log).await;
+      proc_main(ctx, receiver, spec, task_vt, log, stop).await;
     },
   );
 }
@@ -48,6 +66,7 @@ async fn proc_main(
   spec: ProcessSpec,
   vt: SharedVt,
   log: Option<LogSink>,
+  stop: StopSignal,
 ) {
   let mut process = match spawn_native(
     &ctx,
@@ -104,7 +123,10 @@ async fn proc_main(
       Next::Cmd(None) => break,
       Next::Cmd(Some(cmd)) => match cmd {
         TaskCmd::Start => {}
-        TaskCmd::Stop | TaskCmd::Kill => {
+        TaskCmd::Stop => {
+          stop_process(&mut process, &stop, task_screen.vt(), &spec).await;
+        }
+        TaskCmd::Kill => {
           process.kill().await.log_ignore();
         }
         TaskCmd::Msg(msg) => {
@@ -204,6 +226,85 @@ async fn send_key(process: &mut NativeProcess, vt: &SharedVt, key: Key) {
 }
 
 #[cfg(not(windows))]
+async fn stop_process(
+  process: &mut NativeProcess,
+  stop: &StopSignal,
+  vt: &SharedVt,
+  spec: &ProcessSpec,
+) {
+  match stop {
+    StopSignal::SIGINT => process.send_signal(libc::SIGINT).log_ignore(),
+    StopSignal::SIGTERM => process.send_signal(libc::SIGTERM).log_ignore(),
+    StopSignal::SIGKILL => process.send_signal(libc::SIGKILL).log_ignore(),
+    StopSignal::SendKeys(keys) => {
+      for key in keys {
+        send_key(process, vt, key.clone()).await;
+      }
+    }
+    StopSignal::HardKill => process.kill().await.log_ignore(),
+    StopSignal::Cmd(shell) => run_stop_cmd(spec, shell.clone()),
+  }
+}
+
+#[cfg(windows)]
+async fn stop_process(
+  process: &mut NativeProcess,
+  stop: &StopSignal,
+  vt: &SharedVt,
+  spec: &ProcessSpec,
+) {
+  match stop {
+    StopSignal::SIGINT => log::debug!("SIGINT signal is ignored on Windows"),
+    StopSignal::SIGTERM | StopSignal::SIGKILL | StopSignal::HardKill => {
+      process.kill().await.log_ignore()
+    }
+    StopSignal::SendKeys(keys) => {
+      for key in keys {
+        send_key(process, vt, key.clone()).await;
+      }
+    }
+    StopSignal::Cmd(shell) => run_stop_cmd(spec, shell.clone()),
+  }
+}
+
+fn run_stop_cmd(spec: &ProcessSpec, shell: String) {
+  let cwd = spec.cwd.clone();
+  let env = spec.env.clone();
+  tokio::spawn(async move {
+    #[cfg(windows)]
+    let mut cmd = {
+      let mut c = tokio::process::Command::new("pwsh.exe");
+      c.arg("-Command").arg(&shell);
+      c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+      let mut c = tokio::process::Command::new("/bin/sh");
+      c.arg("-c").arg(&shell);
+      c
+    };
+    if let Some(cwd) = &cwd {
+      cmd.current_dir(cwd);
+    }
+    for (k, v) in &env {
+      match v {
+        Some(v) => {
+          cmd.env(k, v);
+        }
+        None => {
+          cmd.env_remove(k);
+        }
+      }
+    }
+    cmd.stdout(std::process::Stdio::null());
+    cmd.stderr(std::process::Stdio::null());
+    if let Err(e) = cmd.status().await {
+      log::warn!("Stop command failed: {}", e);
+    }
+  });
+}
+
+#[cfg(not(windows))]
 #[cfg(test)]
 mod tests {
   use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -241,7 +342,7 @@ mod tests {
     let mut log_path = std::env::temp_dir();
     log_path.push(format!("mprocs_log_{}_{}.log", std::process::id(), nanos));
 
-    let mut kernel = Kernel::new();
+    let kernel = Kernel::new();
     let pc = kernel.context();
 
     let path = TaskPath::new("/logged").unwrap();
@@ -258,6 +359,7 @@ mod tests {
         path: log_path.clone(),
         append: false,
       }),
+      StopSignal::default(),
     );
 
     let kernel_task = tokio::spawn(kernel.run());
@@ -284,6 +386,57 @@ mod tests {
       .unwrap();
 
     let _ = std::fs::remove_file(&log_path);
+  }
+
+  #[tokio::test]
+  async fn stop_signal_cmd_runs_shell_command() {
+    let nanos = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .unwrap()
+      .as_nanos();
+    let mut marker = std::env::temp_dir();
+    marker.push(format!("mprocs_stopcmd_{}_{}", std::process::id(), nanos));
+
+    let kernel = Kernel::new();
+    let pc = kernel.context();
+
+    let path = TaskPath::new("/sleeper").unwrap();
+    let spec = ProcessSpec::from_argv(vec![
+      "sh".to_string(),
+      "-c".to_string(),
+      "sleep 100".to_string(),
+    ]);
+    spawn_proc_task(
+      &pc,
+      path,
+      spec,
+      None,
+      StopSignal::Cmd(format!("printf done > {}", marker.display())),
+    );
+
+    let kernel_task = tokio::spawn(kernel.run());
+
+    let id = resolve(&pc, "/sleeper").await;
+    pc.send(KernelCommand::TaskCmd(id, TaskCmd::Stop));
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+      if marker.exists() {
+        break;
+      }
+      assert!(Instant::now() < deadline, "stop command never ran");
+      tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    pc.send(KernelCommand::TaskCmd(id, TaskCmd::Kill));
+    pc.send(KernelCommand::RemoveTask(id));
+    pc.send(KernelCommand::Quit);
+    tokio::time::timeout(Duration::from_secs(2), kernel_task)
+      .await
+      .expect("timed out waiting for kernel to quit")
+      .unwrap();
+
+    let _ = std::fs::remove_file(&marker);
   }
 }
 

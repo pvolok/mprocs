@@ -3,28 +3,11 @@ pub mod msg;
 pub mod proc;
 pub mod view;
 
-use std::fmt::Debug;
-
 use anyhow::bail;
 
 use crate::mprocs::yaml_val::Val;
-use crate::term::key::{Key, KeySpec};
-
-#[derive(Clone, Debug, Default)]
-pub enum StopSignal {
-  SIGINT,
-  #[default]
-  SIGTERM,
-  SIGKILL,
-  SendKeys(Vec<Key>),
-  HardKill,
-  /// Run a shell command as the stop action. Useful for tools like
-  /// `podman compose` that don't reliably respond to signals but do have
-  /// an explicit teardown command (e.g. `podman compose down`). The main
-  /// process is expected to exit on its own once the stop command
-  /// completes (e.g. `compose up` exits when containers go away).
-  Cmd(String),
-}
+pub use crate::task::proc_task::StopSignal;
+use crate::term::key::KeySpec;
 
 impl StopSignal {
   pub fn from_val(val: &Val) -> anyhow::Result<Self> {
@@ -60,7 +43,7 @@ impl StopSignal {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::term::key::{KeyCode, KeyMods};
+  use crate::term::key::{Key, KeyCode, KeyMods};
 
   #[test]
   fn stop_signal_send_keys_uses_key_specs() {
