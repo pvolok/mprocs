@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::collections::HashMap;
 use std::fmt;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
@@ -125,10 +126,22 @@ pub struct TaskHandle {
   pub status: TaskStatus,
   pub pending_start: bool,
 
+  pub autorestart: bool,
+  /// Desired run state, used to decide whether an exit triggers a restart.
+  pub target: Target,
+  pub last_start: Option<Instant>,
+
   pub deps: HashMap<TaskId, DepInfo>,
 
   pub path: Option<TaskPath>,
   pub vt: Option<SharedVt>,
+}
+
+#[derive(Clone, Copy)]
+pub enum Target {
+  None,
+  Started,
+  Stopped,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -145,6 +158,8 @@ pub struct DepInfo {
 pub struct TaskDef {
   pub stop_on_quit: bool,
   pub status: TaskStatus,
+  pub autostart: bool,
+  pub autorestart: bool,
   pub deps: Vec<TaskId>,
   pub path: Option<TaskPath>,
   pub vt: Option<SharedVt>,
@@ -155,6 +170,8 @@ impl Default for TaskDef {
     Self {
       stop_on_quit: false,
       status: TaskStatus::NotStarted,
+      autostart: false,
+      autorestart: false,
       deps: Vec::new(),
       path: None,
       vt: None,

@@ -139,9 +139,7 @@ fn spawn_configured_procs(pc: &TaskContext, working_dir: &Path) {
     crate::task::proc_task::spawn_proc_task(
       pc,
       path,
-      spec,
-      None,
-      crate::task::proc_task::StopSignal::default(),
+      crate::task::proc_task::ProcTaskConfig::new(spec),
     );
   }
 }
@@ -259,9 +257,7 @@ async fn handle_rpc(
       crate::task::proc_task::spawn_proc_task(
         pc,
         task_path,
-        spec,
-        None,
-        crate::task::proc_task::StopSignal::default(),
+        crate::task::proc_task::ProcTaskConfig::new(spec),
       );
       DkResponse::Ok
     }

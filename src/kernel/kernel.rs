@@ -1,6 +1,7 @@
 use std::{
   collections::{HashMap, HashSet},
   sync::{Arc, atomic::AtomicUsize},
+  time::Instant,
 };
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -14,8 +15,8 @@ use super::{
   path_trie::PathTrie,
   sub_trie::SubTrie,
   task::{
-    DepInfo, Effects, Task, TaskCmd, TaskDef, TaskEffect, TaskHandle, TaskId,
-    TaskNotification, TaskNotify, TaskStatus,
+    DepInfo, Effects, Target, Task, TaskCmd, TaskDef, TaskEffect, TaskHandle,
+    TaskId, TaskNotification, TaskNotify, TaskStatus,
   },
   task_path::TaskPath,
 };
@@ -81,12 +82,16 @@ impl Kernel {
     let task = factory(ctx);
     let path = def.path.clone();
     let vt = def.vt.clone();
+    let autostart = def.autostart;
     let mut handle = TaskHandle {
       task_id,
       task,
       stop_on_quit: def.stop_on_quit,
       status: def.status,
       pending_start: false,
+      autorestart: def.autorestart,
+      target: Target::None,
+      last_start: None,
       deps: HashMap::new(),
       path: def.path,
       vt: def.vt,
@@ -119,6 +124,17 @@ impl Kernel {
       path.clone(),
       TaskNotify::Added(path, status, vt),
     );
+
+    // Autostart goes through the normal `Start` so dependency gating applies.
+    if autostart {
+      self
+        .sender
+        .send(KernelMessage {
+          from: TaskId(0),
+          command: KernelCommand::TaskCmd(task_id, TaskCmd::Start),
+        })
+        .log_ignore();
+    }
   }
 
   pub async fn run(mut self) {
@@ -159,6 +175,7 @@ impl Kernel {
           if let Some(task) = self.tasks.get_mut(&task_id) {
             match cmd {
               TaskCmd::Start => {
+                task.target = Target::Started;
                 if Self::all_deps_ready(task) {
                   task.pending_start = false;
                   task.task.handle_cmd(cmd, &mut fx);
@@ -167,6 +184,7 @@ impl Kernel {
                 }
               }
               TaskCmd::Stop | TaskCmd::Kill => {
+                task.target = Target::Stopped;
                 task.pending_start = false;
                 task.task.handle_cmd(cmd, &mut fx);
               }
@@ -307,6 +325,11 @@ impl Kernel {
             started = true;
           }
           task.status = TaskStatus::Running;
+          task.last_start = Some(Instant::now());
+          match task.target {
+            Target::Started => task.target = Target::None,
+            Target::None | Target::Stopped => {}
+          }
         }
 
         if started && let Some(rev_deps) = self.rev_deps.get(&task_id).cloned()
@@ -334,9 +357,20 @@ impl Kernel {
       }
 
       TaskEffect::Stopped(exit_code) => {
+        let mut restart = false;
         if let Some(task) = self.tasks.get_mut(&task_id) {
           task.status = TaskStatus::Exited(exit_code);
           task.pending_start = false;
+          restart = decide_restart(
+            task.target,
+            task.autorestart,
+            exit_code,
+            task.last_start,
+          );
+          match task.target {
+            Target::Stopped => task.target = Target::None,
+            Target::None | Target::Started => {}
+          }
         }
 
         if let Some(rev_deps) = self.rev_deps.get(&task_id).cloned() {
@@ -354,6 +388,16 @@ impl Kernel {
           from_path,
           TaskNotify::Stopped(exit_code),
         );
+
+        if restart {
+          self
+            .sender
+            .send(KernelMessage {
+              from: TaskId(0),
+              command: KernelCommand::TaskCmd(task_id, TaskCmd::Start),
+            })
+            .log_ignore();
+        }
       }
 
       TaskEffect::Remove => {
@@ -495,6 +539,30 @@ impl Kernel {
   }
 }
 
+/// Minimum uptime before an unexpected exit qualifies for autorestart, so a
+/// process that fails immediately isn't restarted in a tight loop.
+const RESTART_THRESHOLD_SECONDS: f64 = 1.0;
+
+fn decide_restart(
+  target: Target,
+  autorestart: bool,
+  code: u32,
+  last_start: Option<Instant>,
+) -> bool {
+  match target {
+    Target::Started => true,
+    Target::Stopped => false,
+    Target::None => {
+      autorestart
+        && code != 0
+        && last_start.map_or(true, |t| {
+          Instant::now().duration_since(t).as_secs_f64()
+            > RESTART_THRESHOLD_SECONDS
+        })
+    }
+  }
+}
+
 fn render_screen_ansi(screen: &crate::term::screen::Screen) -> String {
   use std::fmt::Write;
 
@@ -604,13 +672,31 @@ fn render_screen_ansi(screen: &crate::term::screen::Screen) -> String {
 
 #[cfg(test)]
 mod tests {
-  use std::time::Duration;
+  use std::time::{Duration, Instant};
 
   use tokio::sync::mpsc::{
     UnboundedReceiver, error::TryRecvError, unbounded_channel,
   };
 
   use super::*;
+
+  #[test]
+  fn autorestart_policy() {
+    let recent = Instant::now();
+    let old = Instant::now() - Duration::from_secs(2);
+
+    // Explicit intent overrides the autorestart policy.
+    assert!(decide_restart(Target::Started, false, 0, Some(recent)));
+    assert!(!decide_restart(Target::Stopped, true, 1, Some(old)));
+
+    // No intent: restart only on a nonzero exit, with autorestart on, after
+    // the task has stayed up past the threshold.
+    assert!(decide_restart(Target::None, true, 1, Some(old)));
+    assert!(decide_restart(Target::None, true, 1, None));
+    assert!(!decide_restart(Target::None, true, 1, Some(recent))); // too brief
+    assert!(!decide_restart(Target::None, true, 0, Some(old))); // clean exit
+    assert!(!decide_restart(Target::None, false, 1, Some(old))); // disabled
+  }
 
   #[derive(Debug, PartialEq)]
   enum RecordedCmd {

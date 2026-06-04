@@ -36,20 +36,48 @@ pub enum StopSignal {
   Cmd(String),
 }
 
+pub struct ProcTaskConfig {
+  pub spec: ProcessSpec,
+  pub stop: StopSignal,
+  pub log: Option<LogSink>,
+  pub autostart: bool,
+  pub autorestart: bool,
+  pub scrollback_len: usize,
+}
+
+impl ProcTaskConfig {
+  pub fn new(spec: ProcessSpec) -> Self {
+    Self {
+      spec,
+      stop: StopSignal::default(),
+      log: None,
+      autostart: true,
+      autorestart: false,
+      scrollback_len: 1000,
+    }
+  }
+}
+
 pub fn spawn_proc_task(
   parent: &TaskContext,
   task_path: TaskPath,
-  spec: ProcessSpec,
-  log: Option<LogSink>,
-  stop: StopSignal,
+  config: ProcTaskConfig,
 ) {
-  let vt = SharedVt::new(Parser::new(24, 80, 1000));
+  let ProcTaskConfig {
+    spec,
+    stop,
+    log,
+    autostart,
+    autorestart,
+    scrollback_len,
+  } = config;
+  let vt = SharedVt::new(Parser::new(24, 80, scrollback_len));
   let task_vt = vt.clone();
-  let task_id = parent.alloc_id();
-  parent.spawn_async_with_id(
-    task_id,
+  parent.spawn_async(
     TaskDef {
       stop_on_quit: true,
+      autostart,
+      autorestart,
       path: Some(task_path),
       vt: Some(vt),
       ..Default::default()
@@ -68,50 +96,35 @@ async fn proc_main(
   log: Option<LogSink>,
   stop: StopSignal,
 ) {
-  let mut process = match spawn_native(
-    &ctx,
-    &spec,
-    Winsize {
-      x: 80,
-      y: 24,
-      x_px: 0,
-      y_px: 0,
-    },
-  ) {
-    Ok(p) => p,
-    Err(err) => {
-      log::warn!("Process spawn error: {}", err);
-      ctx.send(KernelCommand::TaskStopped(255));
-      return;
-    }
-  };
-
-  ctx.send(KernelCommand::TaskStarted);
-
   let mut task_screen = TaskScreen::new(ctx.task_id, vt);
   let mut screen_effects: Vec<TaskScreenEffect> = Vec::new();
 
-  // Attach a log writer as a direct observer before the first read, so it
-  // captures the process output from the start. The sink drops with the screen
-  // when this task ends, so the writer cleans itself up.
   if let Some(sink) = log {
     task_screen.add_direct_observer(spawn_logger(sink));
   }
 
+  let mut process: Option<NativeProcess> = None;
   let mut read_buf = [0u8; 8 * 1024];
   let mut stdout_eof = false;
   let mut exit_code: Option<u32> = None;
 
   loop {
+    if process.is_some()
+      && stdout_eof
+      && let Some(code) = exit_code
+    {
+      process = None;
+      ctx.send(KernelCommand::TaskStopped(code));
+    }
+
     enum Next {
       Cmd(Option<TaskCmd>),
       Read(std::io::Result<usize>),
     }
     let read_fut = async {
-      if stdout_eof {
-        pending().await
-      } else {
-        process.read(&mut read_buf).await
+      match process.as_mut() {
+        Some(p) if !stdout_eof => p.read(&mut read_buf).await,
+        _ => pending().await,
       }
     };
     let next = tokio::select! {
@@ -122,20 +135,29 @@ async fn proc_main(
     match next {
       Next::Cmd(None) => break,
       Next::Cmd(Some(cmd)) => match cmd {
-        TaskCmd::Start => {}
+        TaskCmd::Start => {
+          if process.is_none() {
+            process = start_instance(&ctx, &spec, task_screen.vt());
+            if process.is_some() {
+              exit_code = None;
+              stdout_eof = false;
+            }
+          }
+        }
         TaskCmd::Stop => {
-          stop_process(&mut process, &stop, task_screen.vt(), &spec).await;
+          if let Some(p) = process.as_mut() {
+            stop_process(p, &stop, task_screen.vt(), &spec).await;
+          }
         }
         TaskCmd::Kill => {
-          process.kill().await.log_ignore();
+          if let Some(p) = process.as_mut() {
+            p.kill().await.log_ignore();
+          }
         }
         TaskCmd::Msg(msg) => {
           let msg = match msg.downcast::<ProcExited>() {
             Ok(exited) => {
               exit_code = Some(exited.0);
-              if stdout_eof {
-                ctx.send(KernelCommand::TaskStopped(exited.0));
-              }
               continue;
             }
             Err(msg) => msg,
@@ -155,7 +177,9 @@ async fn proc_main(
           };
           let msg = match msg.downcast::<ProcInput>() {
             Ok(input) => {
-              send_key(&mut process, task_screen.vt(), input.0).await;
+              if let Some(p) = process.as_mut() {
+                send_key(p, task_screen.vt(), input.0).await;
+              }
               continue;
             }
             Err(msg) => msg,
@@ -165,12 +189,7 @@ async fn proc_main(
         }
       },
 
-      Next::Read(Ok(0)) => {
-        stdout_eof = true;
-        if let Some(code) = exit_code {
-          ctx.send(KernelCommand::TaskStopped(code));
-        }
-      }
+      Next::Read(Ok(0)) => stdout_eof = true,
       Next::Read(Ok(n)) => {
         task_screen
           .process(&read_buf[..n], &mut screen_effects)
@@ -181,29 +200,69 @@ async fn proc_main(
       Next::Read(Err(e)) => {
         log::warn!("Process read error: {}", e);
         stdout_eof = true;
-        if let Some(code) = exit_code {
-          ctx.send(KernelCommand::TaskStopped(code));
-        }
       }
+    }
+  }
+}
+
+fn start_instance(
+  ctx: &TaskContext,
+  spec: &ProcessSpec,
+  vt: &SharedVt,
+) -> Option<NativeProcess> {
+  let size = match vt.read() {
+    Ok(parser) => {
+      let s = parser.screen().size();
+      Winsize {
+        x: s.width,
+        y: s.height,
+        x_px: 0,
+        y_px: 0,
+      }
+    }
+    Err(_) => Winsize {
+      x: 80,
+      y: 24,
+      x_px: 0,
+      y_px: 0,
+    },
+  };
+  if let Ok(mut parser) = vt.write() {
+    parser.reset();
+    parser.set_size(size.y, size.x);
+  }
+  match spawn_native(ctx, spec, size) {
+    Ok(process) => {
+      ctx.send(KernelCommand::TaskStarted);
+      Some(process)
+    }
+    Err(err) => {
+      log::warn!("Process spawn error: {}", err);
+      ctx.send(KernelCommand::TaskStopped(255));
+      None
     }
   }
 }
 
 async fn apply_effects(
   effects: &mut Vec<TaskScreenEffect>,
-  process: &mut NativeProcess,
+  process: &mut Option<NativeProcess>,
   vt: &SharedVt,
 ) {
   for effect in effects.drain(..) {
     match effect {
       TaskScreenEffect::Write(s) => {
-        process.write_all(s.as_bytes()).await.log_ignore();
+        if let Some(p) = process.as_mut() {
+          p.write_all(s.as_bytes()).await.log_ignore();
+        }
       }
       TaskScreenEffect::Resize(size) => {
         if let Ok(mut parser) = vt.write() {
           parser.set_size(size.y, size.x);
         }
-        process.resize(size).log_ignore();
+        if let Some(p) = process.as_mut() {
+          p.resize(size).log_ignore();
+        }
       }
     }
   }
@@ -354,12 +413,13 @@ mod tests {
     spawn_proc_task(
       &pc,
       path,
-      spec,
-      Some(LogSink {
-        path: log_path.clone(),
-        append: false,
-      }),
-      StopSignal::default(),
+      ProcTaskConfig {
+        log: Some(LogSink {
+          path: log_path.clone(),
+          append: false,
+        }),
+        ..ProcTaskConfig::new(spec)
+      },
     );
 
     let kernel_task = tokio::spawn(kernel.run());
@@ -409,9 +469,10 @@ mod tests {
     spawn_proc_task(
       &pc,
       path,
-      spec,
-      None,
-      StopSignal::Cmd(format!("printf done > {}", marker.display())),
+      ProcTaskConfig {
+        stop: StopSignal::Cmd(format!("printf done > {}", marker.display())),
+        ..ProcTaskConfig::new(spec)
+      },
     );
 
     let kernel_task = tokio::spawn(kernel.run());
