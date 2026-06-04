@@ -1,4 +1,6 @@
+use bytes::Bytes;
 use compact_str::CompactString;
+use tokio::sync::mpsc::Sender;
 
 use crate::{
   kernel::{
@@ -37,15 +39,13 @@ struct CopySession {
   present: SharedVt,
 }
 
-pub struct TaskScreenObs {
-  kind: ScreenObsKind,
-  size: Winsize,
-  sender: TaskSender,
+struct TaskScreenObs {
+  target: ObsTarget,
 }
 
-pub enum ScreenObsKind {
-  FrameDiff,
-  Direct,
+enum ObsTarget {
+  Framed { sender: TaskSender, size: Winsize },
+  Direct(Sender<Bytes>),
 }
 
 pub enum TaskScreenCmd {
@@ -103,10 +103,6 @@ pub enum TaskScreenEffect {
   Resize(Winsize),
 }
 
-pub enum DirectScreenNotify {
-  Print(bytes::Bytes),
-}
-
 impl TaskScreen {
   pub fn vt(&self) -> &SharedVt {
     &self.vt
@@ -133,53 +129,60 @@ impl TaskScreen {
   fn broadcast(&self, mut make: impl FnMut(TaskId) -> FramedScreenNotify) {
     let task_id = self.task_id;
     for obs in &self.observers {
-      match obs.kind {
-        ScreenObsKind::FrameDiff => {
-          obs.sender.send(TaskCmd::msg(make(task_id)))
+      match &obs.target {
+        ObsTarget::Framed { sender, .. } => {
+          sender.send(TaskCmd::msg(make(task_id)))
         }
-        ScreenObsKind::Direct => {}
+        ObsTarget::Direct(_) => {}
       }
     }
   }
 
-  pub fn process(&mut self, bytes: &[u8], effects: &mut Vec<TaskScreenEffect>) {
-    let bytes = bytes::Bytes::copy_from_slice(bytes);
+  pub async fn process(
+    &mut self,
+    bytes: &[u8],
+    effects: &mut Vec<TaskScreenEffect>,
+  ) {
+    let bytes = Bytes::copy_from_slice(bytes);
 
     if let Ok(mut vt) = self.vt.write() {
       vt.screen.process(&bytes, &mut self.events_buf);
     }
 
-    for obs in &mut self.observers {
-      match obs.kind {
-        ScreenObsKind::FrameDiff => {
+    for obs in &self.observers {
+      match &obs.target {
+        ObsTarget::Framed { sender, .. } => {
           for event in &self.events_buf {
             match event {
               VtEvent::Bell => {
-                obs.sender.send(TaskCmd::msg(FramedScreenNotify::Bell {
+                sender.send(TaskCmd::msg(FramedScreenNotify::Bell {
                   task_id: self.task_id,
                 }));
               }
               VtEvent::Reply(_) => (),
             }
           }
-          obs.sender.send(TaskCmd::msg(FramedScreenNotify::Render {
+          sender.send(TaskCmd::msg(FramedScreenNotify::Render {
             task_id: self.task_id,
           }));
         }
-        ScreenObsKind::Direct => {
-          obs
-            .sender
-            .send(TaskCmd::msg(DirectScreenNotify::Print(bytes.clone())));
-        }
+        ObsTarget::Direct(_) => {}
       }
     }
 
     for event in self.events_buf.drain(..) {
       match event {
         VtEvent::Bell => (),
-        VtEvent::Reply(s) => {
-          effects.push(TaskScreenEffect::Write(s));
+        VtEvent::Reply(s) => effects.push(TaskScreenEffect::Write(s)),
+      }
+    }
+
+    for obs in &self.observers {
+      match &obs.target {
+        ObsTarget::Direct(sink) => {
+          let _ = sink.send(bytes.clone()).await;
         }
+        ObsTarget::Framed { .. } => {}
       }
     }
   }
@@ -202,23 +205,27 @@ impl TaskScreen {
           }));
         }
         self.observers.push(TaskScreenObs {
-          kind: ScreenObsKind::FrameDiff,
-          size,
-          sender,
+          target: ObsTarget::Framed { sender, size },
         });
         self.sync_size(effects);
       }
       TaskScreenCmd::Unobserve { observer_id } => {
-        self.observers.retain(|o| o.sender.task_id != observer_id);
+        self.observers.retain(|o| match &o.target {
+          ObsTarget::Framed { sender, .. } => sender.task_id != observer_id,
+          ObsTarget::Direct(_) => true,
+        });
         self.sync_size(effects);
       }
       TaskScreenCmd::Resize { size, observer_id } => {
-        if let Some(observer) = self
-          .observers
-          .iter_mut()
-          .find(|o| o.sender.task_id == observer_id)
-        {
-          observer.size = size;
+        let observer = self.observers.iter_mut().find(|o| match &o.target {
+          ObsTarget::Framed { sender, .. } => sender.task_id == observer_id,
+          ObsTarget::Direct(_) => false,
+        });
+        if let Some(observer) = observer {
+          if let ObsTarget::Framed { size: obs_size, .. } = &mut observer.target
+          {
+            *obs_size = size;
+          }
         }
         self.sync_size(effects);
         if self.copy.is_some() {
@@ -471,23 +478,33 @@ impl TaskScreen {
     }
   }
 
+  pub fn add_direct_observer(&mut self, sink: Sender<Bytes>) {
+    self.observers.push(TaskScreenObs {
+      target: ObsTarget::Direct(sink),
+    });
+  }
+
   pub fn notify_render(&mut self) {
     for obs in &mut self.observers {
-      match obs.kind {
-        ScreenObsKind::FrameDiff => {
-          obs.sender.send(TaskCmd::msg(FramedScreenNotify::Render {
+      match &obs.target {
+        ObsTarget::Framed { sender, .. } => {
+          sender.send(TaskCmd::msg(FramedScreenNotify::Render {
             task_id: self.task_id,
           }));
         }
-        ScreenObsKind::Direct => {}
+        ObsTarget::Direct(_) => {}
       }
     }
   }
 
   pub fn sync_size(&mut self, effects: &mut Vec<TaskScreenEffect>) {
     let mut size = self.size;
-    if let Some(observer) = self.observers.first() {
-      size = observer.size;
+    let framed = self.observers.iter().find_map(|o| match &o.target {
+      ObsTarget::Framed { size, .. } => Some(*size),
+      ObsTarget::Direct(_) => None,
+    });
+    if let Some(observer_size) = framed {
+      size = observer_size;
     }
     if size != self.size {
       self.size = size;

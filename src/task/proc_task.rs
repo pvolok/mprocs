@@ -10,6 +10,7 @@ use crate::kernel::task_screen::{TaskScreen, TaskScreenCmd, TaskScreenEffect};
 use crate::process::NativeProcess;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
+use crate::task::logger::{LogSink, spawn_logger};
 use crate::term::encode::{KeyCodeEncodeModes, encode_key};
 use crate::term::key::Key;
 use crate::term::{Parser, Winsize};
@@ -22,6 +23,7 @@ pub fn spawn_proc_task(
   parent: &TaskContext,
   task_path: TaskPath,
   spec: ProcessSpec,
+  log: Option<LogSink>,
 ) {
   let vt = SharedVt::new(Parser::new(24, 80, 1000));
   let task_vt = vt.clone();
@@ -35,7 +37,7 @@ pub fn spawn_proc_task(
       ..Default::default()
     },
     move |ctx, receiver| async move {
-      proc_main(ctx, receiver, spec, task_vt).await;
+      proc_main(ctx, receiver, spec, task_vt, log).await;
     },
   );
 }
@@ -45,6 +47,7 @@ async fn proc_main(
   mut receiver: UnboundedReceiver<TaskCmd>,
   spec: ProcessSpec,
   vt: SharedVt,
+  log: Option<LogSink>,
 ) {
   let mut process = match spawn_native(
     &ctx,
@@ -68,6 +71,14 @@ async fn proc_main(
 
   let mut task_screen = TaskScreen::new(ctx.task_id, vt);
   let mut screen_effects: Vec<TaskScreenEffect> = Vec::new();
+
+  // Attach a log writer as a direct observer before the first read, so it
+  // captures the process output from the start. The sink drops with the screen
+  // when this task ends, so the writer cleans itself up.
+  if let Some(sink) = log {
+    task_screen.add_direct_observer(spawn_logger(sink));
+  }
+
   let mut read_buf = [0u8; 8 * 1024];
   let mut stdout_eof = false;
   let mut exit_code: Option<u32> = None;
@@ -139,7 +150,9 @@ async fn proc_main(
         }
       }
       Next::Read(Ok(n)) => {
-        task_screen.process(&read_buf[..n], &mut screen_effects);
+        task_screen
+          .process(&read_buf[..n], &mut screen_effects)
+          .await;
         apply_effects(&mut screen_effects, &mut process, task_screen.vt())
           .await;
       }
@@ -187,6 +200,90 @@ async fn send_key(process: &mut NativeProcess, vt: &SharedVt, key: Key) {
   match encode_key(&key, modes) {
     Ok(encoded) => process.write_all(encoded.as_bytes()).await.log_ignore(),
     Err(_) => log::warn!("Failed to encode key: {}", key.spec()),
+  }
+}
+
+#[cfg(not(windows))]
+#[cfg(test)]
+mod tests {
+  use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+  use crate::kernel::kernel::Kernel;
+  use crate::kernel::kernel_message::{
+    KernelCommand, KernelQuery, KernelQueryResponse, TaskContext,
+  };
+  use crate::kernel::task::TaskId;
+
+  use super::*;
+
+  async fn resolve(pc: &TaskContext, path: &str) -> TaskId {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    pc.send(KernelCommand::Query(
+      KernelQuery::ResolvePath(TaskPath::new(path).unwrap()),
+      tx,
+    ));
+    let resp = tokio::time::timeout(Duration::from_secs(1), rx)
+      .await
+      .expect("timed out resolving path")
+      .expect("kernel query channel closed");
+    match resp {
+      KernelQueryResponse::ResolvedPath(Some(id)) => id,
+      _ => panic!("path did not resolve: {path}"),
+    }
+  }
+
+  #[tokio::test]
+  async fn proc_output_is_logged_via_direct_observer() {
+    let nanos = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .unwrap()
+      .as_nanos();
+    let mut log_path = std::env::temp_dir();
+    log_path.push(format!("mprocs_log_{}_{}.log", std::process::id(), nanos));
+
+    let mut kernel = Kernel::new();
+    let pc = kernel.context();
+
+    let path = TaskPath::new("/logged").unwrap();
+    let spec = ProcessSpec::from_argv(vec![
+      "sh".to_string(),
+      "-c".to_string(),
+      "printf hello-log".to_string(),
+    ]);
+    spawn_proc_task(
+      &pc,
+      path,
+      spec,
+      Some(LogSink {
+        path: log_path.clone(),
+        append: false,
+      }),
+    );
+
+    let kernel_task = tokio::spawn(kernel.run());
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+      if let Ok(contents) = std::fs::read_to_string(&log_path) {
+        if contents.contains("hello-log") {
+          break;
+        }
+      }
+      assert!(Instant::now() < deadline, "log file never got output");
+      tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    // The SIGCHLD waiter isn't running in unit tests, so the proc never
+    // transitions to Exited on its own; remove it explicitly to unblock quit.
+    let id = resolve(&pc, "/logged").await;
+    pc.send(KernelCommand::RemoveTask(id));
+    pc.send(KernelCommand::Quit);
+    tokio::time::timeout(Duration::from_secs(2), kernel_task)
+      .await
+      .expect("timed out waiting for kernel to quit")
+      .unwrap();
+
+    let _ = std::fs::remove_file(&log_path);
   }
 }
 

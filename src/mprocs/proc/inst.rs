@@ -4,7 +4,6 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::error::ResultLogger;
 use crate::kernel::task::TaskId;
-use crate::mprocs::proc_log_config::{LogConfig, LogMode};
 use crate::process::NativeProcess;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
@@ -14,8 +13,6 @@ use super::Size;
 use super::msg::ProcEvent;
 
 pub struct Inst {
-  pub log_writer: Option<tokio::fs::File>,
-
   pub pid: u32,
   pub process: NativeProcess,
   pub exit_code: Option<u32>,
@@ -35,11 +32,9 @@ impl Debug for Inst {
 impl Inst {
   pub async fn spawn(
     id: TaskId,
-    name: &str,
     spec: &ProcessSpec,
     tx: UnboundedSender<ProcEvent>,
     size: &Size,
-    log: Option<&LogConfig>,
   ) -> anyhow::Result<Self> {
     #[cfg(unix)]
     let process = {
@@ -90,33 +85,9 @@ impl Inst {
     #[cfg(windows)]
     let pid: i32 = process.pid;
 
-    let log_file = log.and_then(|log| log.file_path(name, id.0, pid as u32));
-    let log_writer = match log_file {
-      Some(path) => {
-        // Create parent directories if needed
-        if let Some(parent) = path.parent() {
-          std::fs::create_dir_all(parent).log_ignore();
-        }
-        let append = log.is_some_and(|log| log.mode() == LogMode::Append);
-        let mut options = tokio::fs::OpenOptions::new();
-        options.create(true).write(true).append(append);
-        if !append {
-          options.truncate(true);
-        }
-        options
-          .open(&path)
-          .await
-          .map_err(|e| log::warn!("Failed to open log file {:?}: {}", path, e))
-          .ok()
-      }
-      None => None,
-    };
-
     tx.send(ProcEvent::Started).log_ignore();
 
     let inst = Inst {
-      log_writer,
-
       process,
       pid: pid as u32,
       exit_code: None,

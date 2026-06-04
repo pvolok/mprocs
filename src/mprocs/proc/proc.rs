@@ -2,7 +2,6 @@ use std::fmt::Debug;
 use std::future::pending;
 
 use assert_matches::assert_matches;
-use tokio::io::AsyncWriteExt;
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
@@ -12,9 +11,10 @@ use crate::kernel::task::{TaskCmd, TaskDef, TaskId};
 use crate::kernel::task_path::TaskPath;
 use crate::kernel::task_screen::{TaskScreen, TaskScreenCmd, TaskScreenEffect};
 use crate::mprocs::config::ProcConfig;
-use crate::mprocs::proc_log_config::LogConfig;
+use crate::mprocs::proc_log_config::LogMode;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
+use crate::task::logger::{LogSink, spawn_logger};
 use crate::term::Parser;
 use crate::term::encode::{KeyCodeEncodeModes, encode_key};
 use crate::term::grid::Rect;
@@ -31,9 +31,7 @@ pub struct Proc {
   pub spec: ProcessSpec,
   size: Size,
 
-  name: String,
   stop_signal: StopSignal,
-  log: Option<LogConfig>,
 
   pub vt: SharedVt,
 
@@ -99,6 +97,7 @@ async fn proc_main_loop(
 
   let mut task_screen = TaskScreen::new(task_id, vt);
   let mut screen_effects: Vec<TaskScreenEffect> = Vec::new();
+  let mut log_attached = false;
 
   loop {
     enum NextValue {
@@ -146,6 +145,17 @@ async fn proc_main_loop(
           }
         }
         ProcEvent::Started => {
+          if !log_attached {
+            log_attached = true;
+            if let (Some(log), ProcState::Some(inst)) = (&cfg.log, &proc.inst) {
+              if let Some(path) = log.file_path(&cfg.name, task_id.0, inst.pid)
+              {
+                let append = log.mode() == LogMode::Append;
+                task_screen
+                  .add_direct_observer(spawn_logger(LogSink { path, append }));
+              }
+            }
+          }
           ks.send(KernelCommand::TaskStarted);
         }
       },
@@ -167,14 +177,7 @@ async fn proc_main_loop(
           }
         } else {
           let bytes = &read_buf[..count];
-
-          // Write to log file if configured
-          if let Some(ref mut writer) = inst.log_writer {
-            writer.write_all(bytes).await.log_ignore();
-            writer.flush().await.log_ignore();
-          }
-
-          task_screen.process(bytes, &mut screen_effects);
+          task_screen.process(bytes, &mut screen_effects).await;
           apply_screen_effects(&mut screen_effects, &mut proc).await;
         }
       }
@@ -234,9 +237,7 @@ impl Proc {
       spec: cfg.into(),
       size,
 
-      name: cfg.name.clone(),
       stop_signal: cfg.stop.clone(),
-      log: cfg.log.clone(),
 
       vt,
 
@@ -260,15 +261,8 @@ impl Proc {
       vt.set_size(self.size.height, self.size.width);
     }
 
-    let spawned = Inst::spawn(
-      self.id,
-      &self.name,
-      &self.spec,
-      self.tx.clone(),
-      &self.size,
-      self.log.as_ref(),
-    )
-    .await;
+    let spawned =
+      Inst::spawn(self.id, &self.spec, self.tx.clone(), &self.size).await;
     let inst = match spawned {
       Ok(inst) => ProcState::Some(inst),
       Err(err) => {

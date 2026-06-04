@@ -136,7 +136,7 @@ fn spawn_configured_procs(pc: &TaskContext, working_dir: &Path) {
     } else {
       spec.cwd(working_dir.to_string_lossy());
     }
-    crate::task::proc_task::spawn_proc_task(pc, path, spec);
+    crate::task::proc_task::spawn_proc_task(pc, path, spec, None);
   }
 }
 
@@ -250,7 +250,7 @@ async fn handle_rpc(
       } else if let Ok(cwd) = std::env::current_dir() {
         spec.cwd(cwd.to_string_lossy());
       }
-      crate::task::proc_task::spawn_proc_task(pc, task_path, spec);
+      crate::task::proc_task::spawn_proc_task(pc, task_path, spec, None);
       DkResponse::Ok
     }
   };
