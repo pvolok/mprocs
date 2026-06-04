@@ -161,7 +161,7 @@ async fn apply_effects(
 ) {
   for effect in effects.drain(..) {
     match effect {
-      TaskScreenEffect::Reply(s) => {
+      TaskScreenEffect::Write(s) => {
         process.write_all(s.as_bytes()).await.log_ignore();
       }
       TaskScreenEffect::Resize(size) => {

@@ -1,16 +1,10 @@
 use std::fmt::Debug;
 
-use crate::term::{key::Key, mouse::MouseEvent};
+use crate::term::key::Key;
 
 #[derive(Debug)]
 pub enum ProcMsg {
   SendKey(Key),
-  SendMouse(MouseEvent),
-
-  ScrollUp,
-  ScrollDown,
-  ScrollUpLines { n: usize },
-  ScrollDownLines { n: usize },
 }
 
 #[derive(Debug)]

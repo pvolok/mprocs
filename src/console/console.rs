@@ -123,6 +123,8 @@ impl Console {
               FramedScreenNotify::ObserveStarted { .. } => true,
               FramedScreenNotify::Render { .. } => true,
               FramedScreenNotify::Bell { .. } => false,
+              FramedScreenNotify::CopyPresent { .. }
+              | FramedScreenNotify::Yank { .. } => false,
             };
           }
           Err(msg) => msg,
@@ -141,7 +143,7 @@ impl Console {
     let mut new_size: Option<Winsize> = None;
     for fx in self.screen_effects.drain(..) {
       match fx {
-        TaskScreenEffect::Reply(_) => {}
+        TaskScreenEffect::Write(_) => {}
         TaskScreenEffect::Resize(ws) => {
           new_size = Some(ws);
         }

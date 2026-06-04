@@ -4,8 +4,6 @@ use crate::kernel::{
 };
 use crate::mprocs::config::ProcConfig;
 
-use super::CopyMode;
-
 use std::time::Instant;
 
 /// Amount of time a process has to stay up for autorestart to trigger
@@ -24,7 +22,9 @@ pub struct ProcView {
 
   pub status: TaskStatus,
   pub vt: SharedVt,
-  pub copy_mode: CopyMode,
+  /// Presentation surface from the kernel's copy mode, rendered instead of
+  /// `vt` while copy mode is active. Set/cleared by `CopyEntered`/`CopyLeft`.
+  pub present: Option<SharedVt>,
 
   pub target_state: TargetState,
   pub last_start: Option<Instant>,
@@ -39,7 +39,7 @@ impl ProcView {
 
       status: TaskStatus::NotStarted,
       vt,
-      copy_mode: CopyMode::None(None),
+      present: None,
 
       target_state: TargetState::None,
       last_start: None,
@@ -82,8 +82,8 @@ impl ProcView {
     }
   }
 
-  pub fn copy_mode(&self) -> &CopyMode {
-    &self.copy_mode
+  pub fn copy_active(&self) -> bool {
+    self.present.is_some()
   }
 
   pub fn focus(&mut self) {

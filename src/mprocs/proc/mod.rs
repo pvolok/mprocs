@@ -6,7 +6,6 @@ pub mod view;
 use std::fmt::Debug;
 
 use anyhow::bail;
-use serde::{Deserialize, Serialize};
 
 use crate::mprocs::yaml_val::Val;
 use crate::term::key::{Key, KeySpec};
@@ -94,54 +93,4 @@ mod tests {
 pub struct Size {
   width: u16,
   height: u16,
-}
-
-#[allow(clippy::large_enum_variant)]
-pub enum CopyMode {
-  None(Option<Pos>),
-  Active(crate::term::Screen, Pos, Option<Pos>),
-}
-
-impl Default for CopyMode {
-  fn default() -> Self {
-    CopyMode::None(None)
-  }
-}
-
-#[derive(
-  Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize,
-)]
-pub struct Pos {
-  pub y: i32,
-  pub x: i32,
-}
-
-impl Pos {
-  pub fn to_low_high<'a>(a: &'a Self, b: &'a Self) -> (&'a Self, &'a Self) {
-    if a.y < b.y || a.y == b.y && a.x < b.x {
-      (a, b)
-    } else {
-      (b, a)
-    }
-  }
-
-  pub fn within(start: &Self, end: &Self, target: &Self) -> bool {
-    let y = target.y;
-    let x = target.x;
-    let (low, high) = Pos::to_low_high(start, end);
-
-    if y > low.y {
-      y < high.y || y == high.y && x <= high.x
-    } else if y == low.y {
-      if y < high.y {
-        x >= low.x
-      } else if y == high.y {
-        x >= low.x && x <= high.x
-      } else {
-        false
-      }
-    } else {
-      false
-    }
-  }
 }

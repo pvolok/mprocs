@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::mprocs::proc::Pos;
-
 use super::{grid::Rect, key::KeyMods};
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -18,13 +16,6 @@ impl MouseEvent {
     ret.x -= area.x as i32;
     ret.y -= area.y as i32;
     ret
-  }
-
-  pub fn pos_with_scrollback(&self, scrollback: usize) -> Pos {
-    Pos {
-      y: self.y - scrollback as i32,
-      x: self.x,
-    }
   }
 }
 

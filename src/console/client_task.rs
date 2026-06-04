@@ -108,6 +108,8 @@ async fn client_worker(
                     .await;
                 }
                 FramedScreenNotify::Bell { .. } => (),
+                FramedScreenNotify::CopyPresent { .. }
+                | FramedScreenNotify::Yank { .. } => (),
               }
               continue;
             }

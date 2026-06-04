@@ -15,11 +15,10 @@ use crate::mprocs::config::ProcConfig;
 use crate::mprocs::proc_log_config::LogConfig;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
-use crate::term::encode::{KeyCodeEncodeModes, encode_key, encode_mouse_event};
+use crate::term::Parser;
+use crate::term::encode::{KeyCodeEncodeModes, encode_key};
 use crate::term::grid::Rect;
 use crate::term::key::Key;
-use crate::term::mouse::{MouseEvent, MouseEventKind};
-use crate::term::{MouseProtocolMode, Parser};
 
 use super::Size;
 use super::StopSignal;
@@ -114,37 +113,30 @@ async fn proc_main_loop(
       count = proc.read(&mut read_buf) => NextValue::Read(count),
     };
     match value {
-      NextValue::Cmd(Some(cmd)) => {
-        let mut rendered = false;
-        match cmd {
-          TaskCmd::Start => {
-            proc.start().await;
-            rendered = true;
-          }
-          TaskCmd::Stop => proc.stop().await,
-          TaskCmd::Kill => proc.kill().await,
-          TaskCmd::Msg(msg) => {
-            let msg = match msg.downcast::<ProcMsg>() {
-              Ok(proc_msg) => {
-                proc.handle_msg(*proc_msg, &mut rendered).await;
-                continue;
-              }
-              Err(msg) => msg,
-            };
-            let msg = match msg.downcast::<TaskScreenCmd>() {
-              Ok(cmd) => {
-                task_screen.handle_cmd(*cmd, &mut screen_effects);
-                apply_screen_effects(&mut screen_effects, &mut proc).await;
-                continue;
-              }
-              Err(msg) => msg,
-            };
-            let _ = msg;
-            log::error!("Proc received unknown Msg");
-          }
+      NextValue::Cmd(Some(cmd)) => match cmd {
+        TaskCmd::Start => proc.start().await,
+        TaskCmd::Stop => proc.stop().await,
+        TaskCmd::Kill => proc.kill().await,
+        TaskCmd::Msg(msg) => {
+          let msg = match msg.downcast::<ProcMsg>() {
+            Ok(proc_msg) => {
+              proc.handle_msg(*proc_msg).await;
+              continue;
+            }
+            Err(msg) => msg,
+          };
+          let msg = match msg.downcast::<TaskScreenCmd>() {
+            Ok(cmd) => {
+              task_screen.handle_cmd(*cmd, &mut screen_effects);
+              apply_screen_effects(&mut screen_effects, &mut proc).await;
+              continue;
+            }
+            Err(msg) => msg,
+          };
+          let _ = msg;
+          log::error!("Proc received unknown Msg");
         }
-        let _ = rendered;
-      }
+      },
       NextValue::Cmd(None) => (),
       NextValue::Internal(Some(proc_event)) => match proc_event {
         ProcEvent::Exited(exit_code) => {
@@ -210,7 +202,7 @@ async fn apply_screen_effects(
 ) {
   for fx in effects.drain(..) {
     match fx {
-      TaskScreenEffect::Reply(s) => {
+      TaskScreenEffect::Write(s) => {
         if let ProcState::Some(inst) = &mut proc.inst {
           inst.process.write_all(s.as_bytes()).await.log_ignore();
         }
@@ -472,88 +464,12 @@ impl Proc {
       }
     }
   }
-
-  pub fn scroll_up_lines(&mut self, n: usize) {
-    if let Some(mut vt) = self.lock_vt_mut() {
-      vt.screen.scroll_screen_up(n);
-    }
-  }
-
-  pub fn scroll_down_lines(&mut self, n: usize) {
-    if let Some(mut vt) = self.lock_vt_mut() {
-      vt.screen.scroll_screen_down(n);
-    }
-  }
-
-  pub fn scroll_half_screen_up(&mut self) {
-    self.scroll_up_lines(self.size.height as usize / 2);
-  }
-
-  pub fn scroll_half_screen_down(&mut self) {
-    self.scroll_down_lines(self.size.height as usize / 2);
-  }
-
-  pub async fn handle_mouse(&mut self, event: MouseEvent) {
-    if let ProcState::Some(inst) = &mut self.inst {
-      let mouse_mode = self.vt.read().unwrap().screen().mouse_protocol_mode();
-      let seq = match mouse_mode {
-        MouseProtocolMode::None => String::new(),
-        MouseProtocolMode::Press => match event.kind {
-          MouseEventKind::Down(_)
-          | MouseEventKind::ScrollDown
-          | MouseEventKind::ScrollUp
-          | MouseEventKind::ScrollLeft
-          | MouseEventKind::ScrollRight => encode_mouse_event(event),
-          _ => String::new(),
-        },
-        MouseProtocolMode::PressRelease => match event.kind {
-          MouseEventKind::Down(_)
-          | MouseEventKind::Up(_)
-          | MouseEventKind::ScrollDown
-          | MouseEventKind::ScrollUp
-          | MouseEventKind::ScrollLeft
-          | MouseEventKind::ScrollRight => encode_mouse_event(event),
-          MouseEventKind::Drag(_) | MouseEventKind::Moved => String::new(),
-        },
-        MouseProtocolMode::ButtonMotion => match event.kind {
-          MouseEventKind::Down(_)
-          | MouseEventKind::Up(_)
-          | MouseEventKind::ScrollDown
-          | MouseEventKind::Drag(_)
-          | MouseEventKind::ScrollUp
-          | MouseEventKind::ScrollLeft
-          | MouseEventKind::ScrollRight => encode_mouse_event(event),
-          MouseEventKind::Moved => String::new(),
-        },
-        MouseProtocolMode::AnyMotion => encode_mouse_event(event),
-      };
-      let _r = inst.process.write_all(seq.as_bytes()).await;
-    }
-  }
 }
 
 impl Proc {
-  pub async fn handle_msg(&mut self, msg: ProcMsg, rendered: &mut bool) {
+  pub async fn handle_msg(&mut self, msg: ProcMsg) {
     match msg {
       ProcMsg::SendKey(key) => self.send_key(&key).await,
-      ProcMsg::SendMouse(event) => self.handle_mouse(event).await,
-
-      ProcMsg::ScrollUp => {
-        self.scroll_half_screen_up();
-        *rendered = true;
-      }
-      ProcMsg::ScrollDown => {
-        self.scroll_half_screen_down();
-        *rendered = true;
-      }
-      ProcMsg::ScrollUpLines { n } => {
-        self.scroll_up_lines(n);
-        *rendered = true;
-      }
-      ProcMsg::ScrollDownLines { n } => {
-        self.scroll_down_lines(n);
-        *rendered = true;
-      }
     }
   }
 }

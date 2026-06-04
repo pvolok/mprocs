@@ -1,8 +1,6 @@
 use crate::kernel::task::TaskId;
 use crate::mprocs::{
-  keymap::KeymapGroup,
-  proc::{CopyMode, view::ProcView},
-  widgets::list::ListState,
+  keymap::KeymapGroup, proc::view::ProcView, widgets::list::ListState,
 };
 use crate::protocol::ClientId;
 
@@ -70,11 +68,8 @@ impl State {
     match self.scope {
       Scope::Procs => KeymapGroup::Procs,
       Scope::Term | Scope::TermZoom => match self.get_current_proc() {
-        Some(proc) => match proc.copy_mode() {
-          CopyMode::None(_) => KeymapGroup::Term,
-          CopyMode::Active(_, _, _) => KeymapGroup::Copy,
-        },
-        None => KeymapGroup::Term,
+        Some(proc) if proc.copy_active() => KeymapGroup::Copy,
+        _ => KeymapGroup::Term,
       },
     }
   }
