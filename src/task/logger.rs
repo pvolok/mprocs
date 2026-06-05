@@ -13,6 +13,8 @@ pub struct LogSink {
   pub append: bool,
 }
 
+pub type LogResolver = Box<dyn FnMut(u32) -> Option<LogSink> + Send>;
+
 pub fn spawn_logger(sink: LogSink) -> Sender<Bytes> {
   let (tx, rx) = mpsc::channel(CHANNEL_CAP);
   tokio::spawn(logger_main(rx, sink));

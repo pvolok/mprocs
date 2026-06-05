@@ -332,6 +332,10 @@ impl Process for WinProcess {
     };
   }
 
+  fn pid(&self) -> u32 {
+    self.pid as u32
+  }
+
   async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
     let count = self.reader.read(buf).await?;
     Ok(count)

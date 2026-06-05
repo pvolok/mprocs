@@ -27,6 +27,7 @@ pub struct TaskScreen {
   events_buf: Vec<VtEvent>,
 
   observers: Vec<TaskScreenObs>,
+  next_direct_id: u64,
 
   copy: Option<CopySession>,
   /// Content cell of the last left mouse-down, so a drag can anchor the
@@ -45,7 +46,7 @@ struct TaskScreenObs {
 
 enum ObsTarget {
   Framed { sender: TaskSender, size: Winsize },
-  Direct(Sender<Bytes>),
+  Direct { id: u64, sink: Sender<Bytes> },
 }
 
 pub enum TaskScreenCmd {
@@ -121,6 +122,7 @@ impl TaskScreen {
       vt,
       events_buf: Vec::new(),
       observers: Vec::new(),
+      next_direct_id: 0,
       copy: None,
       mouse_down: None,
     }
@@ -133,7 +135,7 @@ impl TaskScreen {
         ObsTarget::Framed { sender, .. } => {
           sender.send(TaskCmd::msg(make(task_id)))
         }
-        ObsTarget::Direct(_) => {}
+        ObsTarget::Direct { .. } => {}
       }
     }
   }
@@ -166,7 +168,7 @@ impl TaskScreen {
             task_id: self.task_id,
           }));
         }
-        ObsTarget::Direct(_) => {}
+        ObsTarget::Direct { .. } => {}
       }
     }
 
@@ -179,7 +181,7 @@ impl TaskScreen {
 
     for obs in &self.observers {
       match &obs.target {
-        ObsTarget::Direct(sink) => {
+        ObsTarget::Direct { sink, .. } => {
           let _ = sink.send(bytes.clone()).await;
         }
         ObsTarget::Framed { .. } => {}
@@ -212,14 +214,14 @@ impl TaskScreen {
       TaskScreenCmd::Unobserve { observer_id } => {
         self.observers.retain(|o| match &o.target {
           ObsTarget::Framed { sender, .. } => sender.task_id != observer_id,
-          ObsTarget::Direct(_) => true,
+          ObsTarget::Direct { .. } => true,
         });
         self.sync_size(effects);
       }
       TaskScreenCmd::Resize { size, observer_id } => {
         let observer = self.observers.iter_mut().find(|o| match &o.target {
           ObsTarget::Framed { sender, .. } => sender.task_id == observer_id,
-          ObsTarget::Direct(_) => false,
+          ObsTarget::Direct { .. } => false,
         });
         if let Some(observer) = observer {
           if let ObsTarget::Framed { size: obs_size, .. } = &mut observer.target
@@ -478,9 +480,19 @@ impl TaskScreen {
     }
   }
 
-  pub fn add_direct_observer(&mut self, sink: Sender<Bytes>) {
+  pub fn add_direct_observer(&mut self, sink: Sender<Bytes>) -> u64 {
+    let id = self.next_direct_id;
+    self.next_direct_id += 1;
     self.observers.push(TaskScreenObs {
-      target: ObsTarget::Direct(sink),
+      target: ObsTarget::Direct { id, sink },
+    });
+    id
+  }
+
+  pub fn remove_direct_observer(&mut self, id: u64) {
+    self.observers.retain(|o| match &o.target {
+      ObsTarget::Direct { id: oid, .. } => *oid != id,
+      ObsTarget::Framed { .. } => true,
     });
   }
 
@@ -492,7 +504,7 @@ impl TaskScreen {
             task_id: self.task_id,
           }));
         }
-        ObsTarget::Direct(_) => {}
+        ObsTarget::Direct { .. } => {}
       }
     }
   }
@@ -501,7 +513,7 @@ impl TaskScreen {
     let mut size = self.size;
     let framed = self.observers.iter().find_map(|o| match &o.target {
       ObsTarget::Framed { size, .. } => Some(*size),
-      ObsTarget::Direct(_) => None,
+      ObsTarget::Direct { .. } => None,
     });
     if let Some(observer_size) = framed {
       size = observer_size;

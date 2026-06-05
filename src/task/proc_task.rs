@@ -4,13 +4,13 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::{KernelCommand, SharedVt, TaskContext};
-use crate::kernel::task::{TaskCmd, TaskDef};
+use crate::kernel::task::{TaskCmd, TaskDef, TaskId};
 use crate::kernel::task_path::TaskPath;
 use crate::kernel::task_screen::{TaskScreen, TaskScreenCmd, TaskScreenEffect};
 use crate::process::NativeProcess;
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
-use crate::task::logger::{LogSink, spawn_logger};
+use crate::task::logger::{LogResolver, spawn_logger};
 use crate::term::encode::{KeyCodeEncodeModes, encode_key};
 use crate::term::key::Key;
 use crate::term::{Parser, Winsize};
@@ -39,10 +39,11 @@ pub enum StopSignal {
 pub struct ProcTaskConfig {
   pub spec: ProcessSpec,
   pub stop: StopSignal,
-  pub log: Option<LogSink>,
+  pub log: Option<LogResolver>,
   pub autostart: bool,
   pub autorestart: bool,
   pub scrollback_len: usize,
+  pub deps: Vec<TaskId>,
 }
 
 impl ProcTaskConfig {
@@ -54,12 +55,24 @@ impl ProcTaskConfig {
       autostart: true,
       autorestart: false,
       scrollback_len: 1000,
+      deps: Vec::new(),
     }
   }
 }
 
 pub fn spawn_proc_task(
   parent: &TaskContext,
+  task_path: TaskPath,
+  config: ProcTaskConfig,
+) -> TaskId {
+  let task_id = parent.alloc_id();
+  spawn_proc_task_with_id(parent, task_id, task_path, config);
+  task_id
+}
+
+pub fn spawn_proc_task_with_id(
+  parent: &TaskContext,
+  task_id: TaskId,
   task_path: TaskPath,
   config: ProcTaskConfig,
 ) {
@@ -70,14 +83,17 @@ pub fn spawn_proc_task(
     autostart,
     autorestart,
     scrollback_len,
+    deps,
   } = config;
   let vt = SharedVt::new(Parser::new(24, 80, scrollback_len));
   let task_vt = vt.clone();
-  parent.spawn_async(
+  parent.spawn_async_with_id(
+    task_id,
     TaskDef {
       stop_on_quit: true,
       autostart,
       autorestart,
+      deps,
       path: Some(task_path),
       vt: Some(vt),
       ..Default::default()
@@ -93,17 +109,15 @@ async fn proc_main(
   mut receiver: UnboundedReceiver<TaskCmd>,
   spec: ProcessSpec,
   vt: SharedVt,
-  log: Option<LogSink>,
+  mut log: Option<LogResolver>,
   stop: StopSignal,
 ) {
   let mut task_screen = TaskScreen::new(ctx.task_id, vt);
   let mut screen_effects: Vec<TaskScreenEffect> = Vec::new();
 
-  if let Some(sink) = log {
-    task_screen.add_direct_observer(spawn_logger(sink));
-  }
-
   let mut process: Option<NativeProcess> = None;
+  // The log path is resolved per spawn (it may contain the pid).
+  let mut current_log: Option<(std::path::PathBuf, u64)> = None;
   let mut read_buf = [0u8; 8 * 1024];
   let mut stdout_eof = false;
   let mut exit_code: Option<u32> = None;
@@ -138,9 +152,15 @@ async fn proc_main(
         TaskCmd::Start => {
           if process.is_none() {
             process = start_instance(&ctx, &spec, task_screen.vt());
-            if process.is_some() {
+            if let Some(p) = &process {
               exit_code = None;
               stdout_eof = false;
+              update_log_observer(
+                &mut task_screen,
+                &mut log,
+                &mut current_log,
+                p.pid(),
+              );
             }
           }
         }
@@ -203,6 +223,31 @@ async fn proc_main(
       }
     }
   }
+}
+
+fn update_log_observer(
+  task_screen: &mut TaskScreen,
+  log: &mut Option<LogResolver>,
+  current: &mut Option<(std::path::PathBuf, u64)>,
+  pid: u32,
+) {
+  let Some(resolve) = log.as_mut() else {
+    return;
+  };
+  let Some(sink) = resolve(pid) else {
+    return;
+  };
+  if let Some((path, _)) = current {
+    if *path == sink.path {
+      return;
+    }
+  }
+  if let Some((_, id)) = current.take() {
+    task_screen.remove_direct_observer(id);
+  }
+  let path = sink.path.clone();
+  let id = task_screen.add_direct_observer(spawn_logger(sink));
+  *current = Some((path, id));
 }
 
 fn start_instance(
@@ -373,6 +418,7 @@ mod tests {
     KernelCommand, KernelQuery, KernelQueryResponse, TaskContext,
   };
   use crate::kernel::task::TaskId;
+  use crate::task::logger::LogSink;
 
   use super::*;
 
@@ -410,14 +456,17 @@ mod tests {
       "-c".to_string(),
       "printf hello-log".to_string(),
     ]);
+    let sink_path = log_path.clone();
     spawn_proc_task(
       &pc,
       path,
       ProcTaskConfig {
-        log: Some(LogSink {
-          path: log_path.clone(),
-          append: false,
-        }),
+        log: Some(Box::new(move |_pid| {
+          Some(LogSink {
+            path: sink_path.clone(),
+            append: false,
+          })
+        })),
         ..ProcTaskConfig::new(spec)
       },
     );
@@ -446,6 +495,70 @@ mod tests {
       .unwrap();
 
     let _ = std::fs::remove_file(&log_path);
+  }
+
+  #[tokio::test]
+  async fn log_path_is_resolved_with_real_pid() {
+    use std::sync::{Arc, Mutex};
+
+    let nanos = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .unwrap()
+      .as_nanos();
+    let mut dir = std::env::temp_dir();
+    dir.push(format!("mprocs_pidlog_{}_{}", std::process::id(), nanos));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let kernel = Kernel::new();
+    let pc = kernel.context();
+
+    let spec = ProcessSpec::from_argv(vec![
+      "sh".to_string(),
+      "-c".to_string(),
+      "printf hi".to_string(),
+    ]);
+    let seen_pid = Arc::new(Mutex::new(None::<u32>));
+    let cap = seen_pid.clone();
+    let log_dir = dir.clone();
+    spawn_proc_task(
+      &pc,
+      TaskPath::new("/pidlog").unwrap(),
+      ProcTaskConfig {
+        log: Some(Box::new(move |pid| {
+          *cap.lock().unwrap() = Some(pid);
+          Some(LogSink {
+            path: log_dir.join(format!("{pid}.log")),
+            append: false,
+          })
+        })),
+        ..ProcTaskConfig::new(spec)
+      },
+    );
+
+    let kernel_task = tokio::spawn(kernel.run());
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let pid = loop {
+      if let Some(pid) = *seen_pid.lock().unwrap() {
+        let log = dir.join(format!("{pid}.log"));
+        if std::fs::read_to_string(&log).is_ok_and(|c| c.contains("hi")) {
+          break pid;
+        }
+      }
+      assert!(Instant::now() < deadline, "pid-named log never got output");
+      tokio::time::sleep(Duration::from_millis(10)).await;
+    };
+    assert_ne!(pid, 0, "resolver should receive a real pid");
+
+    let id = resolve(&pc, "/pidlog").await;
+    pc.send(KernelCommand::RemoveTask(id));
+    pc.send(KernelCommand::Quit);
+    tokio::time::timeout(Duration::from_secs(2), kernel_task)
+      .await
+      .expect("timed out waiting for kernel to quit")
+      .unwrap();
+
+    let _ = std::fs::remove_dir_all(&dir);
   }
 
   #[tokio::test]

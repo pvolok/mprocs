@@ -148,6 +148,11 @@ impl UnixProcess {
 impl Process for UnixProcess {
   fn on_exited(&mut self) {}
 
+  fn pid(&self) -> u32 {
+    let raw: i32 = self.pid.as_raw_nonzero().into();
+    raw as u32
+  }
+
   async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
     loop {
       let mut guard = self.master.readable().await?;
