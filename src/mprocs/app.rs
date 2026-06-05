@@ -8,10 +8,14 @@ use crate::{
   error::ResultLogger,
   kernel::{
     copy_mode::CopyMove as KernelCopyMove,
-    kernel_message::{KernelCommand, TaskContext},
+    kernel_message::{
+      KernelCommand, KernelQuery, KernelQueryResponse, TaskContext,
+    },
+    sub_trie::SubMode,
     task::{
       TaskCmd, TaskDef, TaskId, TaskNotification, TaskNotify, TaskStatus,
     },
+    task_path::TaskPath,
     task_screen::{FramedScreenNotify, TaskScreenCmd},
   },
   mprocs::server_message::ServerMessage,
@@ -19,7 +23,9 @@ use crate::{
   protocol::{CltToSrv, SrvToClt},
   task::{
     logger::{LogResolver, LogSink},
-    proc_task::{ProcInput, ProcTaskConfig, spawn_proc_task_with_id},
+    proc_task::{
+      DuplicateProc, ProcInput, ProcTaskConfig, spawn_proc_task_with_id,
+    },
   },
   term::{
     Grid, Size, TermEvent, Winsize,
@@ -167,14 +173,12 @@ impl App {
   }
 
   async fn main_loop(mut self) -> anyhow::Result<()> {
-    self.pc.send(KernelCommand::ListenTaskUpdates);
+    self
+      .pc
+      .subscribe_path(TaskPath::new("/").unwrap(), SubMode::Subtree);
+    self.refresh_procs().await;
 
-    self.start_procs(Rect {
-      x: 0,
-      y: 0,
-      width: self.screen_size.width,
-      height: self.screen_size.height,
-    })?;
+    self.start_procs()?;
 
     let mut render_needed = true;
     let mut last_term_size = self.get_layout().term_area().size();
@@ -265,7 +269,9 @@ impl App {
       client.sender.send(SrvToClt::Quit).await.log_ignore();
     }
 
-    self.pc.send(KernelCommand::UnlistenTaskUpdates);
+    self
+      .pc
+      .unsubscribe_path(TaskPath::new("/").unwrap(), SubMode::Subtree);
 
     Ok(())
   }
@@ -286,7 +292,30 @@ impl App {
     ));
   }
 
-  fn start_procs(&mut self, size: Rect) -> anyhow::Result<()> {
+  async fn refresh_procs(&mut self) {
+    let resp = self.pc.query(KernelQuery::ListTasks(None)).await;
+    let Ok(KernelQueryResponse::TaskList(list)) = resp else {
+      return;
+    };
+    let size = self.get_layout().term_area();
+    for task in list {
+      let (Some(path), Some(vt)) = (task.path, task.vt) else {
+        continue;
+      };
+      if self.state.procs.iter().any(|p| p.id() == task.id) {
+        continue;
+      }
+      self.state.procs.push(ProcView::new(
+        task.id,
+        path.name().to_string(),
+        task.status,
+        vt,
+      ));
+      self.observe_proc(task.id, size);
+    }
+  }
+
+  fn start_procs(&mut self) -> anyhow::Result<()> {
     let task_ids: Vec<TaskId> = self
       .config
       .procs
@@ -295,38 +324,51 @@ impl App {
       .collect();
     let deps_by_proc = resolve_proc_deps(&self.config.procs, &task_ids)?;
 
-    let procs = self
+    let specs: Vec<(ProcConfig, TaskId, Vec<TaskId>)> = self
       .config
       .procs
       .iter()
       .enumerate()
-      .map(|(i, cfg)| {
-        self.spawn_proc(cfg.clone(), task_ids[i], deps_by_proc[i].clone())
-      })
-      .collect::<Vec<_>>();
-
-    for proc in &procs {
-      self.observe_proc(proc.id(), size);
+      .map(|(i, cfg)| (cfg.clone(), task_ids[i], deps_by_proc[i].clone()))
+      .collect();
+    for (cfg, id, deps) in specs {
+      self.spawn_proc(cfg, id, deps);
     }
-
-    self.state.procs.extend(procs);
 
     Ok(())
   }
 
-  fn spawn_proc(
-    &self,
-    cfg: ProcConfig,
-    task_id: TaskId,
-    deps: Vec<TaskId>,
-  ) -> ProcView {
-    let vt = spawn_proc_task_with_id(
+  fn spawn_proc(&self, cfg: ProcConfig, task_id: TaskId, deps: Vec<TaskId>) {
+    let path = match TaskPath::new(format!("/{}", cfg.name)) {
+      Ok(path) => path,
+      Err(err) => {
+        log::warn!("Invalid proc name {:?}: {}", cfg.name, err);
+        return;
+      }
+    };
+    spawn_proc_task_with_id(
       &self.pc,
       task_id,
-      None,
+      Some(path),
       proc_task_config(&cfg, task_id, deps),
     );
-    ProcView::new(task_id, cfg, TaskStatus::NotStarted, vt)
+  }
+
+  fn unique_proc_name(&self, base: &str, exclude: Option<TaskId>) -> String {
+    let taken = |name: &str| {
+      self
+        .state
+        .procs
+        .iter()
+        .any(|p| Some(p.id()) != exclude && p.name() == name)
+    };
+    if !taken(base) {
+      return base.to_string();
+    }
+    (2..)
+      .map(|n| format!("{}-{}", base, n))
+      .find(|name| !taken(name))
+      .unwrap()
   }
 
   fn handle_server_message(
@@ -661,12 +703,9 @@ impl App {
         loop_action.render();
       }
       AppEvent::AddProc { cmd, name } => {
-        let name = match name {
-          Some(s) => s,
-          None => cmd,
-        };
+        let name = name.clone().unwrap_or_else(|| cmd.clone());
         let proc_config = ProcConfig {
-          name: name.clone(),
+          name: self.unique_proc_name(&name, None),
           cmd: CmdConfig::Shell {
             shell: cmd.to_string(),
           },
@@ -680,26 +719,19 @@ impl App {
           scrollback_len: self.config.scrollback_len,
           log: self.config.proc_log.clone(),
         };
-        let term_area = self.get_layout().term_area();
         let id = self.pc.alloc_id();
-        let proc_handle = self.spawn_proc(proc_config, id, Vec::new());
-        self.observe_proc(id, term_area);
-        self.state.procs.push(proc_handle);
-
+        self.spawn_proc(proc_config, id, Vec::new());
         loop_action.render();
       }
       AppEvent::DuplicateProc => {
-        let cfg = match self.state.get_current_proc() {
-          Some(proc_handle) => Some(proc_handle.cfg.clone()),
-          None => None,
-        };
-        if let Some(cfg) = cfg {
-          let size = self.get_layout().term_area();
-          log::debug!("TODO: Copy deps for duplicate proc.");
-          let id = self.pc.alloc_id();
-          let proc_handle = self.spawn_proc(cfg, id, Vec::new());
-          self.observe_proc(id, size);
-          self.state.procs.push(proc_handle);
+        if let Some(proc) = self.state.get_current_proc() {
+          let name = self.unique_proc_name(proc.name(), None);
+          if let Ok(path) = TaskPath::new(format!("/{}", name)) {
+            pc.send(KernelCommand::TaskCmd(
+              proc.id(),
+              TaskCmd::msg(DuplicateProc(path)),
+            ));
+          }
           loop_action.render();
         }
       }
@@ -714,9 +746,7 @@ impl App {
         }
       }
       AppEvent::RemoveProc { id } => {
-        let id = *id;
-        self.state.procs.retain(|p| p.is_up() || p.id() != id);
-        self.pc.send(KernelCommand::RemoveTask(id));
+        self.pc.send(KernelCommand::RemoveTask(*id));
         loop_action.render();
       }
 
@@ -730,8 +760,12 @@ impl App {
         loop_action.render();
       }
       AppEvent::RenameProc { name } => {
-        if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.rename(name);
+        if let Some(proc) = self.state.get_current_proc() {
+          let id = proc.id();
+          let name = self.unique_proc_name(name, Some(id));
+          if let Ok(path) = TaskPath::new(format!("/{}", name)) {
+            self.pc.set_task_path(id, path);
+          }
           loop_action.render();
         }
       }
@@ -886,7 +920,23 @@ impl App {
     notify: TaskNotify,
   ) {
     match notify {
-      TaskNotify::Added(_, _, _) => {}
+      TaskNotify::Added(path, status, vt) => {
+        let (Some(path), Some(vt)) = (path, vt) else {
+          return;
+        };
+        if self.state.procs.iter().any(|p| p.id() == task_id) {
+          return;
+        }
+        self.state.procs.push(ProcView::new(
+          task_id,
+          path.name().to_string(),
+          status,
+          vt,
+        ));
+        let size = self.get_layout().term_area();
+        self.observe_proc(task_id, size);
+        loop_action.render();
+      }
       TaskNotify::Started => {
         if let Some(proc) = self.state.get_proc_mut(task_id) {
           proc.status = TaskStatus::Running;
@@ -909,8 +959,18 @@ impl App {
           loop_action.render();
         }
       }
-      TaskNotify::Removed => {}
-      TaskNotify::PathChanged(_, _) => {}
+      TaskNotify::Removed => {
+        self.state.procs.retain(|p| p.id() != task_id);
+        loop_action.render();
+      }
+      TaskNotify::PathChanged(_, new) => {
+        if let Some(new) = new
+          && let Some(proc) = self.state.get_proc_mut(task_id)
+        {
+          proc.set_name(new.name().to_string());
+          loop_action.render();
+        }
+      }
     }
   }
 

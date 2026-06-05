@@ -19,6 +19,8 @@ struct ProcExited(u32);
 
 pub struct ProcInput(pub Key);
 
+pub struct DuplicateProc(pub TaskPath);
+
 /// How a proc task should react to `Stop` (`Kill` is always a hard kill).
 #[derive(Clone, Debug, Default)]
 pub enum StopSignal {
@@ -64,10 +66,10 @@ pub fn spawn_proc_task(
   parent: &TaskContext,
   task_path: Option<TaskPath>,
   config: ProcTaskConfig,
-) -> (TaskId, SharedVt) {
+) -> TaskId {
   let task_id = parent.alloc_id();
-  let vt = spawn_proc_task_with_id(parent, task_id, task_path, config);
-  (task_id, vt)
+  spawn_proc_task_with_id(parent, task_id, task_path, config);
+  task_id
 }
 
 pub fn spawn_proc_task_with_id(
@@ -75,7 +77,7 @@ pub fn spawn_proc_task_with_id(
   task_id: TaskId,
   task_path: Option<TaskPath>,
   config: ProcTaskConfig,
-) -> SharedVt {
+) {
   let ProcTaskConfig {
     spec,
     stop,
@@ -87,7 +89,6 @@ pub fn spawn_proc_task_with_id(
   } = config;
   let vt = SharedVt::new(Parser::new(24, 80, scrollback_len));
   let task_vt = vt.clone();
-  let ret_vt = vt.clone();
   parent.spawn_async_with_id(
     task_id,
     TaskDef {
@@ -100,10 +101,19 @@ pub fn spawn_proc_task_with_id(
       ..Default::default()
     },
     move |ctx, receiver| async move {
-      proc_main(ctx, receiver, spec, task_vt, log, stop).await;
+      proc_main(
+        ctx,
+        receiver,
+        spec,
+        task_vt,
+        log,
+        stop,
+        scrollback_len,
+        autorestart,
+      )
+      .await;
     },
   );
-  ret_vt
 }
 
 async fn proc_main(
@@ -113,6 +123,8 @@ async fn proc_main(
   vt: SharedVt,
   mut log: Option<LogResolver>,
   stop: StopSignal,
+  scrollback_len: usize,
+  autorestart: bool,
 ) {
   let mut task_screen = TaskScreen::new(ctx.task_id, vt);
   let mut screen_effects: Vec<TaskScreenEffect> = Vec::new();
@@ -202,6 +214,25 @@ async fn proc_main(
               if let Some(p) = process.as_mut() {
                 send_key(p, task_screen.vt(), input.0).await;
               }
+              continue;
+            }
+            Err(msg) => msg,
+          };
+          let msg = match msg.downcast::<DuplicateProc>() {
+            Ok(dup) => {
+              spawn_proc_task(
+                &ctx,
+                Some(dup.0),
+                ProcTaskConfig {
+                  spec: spec.clone(),
+                  stop: stop.clone(),
+                  log: None,
+                  autostart: true,
+                  autorestart,
+                  scrollback_len,
+                  deps: Vec::new(),
+                },
+              );
               continue;
             }
             Err(msg) => msg,

@@ -215,24 +215,35 @@ impl Kernel {
         }
 
         KernelCommand::SetTaskPath(task_id, path) => {
-          let old_path = self.tasks.get(&task_id).and_then(|t| t.path.clone());
-          let mut changed = false;
-          if let Some(task) = self.tasks.get_mut(&task_id) {
-            if let Some(old_path) = task.path.take() {
-              self.path_trie.remove(&old_path);
+          let taken_by_other = self
+            .path_trie
+            .resolve(&path)
+            .is_some_and(|holder| holder != task_id);
+          if !self.tasks.contains_key(&task_id) {
+            // Unknown task; nothing to move.
+          } else if taken_by_other {
+            // Reject up front so the task never loses its current path: only
+            // free the old one once the new one is known to be available.
+            log::warn!("Path conflict: {} is already taken", path);
+          } else {
+            let old_path =
+              self.tasks.get_mut(&task_id).and_then(|t| t.path.take());
+            if let Some(old) = &old_path {
+              self.path_trie.remove(old);
             }
             match self.path_trie.insert(&path, task_id) {
               Ok(()) => {
-                task.path = Some(path.clone());
-                changed = true;
+                if let Some(task) = self.tasks.get_mut(&task_id) {
+                  task.path = Some(path.clone());
+                }
+                if old_path.as_ref() != Some(&path) {
+                  self.notify_path_changed(task_id, old_path, Some(path));
+                }
               }
               Err(err) => {
                 log::warn!("Path conflict: {}", err);
               }
             }
-          }
-          if changed {
-            self.notify_path_changed(task_id, old_path, Some(path));
           }
         }
 
@@ -762,6 +773,66 @@ mod tests {
       Err(TryRecvError::Disconnected) => panic!("task command channel closed"),
       Err(TryRecvError::Empty) => {}
     }
+  }
+
+  async fn resolve(pc: &TaskContext, path: &str) -> Option<TaskId> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    pc.send(KernelCommand::Query(
+      KernelQuery::ResolvePath(TaskPath::new(path).unwrap()),
+      tx,
+    ));
+    let resp = tokio::time::timeout(Duration::from_secs(1), rx)
+      .await
+      .expect("timed out resolving path")
+      .expect("kernel query channel closed");
+    match resp {
+      KernelQueryResponse::ResolvedPath(id) => id,
+      _ => panic!("unexpected query response"),
+    }
+  }
+
+  fn path_task(
+    path: &str,
+  ) -> (
+    UnboundedReceiver<RecordedCmd>,
+    TaskDef,
+    impl FnOnce(TaskContext) -> Box<dyn Task> + 'static,
+  ) {
+    let (rx, factory) = recording_task();
+    let def = TaskDef {
+      path: Some(TaskPath::new(path).unwrap()),
+      ..Default::default()
+    };
+    (rx, def, factory)
+  }
+
+  #[tokio::test]
+  async fn set_task_path_rejects_conflict_and_keeps_old_path() {
+    let mut kernel = Kernel::new();
+    let pc = kernel.context();
+
+    let (_a_rx, a_def, a_task) = path_task("/a");
+    let a = kernel.register_task(a_def, a_task);
+    let (_b_rx, b_def, b_task) = path_task("/b");
+    let b = kernel.register_task(b_def, b_task);
+
+    let kernel_task = tokio::spawn(kernel.run());
+
+    // Target taken by another task: rejected, both paths intact.
+    pc.send(KernelCommand::SetTaskPath(a, TaskPath::new("/b").unwrap()));
+    assert_eq!(resolve(&pc, "/a").await, Some(a));
+    assert_eq!(resolve(&pc, "/b").await, Some(b));
+
+    // Free target: moves cleanly, old path released.
+    pc.send(KernelCommand::SetTaskPath(a, TaskPath::new("/c").unwrap()));
+    assert_eq!(resolve(&pc, "/c").await, Some(a));
+    assert_eq!(resolve(&pc, "/a").await, None);
+
+    pc.send(KernelCommand::Quit);
+    tokio::time::timeout(Duration::from_secs(1), kernel_task)
+      .await
+      .expect("timed out waiting for kernel to quit")
+      .unwrap();
   }
 
   #[tokio::test]

@@ -2,11 +2,10 @@ use crate::kernel::{
   kernel_message::SharedVt,
   task::{TaskId, TaskStatus},
 };
-use crate::mprocs::config::ProcConfig;
 
 pub struct ProcView {
   pub id: TaskId,
-  pub cfg: ProcConfig,
+  pub name: String,
 
   pub status: TaskStatus,
   pub vt: SharedVt,
@@ -20,24 +19,22 @@ pub struct ProcView {
 impl ProcView {
   pub fn new(
     id: TaskId,
-    cfg: ProcConfig,
+    name: String,
     status: TaskStatus,
     vt: SharedVt,
   ) -> Self {
     Self {
       id,
-      cfg,
-
+      name,
       status,
       vt,
       present: None,
-
       changed: false,
     }
   }
 
-  pub fn rename(&mut self, name: &str) {
-    self.cfg.name.replace_range(.., name);
+  pub fn set_name(&mut self, name: String) {
+    self.name = name;
   }
 
   pub fn id(&self) -> TaskId {
@@ -60,7 +57,7 @@ impl ProcView {
   }
 
   pub fn name(&self) -> &str {
-    &self.cfg.name
+    &self.name
   }
 
   pub fn is_up(&self) -> bool {
