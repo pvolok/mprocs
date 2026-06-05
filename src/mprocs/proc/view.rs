@@ -4,18 +4,6 @@ use crate::kernel::{
 };
 use crate::mprocs::config::ProcConfig;
 
-use std::time::Instant;
-
-/// Amount of time a process has to stay up for autorestart to trigger
-pub const RESTART_THRESHOLD_SECONDS: f64 = 1.0;
-
-#[derive(Clone, Copy)]
-pub enum TargetState {
-  None,
-  Started,
-  Stopped,
-}
-
 pub struct ProcView {
   pub id: TaskId,
   pub cfg: ProcConfig,
@@ -26,23 +14,24 @@ pub struct ProcView {
   /// `vt` while copy mode is active. Set/cleared by `CopyEntered`/`CopyLeft`.
   pub present: Option<SharedVt>,
 
-  pub target_state: TargetState,
-  pub last_start: Option<Instant>,
   pub changed: bool,
 }
 
 impl ProcView {
-  pub fn new(id: TaskId, cfg: ProcConfig, vt: SharedVt) -> Self {
+  pub fn new(
+    id: TaskId,
+    cfg: ProcConfig,
+    status: TaskStatus,
+    vt: SharedVt,
+  ) -> Self {
     Self {
       id,
       cfg,
 
-      status: TaskStatus::NotStarted,
+      status,
       vt,
       present: None,
 
-      target_state: TargetState::None,
-      last_start: None,
       changed: false,
     }
   }

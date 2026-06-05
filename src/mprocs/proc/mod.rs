@@ -1,6 +1,3 @@
-mod inst;
-pub mod msg;
-pub mod proc;
 pub mod view;
 
 use anyhow::bail;
@@ -70,10 +67,4 @@ mod tests {
       ]
     );
   }
-}
-
-#[derive(Clone)]
-pub struct Size {
-  width: u16,
-  height: u16,
 }

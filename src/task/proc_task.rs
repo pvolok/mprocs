@@ -62,20 +62,20 @@ impl ProcTaskConfig {
 
 pub fn spawn_proc_task(
   parent: &TaskContext,
-  task_path: TaskPath,
+  task_path: Option<TaskPath>,
   config: ProcTaskConfig,
-) -> TaskId {
+) -> (TaskId, SharedVt) {
   let task_id = parent.alloc_id();
-  spawn_proc_task_with_id(parent, task_id, task_path, config);
-  task_id
+  let vt = spawn_proc_task_with_id(parent, task_id, task_path, config);
+  (task_id, vt)
 }
 
 pub fn spawn_proc_task_with_id(
   parent: &TaskContext,
   task_id: TaskId,
-  task_path: TaskPath,
+  task_path: Option<TaskPath>,
   config: ProcTaskConfig,
-) {
+) -> SharedVt {
   let ProcTaskConfig {
     spec,
     stop,
@@ -87,6 +87,7 @@ pub fn spawn_proc_task_with_id(
   } = config;
   let vt = SharedVt::new(Parser::new(24, 80, scrollback_len));
   let task_vt = vt.clone();
+  let ret_vt = vt.clone();
   parent.spawn_async_with_id(
     task_id,
     TaskDef {
@@ -94,7 +95,7 @@ pub fn spawn_proc_task_with_id(
       autostart,
       autorestart,
       deps,
-      path: Some(task_path),
+      path: task_path,
       vt: Some(vt),
       ..Default::default()
     },
@@ -102,6 +103,7 @@ pub fn spawn_proc_task_with_id(
       proc_main(ctx, receiver, spec, task_vt, log, stop).await;
     },
   );
+  ret_vt
 }
 
 async fn proc_main(
@@ -123,11 +125,11 @@ async fn proc_main(
   let mut exit_code: Option<u32> = None;
 
   loop {
-    if process.is_some()
-      && stdout_eof
+    if stdout_eof
       && let Some(code) = exit_code
+      && let Some(mut exited) = process.take()
     {
-      process = None;
+      exited.on_exited();
       ctx.send(KernelCommand::TaskStopped(code));
     }
 
@@ -459,7 +461,7 @@ mod tests {
     let sink_path = log_path.clone();
     spawn_proc_task(
       &pc,
-      path,
+      Some(path),
       ProcTaskConfig {
         log: Some(Box::new(move |_pid| {
           Some(LogSink {
@@ -522,7 +524,7 @@ mod tests {
     let log_dir = dir.clone();
     spawn_proc_task(
       &pc,
-      TaskPath::new("/pidlog").unwrap(),
+      Some(TaskPath::new("/pidlog").unwrap()),
       ProcTaskConfig {
         log: Some(Box::new(move |pid| {
           *cap.lock().unwrap() = Some(pid);
@@ -581,7 +583,7 @@ mod tests {
     ]);
     spawn_proc_task(
       &pc,
-      path,
+      Some(path),
       ProcTaskConfig {
         stop: StopSignal::Cmd(format!("printf done > {}", marker.display())),
         ..ProcTaskConfig::new(spec)

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Instant};
+use std::collections::HashMap;
 
 use anyhow::bail;
 use futures::{future::FutureExt, select};
@@ -15,7 +15,12 @@ use crate::{
     task_screen::{FramedScreenNotify, TaskScreenCmd},
   },
   mprocs::server_message::ServerMessage,
+  process::process_spec::ProcessSpec,
   protocol::{CltToSrv, SrvToClt},
+  task::{
+    logger::{LogResolver, LogSink},
+    proc_task::{ProcInput, ProcTaskConfig, spawn_proc_task_with_id},
+  },
   term::{
     Grid, Size, TermEvent, Winsize,
     attrs::Attrs,
@@ -36,12 +41,8 @@ use crate::{
       quit::QuitModal, remove_proc::RemoveProcModal,
       rename_proc::RenameProcModal,
     },
-    proc::{
-      StopSignal,
-      msg::ProcMsg,
-      proc::launch_proc,
-      view::{ProcView, RESTART_THRESHOLD_SECONDS, TargetState},
-    },
+    proc::{StopSignal, view::ProcView},
+    proc_log_config::LogMode,
     state::{Scope, State},
     ui_keymap::render_keymap,
     ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
@@ -294,20 +295,13 @@ impl App {
       .collect();
     let deps_by_proc = resolve_proc_deps(&self.config.procs, &task_ids)?;
 
-    let mut procs = self
+    let procs = self
       .config
       .procs
       .iter()
       .enumerate()
-      .map(|(i, proc_cfg)| {
-        launch_proc(
-          &self.pc,
-          proc_cfg.clone(),
-          task_ids[i],
-          deps_by_proc[i].clone(),
-          None,
-          size,
-        )
+      .map(|(i, cfg)| {
+        self.spawn_proc(cfg.clone(), task_ids[i], deps_by_proc[i].clone())
       })
       .collect::<Vec<_>>();
 
@@ -315,9 +309,24 @@ impl App {
       self.observe_proc(proc.id(), size);
     }
 
-    self.state.procs.append(&mut procs);
+    self.state.procs.extend(procs);
 
     Ok(())
+  }
+
+  fn spawn_proc(
+    &self,
+    cfg: ProcConfig,
+    task_id: TaskId,
+    deps: Vec<TaskId>,
+  ) -> ProcView {
+    let vt = spawn_proc_task_with_id(
+      &self.pc,
+      task_id,
+      None,
+      proc_task_config(&cfg, task_id, deps),
+    );
+    ProcView::new(task_id, cfg, TaskStatus::NotStarted, vt)
   }
 
   fn handle_server_message(
@@ -532,19 +541,17 @@ impl App {
       }
       AppEvent::Quit => {
         self.state.quitting = true;
-        for proc_handle in self.state.procs.iter_mut() {
-          proc_handle.target_state = TargetState::Stopped;
-          if proc_handle.is_up() {
-            pc.send(KernelCommand::TaskCmd(proc_handle.id(), TaskCmd::Stop));
+        for proc in self.state.procs.iter() {
+          if proc.is_up() {
+            pc.send(KernelCommand::TaskCmd(proc.id(), TaskCmd::Stop));
           }
         }
         loop_action.render();
       }
       AppEvent::ForceQuit => {
-        for proc_handle in self.state.procs.iter_mut() {
-          proc_handle.target_state = TargetState::Stopped;
-          if proc_handle.is_up() {
-            pc.send(KernelCommand::TaskCmd(proc_handle.id(), TaskCmd::Kill));
+        for proc in self.state.procs.iter() {
+          if proc.is_up() {
+            pc.send(KernelCommand::TaskCmd(proc.id(), TaskCmd::Kill));
           }
         }
         loop_action.force_quit();
@@ -600,61 +607,38 @@ impl App {
       }
 
       AppEvent::StartProc => {
-        if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.target_state = TargetState::Started;
+        if let Some(proc) = self.state.get_current_proc() {
           pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Start));
         }
       }
       AppEvent::TermProc => {
-        if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.target_state = TargetState::Stopped;
+        if let Some(proc) = self.state.get_current_proc() {
           pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Stop));
         }
       }
       AppEvent::KillProc => {
-        if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.target_state = TargetState::Stopped;
+        if let Some(proc) = self.state.get_current_proc() {
           pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Kill));
         }
       }
       AppEvent::RestartProc => {
-        if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.target_state = TargetState::Started;
-          if proc.is_up() {
-            pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Stop));
-          } else {
-            pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Start));
-          }
+        if let Some(proc) = self.state.get_current_proc() {
+          restart_proc(&pc, proc, TaskCmd::Stop);
         }
       }
       AppEvent::RestartAll => {
-        for proc in &mut self.state.procs {
-          proc.target_state = TargetState::Started;
-          if proc.is_up() {
-            pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Stop));
-          } else {
-            pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Start));
-          }
+        for proc in &self.state.procs {
+          restart_proc(&pc, proc, TaskCmd::Stop);
         }
       }
       AppEvent::ForceRestartProc => {
-        if let Some(proc) = self.state.get_current_proc_mut() {
-          proc.target_state = TargetState::Started;
-          if proc.is_up() {
-            pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Kill));
-          } else {
-            pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Start));
-          }
+        if let Some(proc) = self.state.get_current_proc() {
+          restart_proc(&pc, proc, TaskCmd::Kill);
         }
       }
       AppEvent::ForceRestartAll => {
-        for proc in &mut self.state.procs {
-          proc.target_state = TargetState::Started;
-          if proc.is_up() {
-            pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Kill));
-          } else {
-            pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Start));
-          }
+        for proc in &self.state.procs {
+          restart_proc(&pc, proc, TaskCmd::Kill);
         }
       }
 
@@ -697,30 +681,24 @@ impl App {
           log: self.config.proc_log.clone(),
         };
         let term_area = self.get_layout().term_area();
-        let proc_handle = launch_proc(
-          &pc,
-          proc_config,
-          self.pc.alloc_id(),
-          Vec::new(),
-          None,
-          term_area,
-        );
-        self.observe_proc(proc_handle.id(), term_area);
+        let id = self.pc.alloc_id();
+        let proc_handle = self.spawn_proc(proc_config, id, Vec::new());
+        self.observe_proc(id, term_area);
         self.state.procs.push(proc_handle);
 
         loop_action.render();
       }
       AppEvent::DuplicateProc => {
-        let cfg = match self.state.get_current_proc_mut() {
+        let cfg = match self.state.get_current_proc() {
           Some(proc_handle) => Some(proc_handle.cfg.clone()),
           None => None,
         };
         if let Some(cfg) = cfg {
           let size = self.get_layout().term_area();
           log::debug!("TODO: Copy deps for duplicate proc.");
-          let proc_handle =
-            launch_proc(&pc, cfg, self.pc.alloc_id(), Vec::new(), None, size);
-          self.observe_proc(proc_handle.id(), size);
+          let id = self.pc.alloc_id();
+          let proc_handle = self.spawn_proc(cfg, id, Vec::new());
+          self.observe_proc(id, size);
           self.state.procs.push(proc_handle);
           loop_action.render();
         }
@@ -809,10 +787,10 @@ impl App {
       }
 
       AppEvent::SendKey { key } => {
-        if let Some(proc) = self.state.get_current_proc_mut() {
+        if let Some(proc) = self.state.get_current_proc() {
           pc.send(KernelCommand::TaskCmd(
             proc.id,
-            TaskCmd::msg(ProcMsg::SendKey(*key)),
+            TaskCmd::msg(ProcInput(*key)),
           ));
         }
       }
@@ -912,62 +890,22 @@ impl App {
       TaskNotify::Started => {
         if let Some(proc) = self.state.get_proc_mut(task_id) {
           proc.status = TaskStatus::Running;
-          proc.last_start = Some(Instant::now());
-          match proc.target_state {
-            TargetState::None => (),
-            TargetState::Started => {
-              proc.target_state = TargetState::None;
-            }
-            TargetState::Stopped => {
-              self.pc.send(KernelCommand::TaskCmd(task_id, TaskCmd::Stop));
-            }
-          }
           loop_action.render();
         }
       }
       TaskNotify::Stopped(exit_code) => {
-        if let Some(proc) = self.state.get_proc_mut(task_id) {
+        let known = if let Some(proc) = self.state.get_proc_mut(task_id) {
           proc.status = TaskStatus::Exited(exit_code);
-
-          let restart = match proc.target_state {
-            TargetState::None if proc.cfg.autorestart && exit_code != 0 => {
-              match proc.last_start {
-                Some(last_start) => {
-                  let elapsed_time = Instant::now().duration_since(last_start);
-                  elapsed_time.as_secs_f64() > RESTART_THRESHOLD_SECONDS
-                }
-                None => true,
-              }
-            }
-            TargetState::None => false,
-            TargetState::Started => true,
-            TargetState::Stopped => {
-              proc.target_state = TargetState::None;
-              false
-            }
-          };
-          if restart {
-            self
-              .pc
-              .send(KernelCommand::TaskCmd(task_id, TaskCmd::Start));
-          }
-
-          match proc.target_state {
-            TargetState::None => (),
-            TargetState::Started => (),
-            TargetState::Stopped => {
-              proc.target_state = TargetState::None;
+          true
+        } else {
+          false
+        };
+        if known {
+          if self.state.all_procs_down() {
+            if let Some(event) = self.config.on_all_finished.clone() {
+              self.handle_event(loop_action, &event);
             }
           }
-
-          if !restart {
-            if self.state.all_procs_down() {
-              if let Some(event) = self.config.on_all_finished.clone() {
-                self.handle_event(loop_action, &event);
-              }
-            }
-          }
-
           loop_action.render();
         }
       }
@@ -985,6 +923,39 @@ impl App {
       &self.config,
     )
   }
+}
+
+fn proc_task_config(
+  cfg: &ProcConfig,
+  task_id: TaskId,
+  deps: Vec<TaskId>,
+) -> ProcTaskConfig {
+  let log = cfg.log.clone().map(|log_cfg| {
+    let name = cfg.name.clone();
+    let id = task_id.0;
+    Box::new(move |pid: u32| {
+      log_cfg.file_path(&name, id, pid).map(|path| LogSink {
+        path,
+        append: log_cfg.mode() == LogMode::Append,
+      })
+    }) as LogResolver
+  });
+  ProcTaskConfig {
+    spec: ProcessSpec::from(cfg),
+    stop: cfg.stop.clone(),
+    log,
+    autostart: cfg.autostart,
+    autorestart: cfg.autorestart,
+    scrollback_len: cfg.scrollback_len,
+    deps,
+  }
+}
+
+fn restart_proc(pc: &TaskContext, proc: &ProcView, down: TaskCmd) {
+  if proc.is_up() {
+    pc.send(KernelCommand::TaskCmd(proc.id, down));
+  }
+  pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Start));
 }
 
 fn resolve_proc_deps(
