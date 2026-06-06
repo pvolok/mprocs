@@ -32,6 +32,7 @@ pub enum KernelCommand {
   TaskCmdByPath(TaskPath, TaskCmd),
 
   SetTaskPath(TaskId, TaskPath),
+  SetTaskLabel(TaskId, Option<String>),
 
   Query(
     KernelQuery,
@@ -69,6 +70,7 @@ pub enum KernelQueryResponse {
 pub struct TaskInfo {
   pub id: TaskId,
   pub path: Option<TaskPath>,
+  pub label: Option<String>,
   pub status: TaskStatus,
   pub vt: Option<SharedVt>,
 }
@@ -200,6 +202,10 @@ impl TaskContext {
 
   pub fn set_task_path(&self, task_id: TaskId, path: TaskPath) {
     self.send(KernelCommand::SetTaskPath(task_id, path));
+  }
+
+  pub fn set_task_label(&self, task_id: TaskId, label: Option<String>) {
+    self.send(KernelCommand::SetTaskLabel(task_id, label));
   }
 
   pub fn subscribe_path(&self, path: TaskPath, mode: SubMode) {

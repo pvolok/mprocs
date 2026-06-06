@@ -19,7 +19,7 @@ struct ProcExited(u32);
 
 pub struct ProcInput(pub Key);
 
-pub struct DuplicateProc(pub TaskPath);
+pub struct DuplicateProc(pub Option<String>);
 
 /// How a proc task should react to `Stop` (`Kill` is always a hard kill).
 #[derive(Clone, Debug, Default)]
@@ -40,6 +40,7 @@ pub enum StopSignal {
 
 pub struct ProcTaskConfig {
   pub spec: ProcessSpec,
+  pub label: Option<String>,
   pub stop: StopSignal,
   pub log: Option<LogResolver>,
   pub autostart: bool,
@@ -52,6 +53,7 @@ impl ProcTaskConfig {
   pub fn new(spec: ProcessSpec) -> Self {
     Self {
       spec,
+      label: None,
       stop: StopSignal::default(),
       log: None,
       autostart: true,
@@ -86,6 +88,7 @@ pub fn spawn_proc_task_with_id(
     autorestart,
     scrollback_len,
     deps,
+    label,
   } = config;
   let vt = SharedVt::new(Parser::new(24, 80, scrollback_len));
   let task_vt = vt.clone();
@@ -97,6 +100,7 @@ pub fn spawn_proc_task_with_id(
       autorestart,
       deps,
       path: task_path,
+      label,
       vt: Some(vt),
       ..Default::default()
     },
@@ -220,9 +224,12 @@ async fn proc_main(
           };
           let msg = match msg.downcast::<DuplicateProc>() {
             Ok(dup) => {
-              spawn_proc_task(
+              let new_id = ctx.alloc_id();
+              let path = TaskPath::new(format!("/{}", new_id.0)).ok();
+              spawn_proc_task_with_id(
                 &ctx,
-                Some(dup.0),
+                new_id,
+                path,
                 ProcTaskConfig {
                   spec: spec.clone(),
                   stop: stop.clone(),
@@ -231,6 +238,7 @@ async fn proc_main(
                   autorestart,
                   scrollback_len,
                   deps: Vec::new(),
+                  label: dup.0,
                 },
               );
               continue;

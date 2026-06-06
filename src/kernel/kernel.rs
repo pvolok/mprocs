@@ -81,6 +81,7 @@ impl Kernel {
       TaskContext::new(self.next_task_id.clone(), task_id, self.sender.clone());
     let task = factory(ctx);
     let path = def.path.clone();
+    let label = def.label.clone();
     let vt = def.vt.clone();
     let autostart = def.autostart;
     let mut handle = TaskHandle {
@@ -94,6 +95,7 @@ impl Kernel {
       last_start: None,
       deps: HashMap::new(),
       path: def.path,
+      label: def.label,
       vt: def.vt,
     };
 
@@ -122,7 +124,12 @@ impl Kernel {
     self.notify_listeners(
       task_id,
       path.clone(),
-      TaskNotify::Added(path, status, vt),
+      TaskNotify::Added {
+        path,
+        label,
+        status,
+        vt,
+      },
     );
 
     // Autostart goes through the normal `Start` so dependency gating applies.
@@ -247,6 +254,24 @@ impl Kernel {
           }
         }
 
+        KernelCommand::SetTaskLabel(task_id, label) => {
+          let mut changed = false;
+          if let Some(task) = self.tasks.get_mut(&task_id) {
+            if task.label != label {
+              task.label = label.clone();
+              changed = true;
+            }
+          }
+          if changed {
+            let from_path = self.task_path(task_id);
+            self.notify_listeners(
+              task_id,
+              from_path,
+              TaskNotify::LabelChanged(label),
+            );
+          }
+        }
+
         KernelCommand::Query(query, response_tx) => {
           let response = match query {
             KernelQuery::ListTasks(glob) => {
@@ -260,6 +285,7 @@ impl Kernel {
                   self.tasks.get(&id).map(|handle| TaskInfo {
                     id,
                     path: Some(path),
+                    label: handle.label.clone(),
                     status: handle.status,
                     vt: handle.vt.clone(),
                   })
@@ -467,8 +493,8 @@ impl Kernel {
     old: Option<TaskPath>,
     new: Option<TaskPath>,
   ) {
-    let (status, vt) = match self.tasks.get(&from) {
-      Some(t) => (t.status, t.vt.clone()),
+    let (status, label, vt) = match self.tasks.get(&from) {
+      Some(t) => (t.status, t.label.clone(), t.vt.clone()),
       None => return,
     };
 
@@ -492,7 +518,12 @@ impl Kernel {
       self.deliver(
         from,
         Some(new.clone()),
-        TaskNotify::Added(Some(new.clone()), status, vt),
+        TaskNotify::Added {
+          path: Some(new.clone()),
+          label,
+          status,
+          vt,
+        },
         entering,
       );
     }
@@ -773,6 +804,51 @@ mod tests {
       Err(TryRecvError::Disconnected) => panic!("task command channel closed"),
       Err(TryRecvError::Empty) => {}
     }
+  }
+
+  async fn label_of(pc: &TaskContext, id: TaskId) -> Option<String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    pc.send(KernelCommand::Query(KernelQuery::ListTasks(None), tx));
+    let resp = tokio::time::timeout(Duration::from_secs(1), rx)
+      .await
+      .expect("timed out listing tasks")
+      .expect("kernel query channel closed");
+    match resp {
+      KernelQueryResponse::TaskList(list) => {
+        list.into_iter().find(|t| t.id == id).and_then(|t| t.label)
+      }
+      _ => panic!("unexpected query response"),
+    }
+  }
+
+  #[tokio::test]
+  async fn task_label_is_stored_and_updatable() {
+    let mut kernel = Kernel::new();
+    let pc = kernel.context();
+
+    let (_rx, factory) = recording_task();
+    // The label may hold characters that aren't valid in a path (spaces).
+    let id = kernel.register_task(
+      TaskDef {
+        path: Some(TaskPath::new("/1").unwrap()),
+        label: Some("web server".to_string()),
+        ..Default::default()
+      },
+      factory,
+    );
+
+    let kernel_task = tokio::spawn(kernel.run());
+
+    assert_eq!(label_of(&pc, id).await.as_deref(), Some("web server"));
+
+    pc.send(KernelCommand::SetTaskLabel(id, Some("renamed".to_string())));
+    assert_eq!(label_of(&pc, id).await.as_deref(), Some("renamed"));
+
+    pc.send(KernelCommand::Quit);
+    tokio::time::timeout(Duration::from_secs(1), kernel_task)
+      .await
+      .expect("timed out waiting for kernel to quit")
+      .unwrap();
   }
 
   async fn resolve(pc: &TaskContext, path: &str) -> Option<TaskId> {

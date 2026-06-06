@@ -78,24 +78,38 @@ pub struct TaskNotification {
 
 #[derive(Clone)]
 pub enum TaskNotify {
-  Added(Option<TaskPath>, TaskStatus, Option<SharedVt>),
+  Added {
+    path: Option<TaskPath>,
+    label: Option<String>,
+    status: TaskStatus,
+    vt: Option<SharedVt>,
+  },
   Started,
   Stopped(u32),
   Removed,
   PathChanged(Option<TaskPath>, Option<TaskPath>),
+  LabelChanged(Option<String>),
 }
 
 impl fmt::Debug for TaskNotify {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
-      TaskNotify::Added(path, status, _) => {
-        write!(f, "Added({:?}, {:?})", path, status)
+      TaskNotify::Added {
+        path,
+        label,
+        status,
+        ..
+      } => {
+        write!(f, "Added({:?}, {:?}, {:?})", path, label, status)
       }
       TaskNotify::Started => write!(f, "Started"),
       TaskNotify::Stopped(code) => write!(f, "Stopped({})", code),
       TaskNotify::Removed => write!(f, "Removed"),
       TaskNotify::PathChanged(old, new) => {
         write!(f, "PathChanged({:?}, {:?})", old, new)
+      }
+      TaskNotify::LabelChanged(label) => {
+        write!(f, "LabelChanged({:?})", label)
       }
     }
   }
@@ -134,6 +148,7 @@ pub struct TaskHandle {
   pub deps: HashMap<TaskId, DepInfo>,
 
   pub path: Option<TaskPath>,
+  pub label: Option<String>,
   pub vt: Option<SharedVt>,
 }
 
@@ -162,6 +177,7 @@ pub struct TaskDef {
   pub autorestart: bool,
   pub deps: Vec<TaskId>,
   pub path: Option<TaskPath>,
+  pub label: Option<String>,
   pub vt: Option<SharedVt>,
 }
 
@@ -174,6 +190,7 @@ impl Default for TaskDef {
       autorestart: false,
       deps: Vec::new(),
       path: None,
+      label: None,
       vt: None,
     }
   }

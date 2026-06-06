@@ -189,7 +189,9 @@ impl Console {
 
   fn handle_notification(&mut self, from: TaskId, notify: TaskNotify) -> bool {
     match notify {
-      TaskNotify::Added(path, status, vt) => {
+      TaskNotify::Added {
+        path, status, vt, ..
+      } => {
         let Some(path) = path else { return false };
         let path = path.to_string();
         let has_vt = vt.is_some();
@@ -247,6 +249,7 @@ impl Console {
         }
         true
       }
+      TaskNotify::LabelChanged(_) => false,
     }
   }
 
