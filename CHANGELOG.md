@@ -1,5 +1,9 @@
 ## Unreleased
 
+## 0.9.6 - 2026-06-06
+
+- Fix TUI freeze for unserializable keys (#226)
+
 ## 0.9.5 - 2026-06-01
 
 - Fix unbounded memory growth when process output contains an unterminated
