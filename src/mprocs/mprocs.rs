@@ -3,7 +3,6 @@ use std::{
   fs::File,
   io::BufRead,
   io::BufReader,
-  io::Read,
   path::{Path, PathBuf},
 };
 
@@ -15,7 +14,6 @@ use crate::mprocs::app::create_app_task;
 use crate::mprocs::config::{
   CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig,
 };
-use crate::mprocs::config_lua::load_lua_config;
 use crate::mprocs::ctl::run_ctl;
 use crate::mprocs::just::load_just_procs;
 use crate::mprocs::keymap::Keymap;
@@ -329,16 +327,6 @@ fn load_config_value(
   }
 
   {
-    let path = "mprocs.lua";
-    if Path::new(path).is_file() {
-      return Ok(Some((
-        read_value(path)?,
-        ConfigContext { path: path.into() },
-      )));
-    }
-  }
-
-  {
     let path = "mprocs.yaml";
     if Path::new(path).is_file() {
       return Ok(Some((
@@ -372,18 +360,13 @@ fn read_value(path: &str) -> Result<Value> {
       _kind => return Err(err.into()),
     },
   };
-  let mut reader = std::io::BufReader::new(file);
+  let reader = std::io::BufReader::new(file);
   let ext = std::path::Path::new(path)
     .extension()
     .map_or_else(|| "".to_string(), |ext| ext.to_string_lossy().to_string());
   let mut value: Value = match ext.as_str() {
     "yaml" | "yml" | "json" => serde_yaml::from_reader(reader)?,
-    "lua" => {
-      let mut buf = String::new();
-      reader.read_to_string(&mut buf)?;
-      load_lua_config(path, &buf)?
-    }
-    _ => bail!("Supported config extensions: lua, yaml, yml, json."),
+    _ => bail!("Supported config extensions: yaml, yml, json."),
   };
   value.apply_merge().unwrap();
   Ok(value)

@@ -11,7 +11,6 @@ use crate::{
   },
   dekit::{rpc_client::rpc_request, server::run_server},
   js::js_vm::JsVm,
-  lualib::init_std,
   protocol::{CltToSrv, DkRequest, DkResponse, SrvToClt},
 };
 
@@ -289,29 +288,8 @@ pub async fn dekit_main() -> anyhow::Result<()> {
         .unwrap_or_default();
 
       if let Some(first) = paths.first() {
-        // .lua
-        if first.ends_with(".lua") {
-          let src = std::fs::read_to_string(first)?;
-
-          let lua = mlua::Lua::new();
-          let cancel = tokio_util::sync::CancellationToken::new();
-          lua.set_app_data(cancel.clone());
-          lua
-            .globals()
-            .set("std", init_std(&lua).map_err(|e| anyhow!("{}", e))?)
-            .map_err(|e| anyhow!("{}", e))?;
-
-          let chunk = lua.load(src.clone());
-          let f: mlua::Function = chunk.eval().map_err(|e| anyhow!("{}", e))?;
-          let r = f
-            .call_async::<mlua::Value>(())
-            .await
-            .map_err(|e| anyhow!("{}", e))?;
-          println!("-> {:?}", r);
-          cancel.cancel();
-        }
         // .js
-        else if first.ends_with(".js") {
+        if first.ends_with(".js") {
           let src = std::fs::read_to_string(first)?;
 
           let vm = JsVm::new().await?;

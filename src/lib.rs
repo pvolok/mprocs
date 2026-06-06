@@ -10,7 +10,6 @@ mod ipc;
 mod js;
 mod kernel;
 mod logging;
-mod lualib;
 pub mod mprocs;
 mod process;
 mod protocol;
