@@ -143,9 +143,8 @@ async fn proc_main(
   loop {
     if stdout_eof
       && let Some(code) = exit_code
-      && let Some(mut exited) = process.take()
+      && process.take().is_some()
     {
-      exited.on_exited();
       ctx.send(KernelCommand::TaskStopped(code));
     }
 
@@ -196,6 +195,9 @@ async fn proc_main(
           let msg = match msg.downcast::<ProcExited>() {
             Ok(exited) => {
               exit_code = Some(exited.0);
+              if let Some(p) = process.as_mut() {
+                p.on_exited();
+              }
               continue;
             }
             Err(msg) => msg,
