@@ -1,4 +1,4 @@
-use crate::mprocs::{app::LoopAction, state::State};
+use crate::console::{app::LoopAction, state::State};
 use crate::term::{grid::Rect, Grid, TermEvent};
 
 pub trait Modal: Send {

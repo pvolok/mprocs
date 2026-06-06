@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::bail;
 
 use crate::{
-  console::create_console_task,
+  console::{app::create_app_task, app_client::client_session},
   daemon::{lockfile, socket::bind_server_socket},
   ipc::{receiver::MsgReceiver, sender::MsgSender},
   kernel::{
@@ -40,10 +40,9 @@ pub async fn run_server(
   let pc = kernel.context();
 
   let socket_path = lock_guard.socket_path().to_path_buf();
-  let (app_task_id, console_vt) = create_console_task(&pc);
+  let (config, keymap) = build_app_config(&working_dir);
+  let app_task_id = create_app_task(config, keymap, &pc);
   let app_sender = pc.get_task_sender(app_task_id);
-
-  spawn_configured_procs(&pc, &working_dir);
 
   tokio::spawn(async move {
     let mut last_client_id = 0;
@@ -75,19 +74,9 @@ pub async fn run_server(
           let client_id = ClientId(last_client_id);
           let app_sender = app_sender.clone();
           let pc = pc.clone();
-          let console_task_id = app_task_id;
-          let console_vt = console_vt.clone();
           tokio::spawn(async move {
-            dispatch_connection(
-              client_id,
-              app_sender,
-              pc,
-              console_task_id,
-              console_vt,
-              sender,
-              receiver,
-            )
-            .await;
+            dispatch_connection(client_id, app_sender, pc, sender, receiver)
+              .await;
           });
         }
         Err(err) => {
@@ -109,39 +98,50 @@ pub async fn run_server(
   Ok(())
 }
 
-fn spawn_configured_procs(pc: &TaskContext, working_dir: &Path) {
-  let config = match crate::config::Config::load(working_dir) {
-    Ok(cfg) => cfg,
-    Err(err) => {
-      log::warn!("Failed to load config: {}", err);
-      return;
-    }
-  };
-  for proc in &config.procs {
-    let path = match TaskPath::new(&format!("/{}", proc.name)) {
-      Ok(p) => p,
-      Err(err) => {
-        log::warn!("Invalid proc name {:?}: {}", proc.name, err);
-        continue;
-      }
-    };
-    if proc.cmd.is_empty() {
-      log::warn!("Proc {:?} has empty cmd; skipping", proc.name);
-      continue;
-    }
-    let mut spec =
-      crate::process::process_spec::ProcessSpec::from_argv(proc.cmd.clone());
-    if let Some(cwd) = &proc.cwd {
-      spec.cwd(cwd);
-    } else {
-      spec.cwd(working_dir.to_string_lossy());
-    }
-    crate::task::proc_task::spawn_proc_task(
-      pc,
-      Some(path),
-      crate::task::proc_task::ProcTaskConfig::new(spec),
-    );
+fn build_app_config(
+  working_dir: &Path,
+) -> (
+  crate::mprocs::config::Config,
+  crate::console::keymap::Keymap,
+) {
+  use crate::console::keymap::Keymap;
+  use crate::console::proc::StopSignal;
+  use crate::mprocs::config::{CmdConfig, Config, ProcConfig};
+  use crate::mprocs::settings::Settings;
+
+  let mut settings = Settings::default();
+  if let Err(err) = settings.merge_from_xdg() {
+    log::warn!("Failed to load global settings: {}", err);
   }
+
+  let mut config =
+    Config::make_default(&settings).expect("make_default is infallible");
+
+  let dk = crate::config::Config::load(working_dir).unwrap_or_default();
+  config.procs = dk
+    .procs
+    .into_iter()
+    .map(|p| ProcConfig {
+      name: p.name,
+      cmd: CmdConfig::Cmd { cmd: p.cmd },
+      cwd: p.cwd.map(std::ffi::OsString::from),
+      env: None,
+      autostart: true,
+      autorestart: false,
+      stop: StopSignal::default(),
+      deps: Vec::new(),
+      mouse_scroll_speed: settings.mouse_scroll_speed,
+      scrollback_len: settings.scrollback_len,
+      log: None,
+    })
+    .collect();
+
+  let mut keymap = Keymap::new();
+  if let Err(err) = settings.add_to_keymap(&mut keymap) {
+    log::warn!("Failed to build keymap: {}", err);
+  }
+
+  (config, keymap)
 }
 
 /// Dispatch an accepted connection: RPC or TUI.
@@ -149,8 +149,6 @@ async fn dispatch_connection(
   client_id: ClientId,
   app_sender: crate::kernel::kernel_message::TaskSender,
   pc: TaskContext,
-  console_task_id: crate::kernel::task::TaskId,
-  console_vt: crate::kernel::kernel_message::SharedVt,
   mut sender: MsgSender<SrvToClt>,
   mut receiver: MsgReceiver<CltToSrv>,
 ) {
@@ -163,16 +161,14 @@ async fn dispatch_connection(
       let _ = sender.send(SrvToClt::Rpc(resp)).await;
     }
     Some(Ok(CltToSrv::Init { width, height })) => {
-      crate::console::spawn_client_task(
-        &pc,
-        console_task_id,
-        console_vt,
-        app_sender,
+      client_session(
         client_id,
+        app_sender,
         Size { width, height },
         sender,
         receiver,
-      );
+      )
+      .await;
     }
     _ => {
       log::warn!("Unexpected first message from client");

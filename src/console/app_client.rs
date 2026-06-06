@@ -1,9 +1,9 @@
 use std::fmt::Debug;
 
 use crate::{
+  console::server_message::ServerMessage,
   ipc::{receiver::MsgReceiver, sender::MsgSender},
   kernel::{kernel_message::TaskSender, task::TaskCmd},
-  mprocs::server_message::ServerMessage,
   protocol::{ClientId, CltToSrv, SrvToClt},
   term::{ScreenDiffer, Size},
 };
@@ -18,20 +18,8 @@ pub async fn client_loop(
 ) {
   log::debug!("client_loop: server_receiver.recv()");
   let init_msg = server_receiver.recv().await;
-  match init_msg {
-    Some(Ok(CltToSrv::Init { width, height })) => {
-      let client_handle =
-        ClientHandle::create(id, client_sender, Size { width, height });
-      match client_handle {
-        Ok(handle) => {
-          app_sender
-            .send(TaskCmd::msg(ServerMessage::ClientConnected { handle }));
-        }
-        Err(err) => {
-          log::error!("Client creation error: {:?}", err);
-        }
-      }
-    }
+  let size = match init_msg {
+    Some(Ok(CltToSrv::Init { width, height })) => Size { width, height },
     Some(Ok(msg)) => {
       log::warn!("client_loop: expected init message, got {msg:?}");
       return;
@@ -41,6 +29,25 @@ pub async fn client_loop(
       return;
     }
     None => return,
+  };
+  client_session(id, app_sender, size, client_sender, server_receiver).await;
+}
+
+pub async fn client_session(
+  id: ClientId,
+  app_sender: TaskSender,
+  size: Size,
+  client_sender: MsgSender<SrvToClt>,
+  mut server_receiver: MsgReceiver<CltToSrv>,
+) {
+  match ClientHandle::create(id, client_sender, size) {
+    Ok(handle) => {
+      app_sender.send(TaskCmd::msg(ServerMessage::ClientConnected { handle }));
+    }
+    Err(err) => {
+      log::error!("Client creation error: {:?}", err);
+      return;
+    }
   }
 
   loop {

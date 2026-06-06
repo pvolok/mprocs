@@ -1,11 +1,14 @@
 pub mod action;
-pub mod client_task;
-pub mod console;
+pub mod app;
+pub mod app_client;
+pub mod app_layout;
 pub mod keymap;
-mod layout;
-mod modals;
-mod state;
-mod views;
-
-pub use client_task::spawn_client_task;
-pub use console::create_console_task;
+pub mod modal;
+pub mod proc;
+pub mod server_message;
+pub mod state;
+pub mod ui_keymap;
+pub mod ui_procs;
+pub mod ui_term;
+pub mod ui_zoom_tip;
+pub mod widgets;

@@ -2,10 +2,8 @@ use std::borrow::Cow;
 
 use unicode_width::UnicodeWidthStr;
 
-use crate::mprocs::{
-  config::Config,
-  state::{Scope, State},
-};
+use crate::console::state::{Scope, State};
+use crate::mprocs::config::Config;
 use crate::term::{
   Color, Grid,
   attrs::Attrs,

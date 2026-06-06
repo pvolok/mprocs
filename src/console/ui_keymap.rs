@@ -1,8 +1,8 @@
-use crate::mprocs::{
-  event::AppEvent,
+use crate::console::{
   keymap::{Keymap, KeymapGroup},
   state::State,
 };
+use crate::console::action::Action;
 use crate::term::{attrs::Attrs, encode::print_key, grid::Rect, Color, Grid};
 
 pub fn render_keymap(
@@ -29,22 +29,22 @@ pub fn render_keymap(
   let group = state.get_keymap_group();
   let items = match group {
     KeymapGroup::Procs => &[
-      AppEvent::ToggleFocus,
-      AppEvent::Quit,
-      AppEvent::NextProc,
-      AppEvent::PrevProc,
-      AppEvent::StartProc,
-      AppEvent::TermProc,
-      AppEvent::RestartProc,
-      AppEvent::Zoom,
-      AppEvent::ShowCommandsMenu,
-      AppEvent::ToggleKeymapWindow,
+      Action::ToggleFocus,
+      Action::Quit,
+      Action::NextProc,
+      Action::PrevProc,
+      Action::StartProc,
+      Action::TermProc,
+      Action::RestartProc,
+      Action::Zoom,
+      Action::ShowCommandsMenu,
+      Action::ToggleKeymapWindow,
     ][..],
-    KeymapGroup::Term => &[AppEvent::ToggleFocus][..],
+    KeymapGroup::Term => &[Action::ToggleFocus][..],
     KeymapGroup::Copy => &[
-      AppEvent::CopyModeEnd,
-      AppEvent::CopyModeCopy,
-      AppEvent::CopyModeLeave,
+      Action::CopyModeEnd,
+      Action::CopyModeCopy,
+      Action::CopyModeLeave,
     ][..],
   };
 

@@ -4,9 +4,9 @@ use anyhow::Result;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
+use crate::console::proc::StopSignal;
 use crate::mprocs::{
   config::{CmdConfig, ProcConfig},
-  proc::StopSignal,
   settings::Settings,
 };
 

@@ -3,9 +3,8 @@ use std::collections::HashMap;
 use tui_input::Input;
 
 use crate::kernel::kernel_message::TaskContext;
-use crate::mprocs::{
+use crate::console::{
   app::LoopAction,
-  event::AppEvent,
   keymap::Keymap,
   state::State,
   widgets::{
@@ -13,6 +12,7 @@ use crate::mprocs::{
     text_input::{render_text_input, to_input_request},
   },
 };
+use crate::console::action::Action;
 use crate::term::{
   attrs::Attrs,
   encode::print_key,
@@ -29,7 +29,7 @@ pub struct CommandsMenuModal {
   input: Input,
   list_state: ListState,
   items: Vec<CommandInfo>,
-  key_bindings: HashMap<AppEvent, String>,
+  key_bindings: HashMap<Action, String>,
 }
 
 impl CommandsMenuModal {
@@ -64,7 +64,7 @@ impl Modal for CommandsMenuModal {
         mods,
         ..
       }) if mods.is_empty() => {
-        self.pc.send_self_custom(AppEvent::CloseCurrentModal);
+        self.pc.send_self_custom(Action::CloseCurrentModal);
         if let Some(item) = self.items.get(self.list_state.selected()) {
           self.pc.send_self_custom(item.event.clone());
         }
@@ -76,7 +76,7 @@ impl Modal for CommandsMenuModal {
         mods,
         ..
       }) if mods.is_empty() => {
-        self.pc.send_self_custom(AppEvent::CloseCurrentModal);
+        self.pc.send_self_custom(Action::CloseCurrentModal);
         loop_action.render();
         return true;
       }
@@ -377,38 +377,38 @@ fn draw_highlighted_text(
 struct CommandInfo {
   cmd: &'static str,
   desc: String,
-  event: AppEvent,
+  event: Action,
 }
 
 fn get_commands(search: &str) -> Vec<CommandInfo> {
   let events = [
-    // ("quit-or-ask", AppEvent::QuitOrAsk),
-    ("quit", AppEvent::Quit),
-    ("force-quit", AppEvent::ForceQuit),
-    ("toggle-focus", AppEvent::ToggleFocus),
-    ("focus-term", AppEvent::FocusTerm),
-    ("zoom", AppEvent::Zoom),
-    ("show-commands-menu", AppEvent::ShowCommandsMenu),
-    ("next-proc", AppEvent::NextProc),
-    ("prev-proc", AppEvent::PrevProc),
-    ("start-proc", AppEvent::StartProc),
-    ("term-proc", AppEvent::TermProc),
-    ("kill-proc", AppEvent::KillProc),
-    ("restart-proc", AppEvent::RestartProc),
-    ("restart-all", AppEvent::RestartAll),
-    ("duplicate-proc", AppEvent::DuplicateProc),
-    ("force-restart-proc", AppEvent::ForceRestartProc),
-    ("force-restart-all", AppEvent::ForceRestartAll),
-    ("show-add-proc", AppEvent::ShowAddProc),
-    ("show-rename-proc", AppEvent::ShowRenameProc),
-    ("show-remove-proc", AppEvent::ShowRemoveProc),
-    ("close-current-modal", AppEvent::CloseCurrentModal),
-    ("scroll-down", AppEvent::ScrollDown),
-    ("scroll-up", AppEvent::ScrollUp),
-    ("copy-mode-enter", AppEvent::CopyModeEnter),
-    ("copy-mode-leave", AppEvent::CopyModeLeave),
-    ("copy-mode-end", AppEvent::CopyModeEnd),
-    ("copy-mode-copy", AppEvent::CopyModeCopy),
+    // ("quit-or-ask", Action::QuitOrAsk),
+    ("quit", Action::Quit),
+    ("force-quit", Action::ForceQuit),
+    ("toggle-focus", Action::ToggleFocus),
+    ("focus-term", Action::FocusTerm),
+    ("zoom", Action::Zoom),
+    ("show-commands-menu", Action::ShowCommandsMenu),
+    ("next-proc", Action::NextProc),
+    ("prev-proc", Action::PrevProc),
+    ("start-proc", Action::StartProc),
+    ("term-proc", Action::TermProc),
+    ("kill-proc", Action::KillProc),
+    ("restart-proc", Action::RestartProc),
+    ("restart-all", Action::RestartAll),
+    ("duplicate-proc", Action::DuplicateProc),
+    ("force-restart-proc", Action::ForceRestartProc),
+    ("force-restart-all", Action::ForceRestartAll),
+    ("show-add-proc", Action::ShowAddProc),
+    ("show-rename-proc", Action::ShowRenameProc),
+    ("show-remove-proc", Action::ShowRemoveProc),
+    ("close-current-modal", Action::CloseCurrentModal),
+    ("scroll-down", Action::ScrollDown),
+    ("scroll-up", Action::ScrollUp),
+    ("copy-mode-enter", Action::CopyModeEnter),
+    ("copy-mode-leave", Action::CopyModeLeave),
+    ("copy-mode-end", Action::CopyModeEnd),
+    ("copy-mode-copy", Action::CopyModeCopy),
   ];
 
   let mut result = Vec::new();

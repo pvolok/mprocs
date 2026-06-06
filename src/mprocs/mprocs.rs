@@ -10,20 +10,20 @@ use std::{
 use crate::error::ResultLogger;
 use crate::ipc::{receiver::MsgReceiver, sender::MsgSender};
 use crate::kernel::kernel::Kernel;
-use crate::mprocs::app::create_app_task;
+use crate::console::app::create_app_task;
 use crate::mprocs::config::{
   CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig,
 };
 use crate::mprocs::ctl::run_ctl;
 use crate::mprocs::just::load_just_procs;
-use crate::mprocs::keymap::Keymap;
+use crate::console::keymap::Keymap;
 use crate::mprocs::package_json::load_npm_procs;
-use crate::mprocs::proc::StopSignal;
+use crate::console::proc::StopSignal;
 use crate::mprocs::proc_log_config::{LogConfig, LogMode};
 use crate::mprocs::settings::Settings;
 use crate::mprocs::yaml_val::Val;
 use crate::{
-  attach_client::client_main, mprocs::app_client::client_loop,
+  attach_client::client_main, console::app_client::client_loop,
   protocol::ClientId,
 };
 use anyhow::{Result, bail};

@@ -5,9 +5,9 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 
+use crate::console::action::Action;
+use crate::console::proc::StopSignal;
 use crate::mprocs::{
-  event::AppEvent,
-  proc::StopSignal,
   proc_log_config::LogConfig,
   settings::Settings,
   yaml_val::{Val, value_to_string},
@@ -35,14 +35,14 @@ fn resolve_config_path(path: &str, ctx: &ConfigContext) -> Result<PathBuf> {
 pub struct Config {
   pub procs: Vec<ProcConfig>,
   pub server: Option<ServerConfig>,
-  pub exec: Option<AppEvent>,
+  pub exec: Option<Action>,
   pub hide_keymap_window: bool,
   pub mouse_scroll_speed: usize,
   pub scrollback_len: usize,
   pub proc_list_width: usize,
   pub proc_list_title: String,
-  pub on_init: Option<AppEvent>,
-  pub on_all_finished: Option<AppEvent>,
+  pub on_init: Option<Action>,
+  pub on_all_finished: Option<Action>,
   pub proc_log: Option<LogConfig>,
 }
 

@@ -1,4 +1,4 @@
-use crate::mprocs::state::{Scope, State};
+use crate::console::state::{Scope, State};
 use crate::term::{Color, Grid, Screen, attrs::Attrs, grid::Rect};
 
 pub fn render_term(area: Rect, grid: &mut Grid, state: &mut State) {

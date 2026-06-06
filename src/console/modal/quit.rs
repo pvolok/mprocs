@@ -1,9 +1,6 @@
 use crate::kernel::kernel_message::TaskContext;
-use crate::mprocs::{
-  app::LoopAction,
-  event::AppEvent,
-  state::State,
-};
+use crate::console::{app::LoopAction, state::State};
+use crate::console::action::Action;
 use crate::term::{
   attrs::Attrs,
   grid::{BorderType, Rect},
@@ -36,8 +33,8 @@ impl Modal for QuitModal {
         mods,
         ..
       }) if mods.is_empty() => {
-        self.pc.send_self_custom(AppEvent::CloseCurrentModal);
-        self.pc.send_self_custom(AppEvent::Quit);
+        self.pc.send_self_custom(Action::CloseCurrentModal);
+        self.pc.send_self_custom(Action::Quit);
         return true;
       }
       TermEvent::Key(Key {
@@ -46,8 +43,8 @@ impl Modal for QuitModal {
         ..
       }) if mods.is_empty() => {
         if let Some(client_id) = state.current_client_id {
-          self.pc.send_self_custom(AppEvent::CloseCurrentModal);
-          self.pc.send_self_custom(AppEvent::Detach { client_id });
+          self.pc.send_self_custom(Action::CloseCurrentModal);
+          self.pc.send_self_custom(Action::Detach { client_id });
         }
         return true;
       }
@@ -61,7 +58,7 @@ impl Modal for QuitModal {
         mods,
         ..
       }) if mods.is_empty() => {
-        self.pc.send_self_custom(AppEvent::CloseCurrentModal);
+        self.pc.send_self_custom(Action::CloseCurrentModal);
         loop_action.render();
         return true;
       }

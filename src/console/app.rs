@@ -18,7 +18,7 @@ use crate::{
     task_path::TaskPath,
     task_screen::{FramedScreenNotify, TaskScreenCmd},
   },
-  mprocs::server_message::ServerMessage,
+  console::server_message::ServerMessage,
   process::process_spec::ProcessSpec,
   protocol::{CltToSrv, SrvToClt},
   task::{
@@ -36,11 +36,10 @@ use crate::{
   },
 };
 use crate::{
-  mprocs::{
+  console::{
+    action::{Action, CopyMove},
     app_client::ClientHandle,
     app_layout::AppLayout,
-    config::{CmdConfig, Config, ProcConfig, ServerConfig},
-    event::{AppEvent, CopyMove},
     keymap::Keymap,
     modal::{
       add_proc::AddProcModal, commands_menu::CommandsMenuModal, modal::Modal,
@@ -48,13 +47,16 @@ use crate::{
       rename_proc::RenameProcModal,
     },
     proc::{StopSignal, view::ProcView},
-    proc_log_config::LogMode,
     state::{Scope, State},
     ui_keymap::render_keymap,
     ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
     ui_term::{render_term, term_check_hit},
     ui_zoom_tip::render_zoom_tip,
     widgets::list::ListState,
+  },
+  mprocs::{
+    config::{CmdConfig, Config, ProcConfig, ServerConfig},
+    proc_log_config::LogMode,
   },
   protocol::ClientId,
 };
@@ -148,7 +150,7 @@ impl App {
                 }
               }
             };
-            let msg: AppEvent = serde_yaml::from_slice(buf.as_slice()).unwrap();
+            let msg: Action = serde_yaml::from_slice(buf.as_slice()).unwrap();
             // log::info!("Received remote command: {:?}", msg);
             ctl_pc.send(KernelCommand::TaskCmd(app_task_id, TaskCmd::msg(msg)));
           });
@@ -450,7 +452,7 @@ impl App {
           match self.state.scope {
             Scope::Procs => (),
             Scope::Term | Scope::TermZoom => {
-              self.handle_event(loop_action, &AppEvent::SendKey { key })
+              self.handle_event(loop_action, &Action::SendKey { key })
             }
           }
         }
@@ -558,10 +560,10 @@ impl App {
     }
   }
 
-  fn handle_event(&mut self, loop_action: &mut LoopAction, event: &AppEvent) {
+  fn handle_event(&mut self, loop_action: &mut LoopAction, event: &Action) {
     let pc = self.pc.clone();
     match event {
-      AppEvent::Batch { cmds } => {
+      Action::Batch { cmds } => {
         for cmd in cmds {
           self.handle_event(loop_action, cmd);
           if *loop_action == LoopAction::ForceQuit {
@@ -570,11 +572,11 @@ impl App {
         }
       }
 
-      AppEvent::QuitOrAsk => {
+      Action::QuitOrAsk => {
         self.modal = Some(QuitModal::new(self.pc.clone()).boxed());
         loop_action.render();
       }
-      AppEvent::Quit => {
+      Action::Quit => {
         self.state.quitting = true;
         for proc in self.state.procs.iter() {
           if proc.is_up() {
@@ -583,7 +585,7 @@ impl App {
         }
         loop_action.render();
       }
-      AppEvent::ForceQuit => {
+      Action::ForceQuit => {
         for proc in self.state.procs.iter() {
           if proc.is_up() {
             pc.send(KernelCommand::TaskCmd(proc.id(), TaskCmd::Kill));
@@ -591,35 +593,35 @@ impl App {
         }
         loop_action.force_quit();
       }
-      AppEvent::Detach { client_id } => {
+      Action::Detach { client_id } => {
         self.clients.retain_mut(|c| c.id != *client_id);
         self.update_screen_size();
         loop_action.render();
       }
 
-      AppEvent::ToggleFocus => {
+      Action::ToggleFocus => {
         self.state.scope = self.state.scope.toggle();
         loop_action.render();
       }
-      AppEvent::FocusProcs => {
+      Action::FocusProcs => {
         self.state.scope = Scope::Procs;
         loop_action.render();
       }
-      AppEvent::FocusTerm => {
+      Action::FocusTerm => {
         self.state.scope = Scope::Term;
         loop_action.render();
       }
-      AppEvent::Zoom => {
+      Action::Zoom => {
         self.state.scope = Scope::TermZoom;
         loop_action.render();
       }
 
-      AppEvent::ShowCommandsMenu => {
+      Action::ShowCommandsMenu => {
         self.modal =
           Some(CommandsMenuModal::new(self.pc.clone(), &self.keymap).boxed());
         loop_action.render();
       }
-      AppEvent::NextProc => {
+      Action::NextProc => {
         let mut next = self.state.selected() + 1;
         if next >= self.state.procs.len() {
           next = 0;
@@ -627,7 +629,7 @@ impl App {
         self.state.select_proc(next);
         loop_action.render();
       }
-      AppEvent::PrevProc => {
+      Action::PrevProc => {
         let next = if self.state.selected() > 0 {
           self.state.selected() - 1
         } else {
@@ -636,66 +638,66 @@ impl App {
         self.state.select_proc(next);
         loop_action.render();
       }
-      AppEvent::SelectProc { index } => {
+      Action::SelectProc { index } => {
         self.state.select_proc(*index);
         loop_action.render();
       }
 
-      AppEvent::StartProc => {
+      Action::StartProc => {
         if let Some(proc) = self.state.get_current_proc() {
           pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Start));
         }
       }
-      AppEvent::TermProc => {
+      Action::TermProc => {
         if let Some(proc) = self.state.get_current_proc() {
           pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Stop));
         }
       }
-      AppEvent::KillProc => {
+      Action::KillProc => {
         if let Some(proc) = self.state.get_current_proc() {
           pc.send(KernelCommand::TaskCmd(proc.id, TaskCmd::Kill));
         }
       }
-      AppEvent::RestartProc => {
+      Action::RestartProc => {
         if let Some(proc) = self.state.get_current_proc() {
           restart_proc(&pc, proc, TaskCmd::Stop);
         }
       }
-      AppEvent::RestartAll => {
+      Action::RestartAll => {
         for proc in &self.state.procs {
           restart_proc(&pc, proc, TaskCmd::Stop);
         }
       }
-      AppEvent::ForceRestartProc => {
+      Action::ForceRestartProc => {
         if let Some(proc) = self.state.get_current_proc() {
           restart_proc(&pc, proc, TaskCmd::Kill);
         }
       }
-      AppEvent::ForceRestartAll => {
+      Action::ForceRestartAll => {
         for proc in &self.state.procs {
           restart_proc(&pc, proc, TaskCmd::Kill);
         }
       }
 
-      AppEvent::ScrollUpLines { n } => self.scroll(loop_action, *n as i32),
-      AppEvent::ScrollDownLines { n } => self.scroll(loop_action, -(*n as i32)),
-      AppEvent::ScrollUp => {
+      Action::ScrollUpLines { n } => self.scroll(loop_action, *n as i32),
+      Action::ScrollDownLines { n } => self.scroll(loop_action, -(*n as i32)),
+      Action::ScrollUp => {
         if let Some(proc) = self.state.get_current_proc() {
           let delta = half_screen(proc);
           self.scroll(loop_action, delta);
         }
       }
-      AppEvent::ScrollDown => {
+      Action::ScrollDown => {
         if let Some(proc) = self.state.get_current_proc() {
           let delta = half_screen(proc);
           self.scroll(loop_action, -delta);
         }
       }
-      AppEvent::ShowAddProc => {
+      Action::ShowAddProc => {
         self.modal = Some(AddProcModal::new(self.pc.clone()).boxed());
         loop_action.render();
       }
-      AppEvent::AddProc { cmd, name } => {
+      Action::AddProc { cmd, name } => {
         let name = name.clone().unwrap_or_else(|| cmd.clone());
         let proc_config = ProcConfig {
           name: self.unique_proc_name(&name, None),
@@ -716,7 +718,7 @@ impl App {
         self.spawn_proc(proc_config, id, Vec::new());
         loop_action.render();
       }
-      AppEvent::DuplicateProc => {
+      Action::DuplicateProc => {
         if let Some(proc) = self.state.get_current_proc() {
           let name = self.unique_proc_name(proc.name(), None);
           pc.send(KernelCommand::TaskCmd(
@@ -726,7 +728,7 @@ impl App {
           loop_action.render();
         }
       }
-      AppEvent::ShowRemoveProc => {
+      Action::ShowRemoveProc => {
         let id = match self.state.get_current_proc() {
           Some(proc) if !proc.is_up() => Some(proc.id()),
           _ => None,
@@ -736,21 +738,21 @@ impl App {
           loop_action.render();
         }
       }
-      AppEvent::RemoveProc { id } => {
+      Action::RemoveProc { id } => {
         self.pc.send(KernelCommand::RemoveTask(*id));
         loop_action.render();
       }
 
-      AppEvent::CloseCurrentModal => {
+      Action::CloseCurrentModal => {
         self.modal = None;
         loop_action.render();
       }
 
-      AppEvent::ShowRenameProc => {
+      Action::ShowRenameProc => {
         self.modal = Some(RenameProcModal::new(self.pc.clone()).boxed());
         loop_action.render();
       }
-      AppEvent::RenameProc { name } => {
+      Action::RenameProc { name } => {
         if let Some(proc) = self.state.get_current_proc() {
           let id = proc.id();
           let name = self.unique_proc_name(name, Some(id));
@@ -759,7 +761,7 @@ impl App {
         }
       }
 
-      AppEvent::CopyModeEnter => {
+      Action::CopyModeEnter => {
         if let Some(proc) = self.state.get_current_proc() {
           pc.send(KernelCommand::TaskCmd(
             proc.id,
@@ -769,7 +771,7 @@ impl App {
           loop_action.render();
         };
       }
-      AppEvent::CopyModeLeave => {
+      Action::CopyModeLeave => {
         if let Some(proc) = self.state.get_current_proc() {
           pc.send(KernelCommand::TaskCmd(
             proc.id,
@@ -777,7 +779,7 @@ impl App {
           ));
         }
       }
-      AppEvent::CopyModeMove { dir } => {
+      Action::CopyModeMove { dir } => {
         if let Some(proc) = self.state.get_current_proc() {
           pc.send(KernelCommand::TaskCmd(
             proc.id,
@@ -787,7 +789,7 @@ impl App {
           ));
         }
       }
-      AppEvent::CopyModeEnd => {
+      Action::CopyModeEnd => {
         if let Some(proc) = self.state.get_current_proc() {
           pc.send(KernelCommand::TaskCmd(
             proc.id,
@@ -795,7 +797,7 @@ impl App {
           ));
         }
       }
-      AppEvent::CopyModeCopy => {
+      Action::CopyModeCopy => {
         if let Some(proc) = self.state.get_current_proc() {
           pc.send(KernelCommand::TaskCmd(
             proc.id,
@@ -804,12 +806,12 @@ impl App {
         }
       }
 
-      AppEvent::ToggleKeymapWindow => {
+      Action::ToggleKeymapWindow => {
         self.state.toggle_keymap_window();
         loop_action.render();
       }
 
-      AppEvent::SendKey { key } => {
+      Action::SendKey { key } => {
         if let Some(proc) = self.state.get_current_proc() {
           pc.send(KernelCommand::TaskCmd(
             proc.id,
@@ -829,7 +831,7 @@ impl App {
       TaskCmd::Start | TaskCmd::Stop | TaskCmd::Kill => (),
 
       TaskCmd::Msg(msg) => {
-        let msg = match msg.downcast::<AppEvent>() {
+        let msg = match msg.downcast::<Action>() {
           Ok(app_event) => {
             self.handle_event(loop_action, &app_event);
             return;
