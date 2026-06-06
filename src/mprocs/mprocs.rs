@@ -6,19 +6,19 @@ use std::{
   path::{Path, PathBuf},
 };
 
+use crate::console::app::create_app_task;
+use crate::console::keymap::Keymap;
+use crate::console::proc::StopSignal;
 #[cfg(unix)]
 use crate::error::ResultLogger;
 use crate::ipc::{receiver::MsgReceiver, sender::MsgSender};
 use crate::kernel::kernel::Kernel;
-use crate::console::app::create_app_task;
 use crate::mprocs::config::{
   CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig,
 };
 use crate::mprocs::ctl::run_ctl;
 use crate::mprocs::just::load_just_procs;
-use crate::console::keymap::Keymap;
 use crate::mprocs::package_json::load_npm_procs;
-use crate::console::proc::StopSignal;
 use crate::mprocs::proc_log_config::{LogConfig, LogMode};
 use crate::mprocs::settings::Settings;
 use crate::mprocs::yaml_val::Val;
@@ -30,17 +30,7 @@ use anyhow::{Result, bail};
 use clap::{ArgMatches, arg, command};
 use serde_yaml::Value;
 
-pub async fn mprocs_main() -> anyhow::Result<()> {
-  match run_app().await {
-    Ok(()) => Ok(()),
-    Err(err) => {
-      eprintln!("Error: {:?}", err);
-      Ok(())
-    }
-  }
-}
-
-async fn run_app() -> anyhow::Result<()> {
+pub async fn run_app(args: Vec<String>) -> anyhow::Result<()> {
   let matches = command!()
     .arg(arg!(-c --config [PATH] "Config path [default: mprocs.yaml]"))
     .arg(arg!(-s --server [PATH] "Remote control server address. Example: 127.0.0.1:4050."))
@@ -64,7 +54,7 @@ async fn run_app() -> anyhow::Result<()> {
     )
     .arg(arg!(--"log-level" [SPEC] "Diagnostic log level (off|error|warn|info|debug|trace, or env_logger spec). Falls back to $MPROCS_LOG, $RUST_LOG, then 'error' (release) or 'trace' (debug)."))
     .arg(arg!([COMMANDS]... "Commands to run (if omitted, commands from config will be run)"))
-    .get_matches();
+    .get_matches_from(args);
 
   let config_value = load_config_value(&matches)
     .map_err(|e| anyhow::Error::msg(format!("[{}] {}", "config", e)))?;

@@ -12,15 +12,11 @@ categories = [
   "development-tools",
 ]
 keywords = ["cli", "terminal", "tui", "utility"]
-default-run = "mprocs"
+default-run = "dekit"
 
 include = ["*"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[[bin]]
-name = "mprocs"
-path = "bin/mprocs.rs"
 
 [[bin]]
 name = "dekit"

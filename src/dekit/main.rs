@@ -31,8 +31,6 @@ fn print_task_list(resp: DkResponse) {
 }
 
 pub async fn dekit_main() -> anyhow::Result<()> {
-  println!("* Welcome to dekit — playground for future features *\n");
-
   let cmd = clap::command!()
     .subcommands([
       Command::new("attach"),
@@ -97,6 +95,15 @@ pub async fn dekit_main() -> anyhow::Result<()> {
         Command::new("list").about("List all daemons on this machine"),
         Command::new("clean").about("Remove stale lock files"),
       ]),
+      Command::new("mprocs")
+        .about("Run the legacy mprocs CLI (mprocs.yaml, --ctl, etc.)")
+        .disable_help_flag(true)
+        .arg(
+          Arg::new("args")
+            .num_args(0..)
+            .trailing_var_arg(true)
+            .allow_hyphen_values(true),
+        ),
     ])
     .arg(
       Arg::new("files")
@@ -104,6 +111,22 @@ pub async fn dekit_main() -> anyhow::Result<()> {
         .trailing_var_arg(true),
     );
   let matches = cmd.get_matches();
+
+  if let Some(("mprocs", sub_m)) = matches.subcommand() {
+    let args: Vec<String> = sub_m
+      .get_many::<String>("args")
+      .map(|vals| vals.cloned().collect())
+      .unwrap_or_default();
+    let mut argv = vec!["mprocs".to_string()];
+    argv.extend(args);
+    return match crate::mprocs::mprocs::run_app(argv).await {
+      Ok(()) => Ok(()),
+      Err(err) => {
+        eprintln!("Error: {:?}", err);
+        Ok(())
+      }
+    };
+  }
 
   match matches.subcommand() {
     Some(("attach", _sub_m)) => {
