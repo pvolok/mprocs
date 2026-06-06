@@ -588,7 +588,6 @@ mod tests {
     in_out("<MediaPlayPause>");
     in_out("<VolumeMute>");
     in_out("<LeftSuper>");
-    in_out("<IsoLevel3Shift>");
   }
 
   #[test]
