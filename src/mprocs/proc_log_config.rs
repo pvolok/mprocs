@@ -6,6 +6,7 @@ use std::{
 use anyhow::Result;
 use serde_yaml::Value;
 
+use crate::cfg::{CfgCx, CfgNode, FromCfg};
 use crate::mprocs::yaml_val::Val;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -112,6 +113,25 @@ pub fn default_log_filename(name: &str) -> String {
     "process.log".to_string()
   } else {
     format!("{}.log", trimmed)
+  }
+}
+
+impl FromCfg for LogConfig {
+  fn from_cfg(node: &CfgNode<'_>, cx: &CfgCx) -> Result<Self> {
+    let val = Val::new(node.raw())?;
+    let parsed = parse_log_config(&val, |path| Ok(cx.resolve_path(path)))
+      .map_err(|err| node.error(err))?;
+    Ok(parsed.unwrap_or_else(LogConfig::disabled))
+  }
+}
+
+impl FromCfg for LogMode {
+  fn from_cfg(node: &CfgNode<'_>, _cx: &CfgCx) -> Result<Self> {
+    match node.as_str()? {
+      "append" => Ok(LogMode::Append),
+      "truncate" => Ok(LogMode::Truncate),
+      _ => Err(node.error("Expected `append` or `truncate`")),
+    }
   }
 }
 

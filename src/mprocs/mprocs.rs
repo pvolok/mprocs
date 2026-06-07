@@ -156,6 +156,7 @@ pub async fn run_app(args: Vec<String>) -> anyhow::Result<()> {
           },
           env: None,
           cwd: None,
+          add_path: Vec::new(),
           autostart: true,
           autorestart: false,
           stop: StopSignal::default(),
@@ -222,7 +223,8 @@ pub async fn run_app(args: Vec<String>) -> anyhow::Result<()> {
       crate::process::unix_processes_waiter::UnixProcessesWaiter::init()?;
       let kernel = Kernel::new();
       let pc = kernel.context();
-      let app_task_id = create_app_task(config, keymap, &pc);
+      let app_task_id =
+        create_app_task(crate::config::Config::from(config), keymap, &pc);
 
       let app_sender = pc.get_task_sender(app_task_id);
       tokio::spawn(async move {
@@ -273,6 +275,7 @@ fn load_procfile_procs(
         cmd: CmdConfig::Shell { shell: cmd },
         cwd: None,
         env: None,
+        add_path: Vec::new(),
         autostart: false,
         autorestart: false,
         stop: StopSignal::default(),

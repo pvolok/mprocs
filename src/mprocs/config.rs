@@ -2,7 +2,6 @@ use std::{ffi::OsString, path::PathBuf, str::FromStr};
 
 use anyhow::{Result, bail};
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 
 use crate::console::action::Action;
@@ -12,7 +11,6 @@ use crate::mprocs::{
   settings::Settings,
   yaml_val::{Val, value_to_string},
 };
-use crate::process::process_spec::ProcessSpec;
 
 pub struct ConfigContext {
   pub path: PathBuf,
@@ -35,7 +33,6 @@ fn resolve_config_path(path: &str, ctx: &ConfigContext) -> Result<PathBuf> {
 pub struct Config {
   pub procs: Vec<ProcConfig>,
   pub server: Option<ServerConfig>,
-  pub exec: Option<Action>,
   pub hide_keymap_window: bool,
   pub mouse_scroll_speed: usize,
   pub scrollback_len: usize,
@@ -111,7 +108,6 @@ impl Config {
     let config = Config {
       procs,
       server,
-      exec: None,
       hide_keymap_window: settings.hide_keymap_window,
       mouse_scroll_speed: settings.mouse_scroll_speed,
       scrollback_len: settings.scrollback_len,
@@ -129,7 +125,6 @@ impl Config {
     Ok(Self {
       procs: Vec::new(),
       server: None,
-      exec: None,
       hide_keymap_window: settings.hide_keymap_window,
       mouse_scroll_speed: settings.mouse_scroll_speed,
       scrollback_len: settings.scrollback_len,
@@ -148,6 +143,7 @@ pub struct ProcConfig {
   pub cmd: CmdConfig,
   pub cwd: Option<OsString>,
   pub env: Option<IndexMap<String, Option<String>>>,
+  pub add_path: Vec<PathBuf>,
   pub autostart: bool,
   pub autorestart: bool,
 
@@ -179,6 +175,7 @@ impl ProcConfig {
         },
         cwd: None,
         env: None,
+        add_path: Vec::new(),
         autostart: true,
         autorestart: false,
         stop: StopSignal::default(),
@@ -200,6 +197,7 @@ impl ProcConfig {
           cmd: CmdConfig::Cmd { cmd },
           cwd: None,
           env: None,
+          add_path: Vec::new(),
           autostart: true,
           autorestart: false,
           stop: StopSignal::default(),
@@ -278,7 +276,8 @@ impl ProcConfig {
           }
           None => None,
         };
-        let env = match map.get(&Value::from("add_path")) {
+
+        let add_path = match map.get(&Value::from("add_path")) {
           Some(add_path) => {
             let extra_paths = match add_path.raw() {
               Value::String(path) => vec![path.as_str()],
@@ -290,34 +289,12 @@ impl ProcConfig {
                 bail!(add_path.error_at("Expected string or array"));
               }
             };
-            let extra_paths = extra_paths
+            extra_paths
               .into_iter()
               .map(|p| PathBuf::from_str(p).map_err(anyhow::Error::from))
-              .collect::<Result<Vec<_>>>()?;
-            let mut paths = std::env::var_os("PATH").map_or_else(
-              || Vec::new(),
-              |path_var| {
-                std::env::split_paths(&path_var)
-                  .map(|p| p.into_os_string())
-                  .collect::<Vec<_>>()
-              },
-            );
-            for p in extra_paths {
-              paths.push(p.into_os_string());
-            }
-            let path_var =
-              std::env::join_paths(paths)?.to_string_lossy().to_string();
-            let env = if let Some(mut env) = env {
-              env.insert("PATH".to_string(), Some(path_var));
-              env
-            } else {
-              let mut env = IndexMap::with_capacity(1);
-              env.insert("PATH".to_string(), Some(path_var));
-              env
-            };
-            Some(env)
+              .collect::<Result<Vec<_>>>()?
           }
-          None => env,
+          None => Vec::new(),
         };
 
         let autostart = map
@@ -349,6 +326,7 @@ impl ProcConfig {
           cmd,
           cwd,
           env,
+          add_path,
           autostart,
           autorestart,
           stop: stop_signal,
@@ -373,50 +351,8 @@ impl ServerConfig {
   }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(untagged)]
+#[derive(Clone)]
 pub enum CmdConfig {
   Cmd { cmd: Vec<String> },
   Shell { shell: String },
-}
-
-impl From<&ProcConfig> for ProcessSpec {
-  fn from(cfg: &ProcConfig) -> Self {
-    let mut cmd = match &cfg.cmd {
-      CmdConfig::Cmd { cmd } => ProcessSpec::from_argv(cmd.clone()),
-      CmdConfig::Shell { shell } => cmd_from_shell(shell),
-    };
-
-    if let Some(env) = &cfg.env {
-      for (k, v) in env {
-        if let Some(v) = v {
-          cmd.env(k, v);
-        } else {
-          cmd.env_remove(k);
-        }
-      }
-    }
-
-    if let Some(cwd) = &cfg.cwd {
-      cmd.cwd(cwd.to_string_lossy());
-    } else if let Ok(cwd) = std::env::current_dir() {
-      cmd.cwd(cwd.to_string_lossy());
-    }
-
-    cmd
-  }
-}
-
-#[cfg(windows)]
-pub fn cmd_from_shell(shell: &str) -> ProcessSpec {
-  ProcessSpec::from_argv(vec![
-    "pwsh.exe".into(),
-    "-Command".into(),
-    shell.into(),
-  ])
-}
-
-#[cfg(not(windows))]
-pub fn cmd_from_shell(shell: &str) -> ProcessSpec {
-  ProcessSpec::from_argv(vec!["/bin/sh".into(), "-c".into(), shell.into()])
 }

@@ -100,13 +100,9 @@ pub async fn run_server(
 
 fn build_app_config(
   working_dir: &Path,
-) -> (
-  crate::mprocs::config::Config,
-  crate::console::keymap::Keymap,
-) {
+) -> (crate::config::Config, crate::console::keymap::Keymap) {
+  use crate::config::Config;
   use crate::console::keymap::Keymap;
-  use crate::console::proc::StopSignal;
-  use crate::mprocs::config::{CmdConfig, Config, ProcConfig};
   use crate::mprocs::settings::Settings;
 
   let mut settings = Settings::default();
@@ -114,27 +110,10 @@ fn build_app_config(
     log::warn!("Failed to load global settings: {}", err);
   }
 
-  let mut config =
-    Config::make_default(&settings).expect("make_default is infallible");
-
-  let dk = crate::config::Config::load(working_dir).unwrap_or_default();
-  config.procs = dk
-    .procs
-    .into_iter()
-    .map(|p| ProcConfig {
-      name: p.name,
-      cmd: CmdConfig::Cmd { cmd: p.cmd },
-      cwd: p.cwd.map(std::ffi::OsString::from),
-      env: None,
-      autostart: true,
-      autorestart: false,
-      stop: StopSignal::default(),
-      deps: Vec::new(),
-      mouse_scroll_speed: settings.mouse_scroll_speed,
-      scrollback_len: settings.scrollback_len,
-      log: None,
-    })
-    .collect();
+  let config = Config::load_dir(working_dir, &settings).unwrap_or_else(|err| {
+    log::warn!("Failed to load dekit.yaml: {}", err);
+    Config::make_default(&settings).expect("make_default is infallible")
+  });
 
   let mut keymap = Keymap::new();
   if let Err(err) = settings.add_to_keymap(&mut keymap) {

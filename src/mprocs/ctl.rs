@@ -1,9 +1,7 @@
 use serde_yaml::Value;
 
-use crate::mprocs::{
-  config::{Config, ServerConfig},
-  event::AppEvent,
-};
+use crate::mprocs::config::{Config, ServerConfig};
+use crate::mprocs::event::AppEvent;
 
 pub async fn run_ctl(ctl: &str, config: &Config) -> anyhow::Result<()> {
   let event: AppEvent = match serde_yaml::from_str(ctl) {

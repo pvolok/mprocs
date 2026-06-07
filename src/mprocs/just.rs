@@ -3,10 +3,8 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 use crate::console::proc::StopSignal;
-use crate::mprocs::{
-  config::{CmdConfig, ProcConfig},
-  settings::Settings,
-};
+use crate::mprocs::config::{CmdConfig, ProcConfig};
+use crate::mprocs::settings::Settings;
 
 #[derive(serde::Deserialize)]
 struct Justfile {
@@ -41,6 +39,7 @@ pub fn load_just_procs(settings: &Settings) -> Result<Vec<ProcConfig>> {
       },
       cwd: None,
       env: None,
+      add_path: Vec::new(),
       autostart: false,
       autorestart: false,
 

@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use unicode_width::UnicodeWidthStr;
 
 use crate::console::state::{Scope, State};
-use crate::mprocs::config::Config;
+use crate::config::Config;
 use crate::term::{
   Color, Grid,
   attrs::Attrs,

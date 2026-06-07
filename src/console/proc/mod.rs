@@ -2,6 +2,7 @@ pub mod view;
 
 use anyhow::bail;
 
+use crate::cfg::{CfgCx, CfgNode, FromCfg};
 use crate::mprocs::yaml_val::Val;
 pub use crate::task::proc_task::StopSignal;
 use crate::term::key::KeySpec;
@@ -34,6 +35,12 @@ impl StopSignal {
       _ => (),
     }
     bail!("Unexpected 'stop' value: {:?}.", val.raw());
+  }
+}
+
+impl FromCfg for StopSignal {
+  fn from_cfg(node: &CfgNode<'_>, _cx: &CfgCx) -> anyhow::Result<Self> {
+    StopSignal::from_val(&Val::new(node.raw())?).map_err(|err| node.error(err))
   }
 }
 

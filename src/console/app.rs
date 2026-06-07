@@ -54,10 +54,8 @@ use crate::{
     ui_zoom_tip::render_zoom_tip,
     widgets::list::ListState,
   },
-  mprocs::{
-    config::{CmdConfig, Config, ProcConfig, ServerConfig},
-    proc_log_config::LogMode,
-  },
+  config::{CmdConfig, Config, ProcConfig, ServerConfig},
+  mprocs::proc_log_config::LogMode,
   protocol::ClientId,
 };
 
@@ -706,6 +704,7 @@ impl App {
           },
           cwd: None,
           env: None,
+          add_path: Vec::new(),
           autostart: true,
           autorestart: false,
           stop: StopSignal::default(),
@@ -947,7 +946,8 @@ impl App {
         };
         if known {
           if self.state.all_procs_down() {
-            if let Some(event) = self.config.on_all_finished.clone() {
+            if let Some(hook) = &self.config.on_all_finished {
+              let event = hook.as_action().clone();
               self.handle_event(loop_action, &event);
             }
           }
@@ -1200,8 +1200,8 @@ pub async fn server_main(
     clients: Vec::new(),
   };
 
-  if let Some(event) = app.config.on_init.clone() {
-    app.pc.send_self_custom(event);
+  if let Some(hook) = &app.config.on_init {
+    app.pc.send_self_custom(hook.as_action().clone());
   }
 
   app.run().await?;
@@ -1221,6 +1221,7 @@ mod tests {
       },
       cwd: None,
       env: None,
+      add_path: Vec::new(),
       autostart: false,
       autorestart: false,
       stop: StopSignal::default(),

@@ -1,4 +1,4 @@
-use crate::{mprocs::config::Config, term::grid::Rect};
+use crate::{config::Config, term::grid::Rect};
 
 pub struct AppLayout {
   pub procs: Rect,

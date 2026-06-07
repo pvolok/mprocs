@@ -5,10 +5,8 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 
 use crate::console::proc::StopSignal;
-use crate::mprocs::{
-  config::{CmdConfig, ProcConfig},
-  settings::Settings,
-};
+use crate::mprocs::config::{CmdConfig, ProcConfig};
+use crate::mprocs::settings::Settings;
 
 #[derive(Deserialize)]
 struct Package {
@@ -44,6 +42,7 @@ pub fn load_npm_procs(settings: &Settings) -> Result<Vec<ProcConfig>> {
     cmd: CmdConfig::Shell { shell: cmd },
     cwd: None,
     env: Some(env.clone()),
+    add_path: Vec::new(),
     autostart: false,
     autorestart: false,
 
