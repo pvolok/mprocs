@@ -910,24 +910,6 @@ impl Rect {
   }
 }
 
-/// Computes the scroll offset so that `selected` is visible within a viewport
-/// of `viewport_height` items. Returns the index of the first visible item.
-pub fn scroll_offset(
-  selected: usize,
-  item_count: usize,
-  viewport_height: usize,
-) -> usize {
-  if item_count == 0 || viewport_height == 0 {
-    return 0;
-  }
-  let max_start = item_count.saturating_sub(viewport_height);
-  if selected >= viewport_height {
-    (selected - viewport_height + 1).min(max_start)
-  } else {
-    0
-  }
-}
-
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Margin {
   pub top: u16,

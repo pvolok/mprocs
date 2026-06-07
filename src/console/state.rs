@@ -49,10 +49,6 @@ impl State {
     self.procs.get(self.procs_list.selected())
   }
 
-  pub fn get_current_proc_mut(&mut self) -> Option<&mut ProcView> {
-    self.procs.get_mut(self.procs_list.selected())
-  }
-
   pub fn select_proc(&mut self, index: usize) {
     self.procs_list.select(index);
     if let Some(proc_handle) = self.procs.get_mut(index) {

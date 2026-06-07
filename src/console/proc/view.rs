@@ -49,13 +49,6 @@ impl ProcView {
     }
   }
 
-  pub fn lock_view(&'_ self) -> ProcViewFrame<'_> {
-    self
-      .vt
-      .read()
-      .map_or(ProcViewFrame::Empty, |vt| ProcViewFrame::Vt(vt))
-  }
-
   pub fn name(&self) -> &str {
     &self.name
   }
@@ -75,9 +68,4 @@ impl ProcView {
   pub fn focus(&mut self) {
     self.changed = false;
   }
-}
-
-pub enum ProcViewFrame<'a> {
-  Empty,
-  Vt(std::sync::RwLockReadGuard<'a, crate::term::Parser>),
 }
