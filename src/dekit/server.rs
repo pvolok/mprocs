@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::bail;
 
@@ -22,13 +22,32 @@ pub async fn run_server(
   working_dir: PathBuf,
   log_level: Option<&str>,
 ) -> anyhow::Result<()> {
+  let (config, keymap, load_err) =
+    match crate::config::config::Config::load_dir(&working_dir) {
+      Ok(config) => {
+        let keymap = config.keymap.build();
+        (config, keymap, None)
+      }
+      Err(err) => {
+        let config = crate::config::config::Config::make_default();
+        let keymap = config.keymap.build();
+        (config, keymap, Some(err))
+      }
+    };
+
   let _logger = crate::logging::init(crate::logging::Config {
     binary: "dk",
     cli_level: log_level,
     log_env: "DK_LOG",
     file_env: "DK_LOG_FILE",
+    config_level: config.log.level.as_deref(),
+    config_file: config.log.file.as_deref(),
     default_dir: Some(&working_dir),
   })?;
+
+  if let Some(err) = load_err {
+    log::warn!("Failed to load dekit config: {}", err);
+  }
 
   // Create lock file and acquire exclusive flock.
   let lock_guard = lockfile::create_lock_file(&working_dir)?;
@@ -40,7 +59,6 @@ pub async fn run_server(
   let pc = kernel.context();
 
   let socket_path = lock_guard.socket_path().to_path_buf();
-  let (config, keymap) = build_app_config(&working_dir);
   let app_task_id = create_app_task(config, keymap, &pc);
   let app_sender = pc.get_task_sender(app_task_id);
 
@@ -96,31 +114,6 @@ pub async fn run_server(
   crate::process::unix_processes_waiter::UnixProcessesWaiter::uninit()?;
 
   Ok(())
-}
-
-fn build_app_config(
-  working_dir: &Path,
-) -> (crate::config::Config, crate::console::keymap::Keymap) {
-  use crate::config::Config;
-  use crate::console::keymap::Keymap;
-  use crate::mprocs::settings::Settings;
-
-  let mut settings = Settings::default();
-  if let Err(err) = settings.merge_from_xdg() {
-    log::warn!("Failed to load global settings: {}", err);
-  }
-
-  let config = Config::load_dir(working_dir, &settings).unwrap_or_else(|err| {
-    log::warn!("Failed to load dekit.yaml: {}", err);
-    Config::make_default(&settings).expect("make_default is infallible")
-  });
-
-  let mut keymap = Keymap::new();
-  if let Err(err) = settings.add_to_keymap(&mut keymap) {
-    log::warn!("Failed to build keymap: {}", err);
-  }
-
-  (config, keymap)
 }
 
 /// Dispatch an accepted connection: RPC or TUI.

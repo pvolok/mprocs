@@ -17,8 +17,6 @@ use crate::{
   },
 };
 
-const WHEEL_LINES: usize = 3;
-
 pub struct TaskScreen {
   task_id: TaskId,
   size: Winsize,
@@ -33,6 +31,8 @@ pub struct TaskScreen {
   /// Content cell of the last left mouse-down, so a drag can anchor the
   /// selection there and copy mode is only entered once a drag begins.
   mouse_down: Option<(u16, u16)>,
+  /// Lines scrolled per mouse-wheel notch.
+  wheel_lines: usize,
 }
 
 struct CopySession {
@@ -109,7 +109,7 @@ impl TaskScreen {
     &self.vt
   }
 
-  pub fn new(task_id: TaskId, vt: SharedVt) -> Self {
+  pub fn new(task_id: TaskId, vt: SharedVt, wheel_lines: usize) -> Self {
     let size = vt.read().unwrap().screen().size();
     TaskScreen {
       task_id,
@@ -125,6 +125,7 @@ impl TaskScreen {
       next_direct_id: 0,
       copy: None,
       mouse_down: None,
+      wheel_lines: wheel_lines.max(1),
     }
   }
 
@@ -374,8 +375,8 @@ impl TaskScreen {
         }
       }
       MouseEventKind::Up(_) => self.mouse_down = None,
-      MouseEventKind::ScrollUp => self.scroll(WHEEL_LINES as i32),
-      MouseEventKind::ScrollDown => self.scroll(-(WHEEL_LINES as i32)),
+      MouseEventKind::ScrollUp => self.scroll(self.wheel_lines as i32),
+      MouseEventKind::ScrollDown => self.scroll(-(self.wheel_lines as i32)),
       MouseEventKind::Down(_)
       | MouseEventKind::Drag(_)
       | MouseEventKind::Moved

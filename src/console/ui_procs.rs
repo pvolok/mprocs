@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use unicode_width::UnicodeWidthStr;
 
 use crate::console::state::{Scope, State};
-use crate::config::Config;
+use crate::config::config::Config;
 use crate::term::{
   Color, Grid,
   attrs::Attrs,
@@ -42,7 +42,7 @@ pub fn render_procs(
   };
   let r = grid.draw_text(
     title_area,
-    config.proc_list_title.as_str(),
+    config.tui.procs.title.as_str(),
     if active {
       Attrs::default().set_bold(true)
     } else {

@@ -1,10 +1,36 @@
 use std::collections::HashMap;
 
 use anyhow::bail;
-use futures::{future::FutureExt, select};
-use tokio::{io::AsyncReadExt, sync::mpsc::UnboundedReceiver};
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{
+  config::{
+    config::Config,
+    proc::{CmdConfig, ProcConfig},
+    proc_log::LogMode,
+  },
+  console::{
+    action::{Action, CopyMove},
+    app_client::ClientHandle,
+    app_layout::AppLayout,
+    keymap::Keymap,
+    modal::{
+      add_proc::AddProcModal, commands_menu::CommandsMenuModal, modal::Modal,
+      quit::QuitModal, remove_proc::RemoveProcModal,
+      rename_proc::RenameProcModal,
+    },
+    proc::view::ProcView,
+    state::{Scope, State},
+    ui_keymap::render_keymap,
+    ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
+    ui_term::{render_term, term_check_hit},
+    ui_zoom_tip::render_zoom_tip,
+    widgets::list::ListState,
+  },
+  protocol::ClientId,
+};
+use crate::{
+  console::server_message::ServerMessage,
   error::ResultLogger,
   kernel::{
     copy_mode::CopyMove as KernelCopyMove,
@@ -18,7 +44,6 @@ use crate::{
     task_path::TaskPath,
     task_screen::{FramedScreenNotify, TaskScreenCmd},
   },
-  console::server_message::ServerMessage,
   process::process_spec::ProcessSpec,
   protocol::{CltToSrv, SrvToClt},
   task::{
@@ -34,29 +59,6 @@ use crate::{
     key::{Key, KeyEventKind},
     mouse::{MouseButton, MouseEventKind},
   },
-};
-use crate::{
-  console::{
-    action::{Action, CopyMove},
-    app_client::ClientHandle,
-    app_layout::AppLayout,
-    keymap::Keymap,
-    modal::{
-      add_proc::AddProcModal, commands_menu::CommandsMenuModal, modal::Modal,
-      quit::QuitModal, remove_proc::RemoveProcModal,
-      rename_proc::RenameProcModal,
-    },
-    proc::{StopSignal, view::ProcView},
-    state::{Scope, State},
-    ui_keymap::render_keymap,
-    ui_procs::{procs_check_hit, procs_get_clicked_index, render_procs},
-    ui_term::{render_term, term_check_hit},
-    ui_zoom_tip::render_zoom_tip,
-    widgets::list::ListState,
-  },
-  config::{CmdConfig, Config, ProcConfig, ServerConfig},
-  mprocs::proc_log_config::LogMode,
-  protocol::ClientId,
 };
 
 fn kernel_copy_move(dir: CopyMove) -> KernelCopyMove {
@@ -113,60 +115,9 @@ pub struct App {
 
 impl App {
   pub async fn run(self) -> anyhow::Result<()> {
-    let (exit_trigger, exit_listener) = triggered::trigger();
-
-    let app_task_id = self.pc.task_id;
-    let server_thread = if let Some(ref server_addr) = self.config.server {
-      let server = match server_addr {
-        ServerConfig::Tcp(addr) => tokio::net::TcpListener::bind(addr).await?,
-      };
-
-      let ev_pc = self.pc.clone();
-      let server_thread = tokio::spawn(async move {
-        loop {
-          let on_exit = exit_listener.clone();
-          let mut socket: tokio::net::TcpStream = select! {
-            _ = on_exit.fuse() => break,
-            client = server.accept().fuse() => {
-              if let Ok((socket, _)) = client {
-                socket
-              } else {
-                break;
-              }
-            }
-          };
-
-          let ctl_pc = ev_pc.clone();
-          let on_exit = exit_listener.clone();
-          tokio::spawn(async move {
-            let mut buf: Vec<u8> = Vec::with_capacity(32);
-            let () = select! {
-              _ = on_exit.fuse() => return,
-              count = socket.read_to_end(&mut buf).fuse() => {
-                if count.is_err() {
-                  return;
-                }
-              }
-            };
-            let msg: Action = serde_yaml::from_slice(buf.as_slice()).unwrap();
-            // log::info!("Received remote command: {:?}", msg);
-            ctl_pc.send(KernelCommand::TaskCmd(app_task_id, TaskCmd::msg(msg)));
-          });
-        }
-      });
-      Some(server_thread)
-    } else {
-      None
-    };
-
     let result = self.main_loop().await;
-    exit_trigger.trigger();
     if let Err(err) = result {
       log::error!("App main loop error: {err}");
-    }
-
-    if let Some(server_thread) = server_thread {
-      let _ = server_thread.await;
     }
 
     Ok(())
@@ -338,12 +289,13 @@ impl App {
   }
 
   fn spawn_proc(&self, cfg: ProcConfig, task_id: TaskId, deps: Vec<TaskId>) {
+    let merged = self.config.proc_defaults.clone().overlay(cfg);
     let path = TaskPath::new(format!("/{}", task_id.0)).ok();
     spawn_proc_task_with_id(
       &self.pc,
       task_id,
       path,
-      proc_task_config(&cfg, task_id, deps),
+      proc_task_config(&merged, task_id, deps),
     );
   }
 
@@ -698,20 +650,12 @@ impl App {
       Action::AddProc { cmd, name } => {
         let name = name.clone().unwrap_or_else(|| cmd.clone());
         let proc_config = ProcConfig {
-          name: self.unique_proc_name(&name, None),
-          cmd: CmdConfig::Shell {
+          path: self.unique_proc_name(&name, None),
+          cmd: Some(CmdConfig::Shell {
             shell: cmd.to_string(),
-          },
-          cwd: None,
-          env: None,
-          add_path: Vec::new(),
-          autostart: true,
-          autorestart: false,
-          stop: StopSignal::default(),
-          deps: Vec::new(),
-          mouse_scroll_speed: self.config.mouse_scroll_speed,
-          scrollback_len: self.config.scrollback_len,
-          log: self.config.proc_log.clone(),
+          }),
+          autostart: Some(true),
+          ..ProcConfig::default()
         };
         let id = self.pc.alloc_id();
         self.spawn_proc(proc_config, id, Vec::new());
@@ -1001,7 +945,7 @@ fn proc_task_config(
   deps: Vec<TaskId>,
 ) -> ProcTaskConfig {
   let log = cfg.log.clone().map(|log_cfg| {
-    let name = cfg.name.clone();
+    let name = cfg.path.clone();
     let id = task_id.0;
     Box::new(move |pid: u32| {
       log_cfg.file_path(&name, id, pid).map(|path| LogSink {
@@ -1012,13 +956,14 @@ fn proc_task_config(
   });
   ProcTaskConfig {
     spec: ProcessSpec::from(cfg),
-    stop: cfg.stop.clone(),
+    stop: cfg.stop(),
     log,
-    autostart: cfg.autostart,
-    autorestart: cfg.autorestart,
-    scrollback_len: cfg.scrollback_len,
+    autostart: cfg.autostart(),
+    autorestart: cfg.autorestart(),
+    scrollback_len: cfg.scrollback_len(),
+    mouse_scroll_speed: cfg.mouse_scroll_speed(),
     deps,
-    label: Some(cfg.name.clone()),
+    label: Some(cfg.path.clone()),
   }
 }
 
@@ -1043,12 +988,12 @@ fn resolve_proc_deps(
     proc_configs.iter().zip(task_ids.iter()).enumerate()
   {
     if name_to_id
-      .insert(proc_config.name.as_str(), *task_id)
+      .insert(proc_config.path.as_str(), *task_id)
       .is_some()
     {
-      bail!("Duplicate process name '{}'.", proc_config.name);
+      bail!("Duplicate process name '{}'.", proc_config.path);
     }
-    name_to_index.insert(proc_config.name.as_str(), index);
+    name_to_index.insert(proc_config.path.as_str(), index);
   }
 
   let mut deps_by_proc = Vec::with_capacity(proc_configs.len());
@@ -1060,14 +1005,14 @@ fn resolve_proc_deps(
       let Some(dep_id) = name_to_id.get(dep_name.as_str()) else {
         bail!(
           "Process '{}' depends on unknown process '{}'.",
-          proc_config.name,
+          proc_config.path,
           dep_name
         );
       };
       let Some(dep_index) = name_to_index.get(dep_name.as_str()) else {
         bail!(
           "Process '{}' depends on unknown process '{}'.",
-          proc_config.name,
+          proc_config.path,
           dep_name
         );
       };
@@ -1123,9 +1068,9 @@ fn visit_proc_deps(
       let cycle_start = stack.iter().position(|&i| i == index).unwrap_or(0);
       let mut cycle = stack[cycle_start..]
         .iter()
-        .map(|&i| proc_configs[i].name.as_str())
+        .map(|&i| proc_configs[i].path.as_str())
         .collect::<Vec<_>>();
-      cycle.push(proc_configs[index].name.as_str());
+      cycle.push(proc_configs[index].path.as_str());
       bail!("Process dependency cycle detected: {}.", cycle.join(" -> "));
     }
     VisitState::Unvisited => {}
@@ -1176,7 +1121,7 @@ pub async fn server_main(
     scope: Scope::Procs,
     procs: Vec::new(),
     procs_list: ListState::default(),
-    hide_keymap_window: config.hide_keymap_window,
+    hide_keymap_window: !config.tui.tips.show,
 
     quitting: false,
   };
@@ -1185,7 +1130,7 @@ pub async fn server_main(
     width: 160,
     height: 50,
   };
-  let scrollback_len = config.scrollback_len;
+  let scrollback_len = config.proc_defaults.scrollback_len();
 
   let app = App {
     config,
@@ -1215,20 +1160,12 @@ mod tests {
 
   fn proc_config(name: &str, deps: &[&str]) -> ProcConfig {
     ProcConfig {
-      name: name.to_string(),
-      cmd: CmdConfig::Shell {
+      path: name.to_string(),
+      cmd: Some(CmdConfig::Shell {
         shell: "true".to_string(),
-      },
-      cwd: None,
-      env: None,
-      add_path: Vec::new(),
-      autostart: false,
-      autorestart: false,
-      stop: StopSignal::default(),
+      }),
       deps: deps.iter().map(|dep| dep.to_string()).collect(),
-      mouse_scroll_speed: 1,
-      scrollback_len: 100,
-      log: None,
+      ..ProcConfig::default()
     }
   }
 

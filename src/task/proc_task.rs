@@ -46,6 +46,7 @@ pub struct ProcTaskConfig {
   pub autostart: bool,
   pub autorestart: bool,
   pub scrollback_len: usize,
+  pub mouse_scroll_speed: usize,
   pub deps: Vec<TaskId>,
 }
 
@@ -59,6 +60,7 @@ impl ProcTaskConfig {
       autostart: true,
       autorestart: false,
       scrollback_len: 1000,
+      mouse_scroll_speed: 5,
       deps: Vec::new(),
     }
   }
@@ -87,6 +89,7 @@ pub fn spawn_proc_task_with_id(
     autostart,
     autorestart,
     scrollback_len,
+    mouse_scroll_speed,
     deps,
     label,
   } = config;
@@ -113,6 +116,7 @@ pub fn spawn_proc_task_with_id(
         log,
         stop,
         scrollback_len,
+        mouse_scroll_speed,
         autorestart,
       )
       .await;
@@ -128,9 +132,10 @@ async fn proc_main(
   mut log: Option<LogResolver>,
   stop: StopSignal,
   scrollback_len: usize,
+  mouse_scroll_speed: usize,
   autorestart: bool,
 ) {
-  let mut task_screen = TaskScreen::new(ctx.task_id, vt);
+  let mut task_screen = TaskScreen::new(ctx.task_id, vt, mouse_scroll_speed);
   let mut screen_effects: Vec<TaskScreenEffect> = Vec::new();
 
   let mut process: Option<NativeProcess> = None;
@@ -239,6 +244,7 @@ async fn proc_main(
                   autostart: true,
                   autorestart,
                   scrollback_len,
+                  mouse_scroll_speed,
                   deps: Vec::new(),
                   label: dup.0,
                 },

@@ -1,4 +1,4 @@
-use crate::{config::Config, term::grid::Rect};
+use crate::{config::config::Config, term::grid::Rect};
 
 pub struct AppLayout {
   pub procs: Rect,
@@ -18,7 +18,7 @@ impl AppLayout {
     let procs_w = if zoom {
       0
     } else {
-      config.proc_list_width as u16
+      config.tui.procs.width as u16
     };
     let zoom_banner_h = if zoom { 1 } else { 0 };
     let (top, keymap) = area.split_h(area.height.saturating_sub(keymap_h));

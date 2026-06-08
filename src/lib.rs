@@ -11,6 +11,7 @@ mod js;
 mod kernel;
 mod logging;
 pub mod mprocs;
+mod parse_shell;
 mod process;
 mod protocol;
 mod task;

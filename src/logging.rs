@@ -18,6 +18,8 @@ pub struct Config<'a> {
   pub log_env: &'a str,
   /// Env var consulted for the log file path (e.g. `MPROCS_LOG_FILE`).
   pub file_env: &'a str,
+  pub config_level: Option<&'a str>,
+  pub config_file: Option<&'a Path>,
   /// Working directory used as the default file location. `None` means CWD.
   pub default_dir: Option<&'a Path>,
 }
@@ -28,6 +30,7 @@ pub fn init(cfg: Config<'_>) -> Result<Option<LoggerHandle>> {
     .map(str::to_string)
     .or_else(|| std::env::var(cfg.log_env).ok())
     .or_else(|| std::env::var("RUST_LOG").ok())
+    .or_else(|| cfg.config_level.map(str::to_string))
     .unwrap_or_else(default_spec);
 
   if spec.eq_ignore_ascii_case("off") {
@@ -36,6 +39,7 @@ pub fn init(cfg: Config<'_>) -> Result<Option<LoggerHandle>> {
 
   let file = std::env::var_os(cfg.file_env)
     .map(PathBuf::from)
+    .or_else(|| cfg.config_file.map(Path::to_path_buf))
     .unwrap_or_else(|| {
       let mut p = cfg
         .default_dir

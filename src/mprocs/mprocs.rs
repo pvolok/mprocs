@@ -203,6 +203,8 @@ pub async fn run_app(args: Vec<String>) -> anyhow::Result<()> {
         cli_level: matches.get_one::<String>("log-level").map(String::as_str),
         log_env: "MPROCS_LOG",
         file_env: "MPROCS_LOG_FILE",
+        config_level: None,
+        config_file: None,
         default_dir: None,
       })?;
 
@@ -223,8 +225,11 @@ pub async fn run_app(args: Vec<String>) -> anyhow::Result<()> {
       crate::process::unix_processes_waiter::UnixProcessesWaiter::init()?;
       let kernel = Kernel::new();
       let pc = kernel.context();
-      let app_task_id =
-        create_app_task(crate::config::Config::from(config), keymap, &pc);
+      let app_task_id = create_app_task(
+        crate::config::config::Config::from(config),
+        keymap,
+        &pc,
+      );
 
       let app_sender = pc.get_task_sender(app_task_id);
       tokio::spawn(async move {
