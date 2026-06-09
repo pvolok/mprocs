@@ -166,8 +166,11 @@ impl ProcConfig {
   ) -> Result<Option<ProcConfig>> {
     match val.raw() {
       Value::Null => Ok(None),
-      Value::Bool(_) => todo!(),
-      Value::Number(_) => todo!(),
+      Value::Bool(_) | Value::Number(_) => {
+        Err(val.error_at(
+          "Expected a process definition (string, array, or mapping)",
+        ))
+      }
       Value::String(shell) => Ok(Some(ProcConfig {
         name,
         cmd: CmdConfig::Shell {
@@ -225,8 +228,16 @@ impl ProcConfig {
             (Some(shell), None) => CmdConfig::Shell {
               shell: shell.as_str()?.to_owned(),
             },
-            (None, None) => todo!(),
-            (Some(_), Some(_)) => todo!(),
+            (None, None) => {
+              return Err(
+                val.error_at("Process must define either `cmd` or `shell`"),
+              );
+            }
+            (Some(_), Some(_)) => {
+              return Err(
+                val.error_at("Process cannot define both `cmd` and `shell`"),
+              );
+            }
           }
         };
 

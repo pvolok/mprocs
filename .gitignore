@@ -9,6 +9,12 @@
 
 # Editor
 /.vscode/
+/.opencode/
+
+# Scratch
+/mprocs.yaml
+/dekit.yaml
+/dekit.js
 
 # Cargo
 /target

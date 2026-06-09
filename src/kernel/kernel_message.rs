@@ -31,6 +31,9 @@ pub enum KernelCommand {
 
   TaskCmdByPath(TaskPath, TaskCmd),
 
+  RestartTask(TaskId),
+  RestartTaskByPath(TaskPath),
+
   SetTaskPath(TaskId, TaskPath),
   SetTaskLabel(TaskId, Option<String>),
 
@@ -198,6 +201,10 @@ impl TaskContext {
 
   pub fn send_to_path(&self, path: TaskPath, cmd: TaskCmd) {
     self.send(KernelCommand::TaskCmdByPath(path, cmd));
+  }
+
+  pub fn restart_path(&self, path: TaskPath) {
+    self.send(KernelCommand::RestartTaskByPath(path));
   }
 
   pub fn set_task_path(&self, task_id: TaskId, path: TaskPath) {

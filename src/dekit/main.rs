@@ -14,30 +14,105 @@ use crate::{
   protocol::{CltToSrv, DkRequest, DkResponse, SrvToClt},
 };
 
-fn print_task_list(resp: DkResponse) {
+fn print_task_list(resp: DkResponse, json: bool) -> anyhow::Result<()> {
   match resp {
     DkResponse::TaskList(tasks) => {
-      if tasks.is_empty() {
+      if json {
+        println!("{}", serde_json::to_string(&tasks)?);
+      } else if tasks.is_empty() {
         println!("No tasks.");
       } else {
         for t in &tasks {
           println!("{}\t{}", t.path, t.status);
         }
       }
+      Ok(())
     }
-    DkResponse::Error(e) => eprintln!("Error: {}", e),
-    _ => eprintln!("Unexpected response"),
+    DkResponse::Error(e) => anyhow::bail!("{}", e),
+    _ => anyhow::bail!("unexpected response from daemon"),
+  }
+}
+
+fn resolve_working_dir(matches: &clap::ArgMatches) -> anyhow::Result<PathBuf> {
+  match matches.get_one::<String>("chdir") {
+    Some(dir) => std::fs::canonicalize(dir)
+      .map_err(|e| anyhow!("invalid --chdir `{}`: {}", dir, e)),
+    None => Ok(std::env::current_dir()?),
+  }
+}
+
+async fn shutdown_daemon(working_dir: &Path) -> anyhow::Result<()> {
+  match lockfile::get_daemon_status(working_dir)? {
+    None => anyhow::bail!("No daemon found for this directory"),
+    Some(info) if !info.is_running => {
+      lockfile::cleanup_stale(working_dir)?;
+      anyhow::bail!("Daemon is not running (stale lock file cleaned up)");
+    }
+    Some(_) => {}
+  }
+
+  let _ = rpc_request(working_dir, DkRequest::Shutdown, false).await;
+
+  for _ in 0..50 {
+    match lockfile::get_daemon_status(working_dir)? {
+      None => return Ok(()),
+      Some(info) if !info.is_running => {
+        lockfile::cleanup_stale(working_dir)?;
+        return Ok(());
+      }
+      Some(_) => {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await
+      }
+    }
+  }
+
+  lockfile::stop_daemon(working_dir)?;
+  Ok(())
+}
+
+fn daemon_json(info: Option<&lockfile::DaemonInfo>) -> serde_json::Value {
+  match info {
+    Some(info) => serde_json::json!({
+      "running": info.is_running,
+      "pid": info.contents.pid,
+      "dir": info.contents.working_dir,
+      "socket": info.contents.socket,
+      "version": info.contents.version,
+    }),
+    None => serde_json::Value::Null,
+  }
+}
+
+async fn wait_for_daemon(working_dir: &Path) -> anyhow::Result<()> {
+  for _ in 0..50 {
+    if let Some(info) = lockfile::get_daemon_status(working_dir)? {
+      if info.is_running {
+        return Ok(());
+      }
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+  }
+  anyhow::bail!("daemon did not come up within 2s");
+}
+
+fn report_ok(resp: DkResponse, ok_msg: &str) -> anyhow::Result<()> {
+  match resp {
+    DkResponse::Ok => {
+      println!("{}", ok_msg);
+      Ok(())
+    }
+    DkResponse::Error(e) => anyhow::bail!("{}", e),
+    _ => anyhow::bail!("unexpected response from daemon"),
   }
 }
 
 pub async fn dekit_main() -> anyhow::Result<()> {
   let cmd = clap::command!()
     .subcommands([
-      Command::new("attach"),
+      Command::new("attach") ,
       Command::new("up"),
       Command::new("down"),
       Command::new("spawn")
-        .about("Create and start a new task at the given path")
         .arg(
           Arg::new("path")
             .long("path")
@@ -60,10 +135,10 @@ pub async fn dekit_main() -> anyhow::Result<()> {
         .about("List tasks")
         .arg(Arg::new("glob").help("Optional glob pattern")),
       Command::new("start")
-        .about("Start a stopped task")
+        .about("Start a task")
         .arg(Arg::new("path").required(true).help("Task path")),
       Command::new("stop")
-        .about("Gracefully stop a task")
+        .about("Stop a task")
         .arg(Arg::new("path").required(true).help("Task path")),
       Command::new("kill")
         .about("Force kill a task")
@@ -74,13 +149,16 @@ pub async fn dekit_main() -> anyhow::Result<()> {
       Command::new("screen")
         .about("Print the current screen of a task")
         .arg(Arg::new("path").required(true).help("Task path")),
-      Command::new("server").subcommands([
+      Command::new("server")
+        .about("Manage the background server")
+        .subcommands([
         Command::new("run")
+          .about("Run the daemon in the foreground")
           .arg(
             Arg::new("dir")
               .long("dir")
               .required(true)
-              .help("Working directory this daemon manages"),
+              .help("Working directory this server manages"),
           )
           .arg(
             Arg::new("log-level")
@@ -88,11 +166,11 @@ pub async fn dekit_main() -> anyhow::Result<()> {
               .help("Diagnostic log level (off|error|warn|info|debug|trace, or env_logger spec). Falls back to $DK_LOG, $RUST_LOG, then 'error' (release) or 'trace' (debug)."),
           ),
         Command::new("start")
-          .about("Start the daemon for the current directory"),
-        Command::new("stop").about("Stop the daemon for the current directory"),
+          .about("Start the server for the current directory"),
+        Command::new("stop").about("Stop the server for the current directory"),
         Command::new("status")
-          .about("Show daemon status for the current directory"),
-        Command::new("list").about("List all daemons on this machine"),
+          .about("Show server status for the current directory"),
+        Command::new("list").about("List all server on this machine"),
         Command::new("clean").about("Remove stale lock files"),
       ]),
       Command::new("mprocs")
@@ -106,9 +184,24 @@ pub async fn dekit_main() -> anyhow::Result<()> {
         ),
     ])
     .arg(
+      Arg::new("chdir")
+        .long("chdir")
+        .short('C')
+        .global(true)
+        .help("Directory whose server to talk to (default: current dir)"),
+    )
+    .arg(
+      Arg::new("json")
+        .long("json")
+        .global(true)
+        .action(clap::ArgAction::SetTrue)
+        .help("Emit machine-readable JSON instead of text"),
+    )
+    .arg(
       Arg::new("files")
         .action(clap::ArgAction::Append)
-        .trailing_var_arg(true),
+        .trailing_var_arg(true)
+        .help("A .js script to run; with no command, launch the TUI"),
     );
   let matches = cmd.get_matches();
 
@@ -119,25 +212,19 @@ pub async fn dekit_main() -> anyhow::Result<()> {
       .unwrap_or_default();
     let mut argv = vec!["mprocs".to_string()];
     argv.extend(args);
-    return match crate::mprocs::mprocs::run_app(argv).await {
-      Ok(()) => Ok(()),
-      Err(err) => {
-        eprintln!("Error: {:?}", err);
-        Ok(())
-      }
-    };
+    return crate::mprocs::mprocs::run_app(argv).await;
   }
 
   match matches.subcommand() {
     Some(("attach", _sub_m)) => {
-      let working_dir = std::env::current_dir()?;
+      let working_dir = resolve_working_dir(&matches)?;
       let (sender, receiver) =
         connect_client_socket::<CltToSrv, SrvToClt>(&working_dir, false)
           .await?;
       client_main(sender, receiver).await?;
     }
     Some(("spawn", sub_m)) => {
-      let working_dir = std::env::current_dir()?;
+      let working_dir = resolve_working_dir(&matches)?;
       let path = sub_m.get_one::<String>("path").unwrap().clone();
       let cwd = sub_m.get_one::<String>("cwd").cloned();
       let cmd: Vec<String> =
@@ -145,65 +232,45 @@ pub async fn dekit_main() -> anyhow::Result<()> {
       let resp =
         rpc_request(&working_dir, DkRequest::Spawn { path, cmd, cwd }, true)
           .await?;
-      match resp {
-        DkResponse::Ok => println!("Spawned."),
-        DkResponse::Error(e) => eprintln!("Error: {}", e),
-        _ => eprintln!("Unexpected response"),
-      }
+      report_ok(resp, "Spawned.")?;
     }
     Some(("ls", sub_m)) => {
-      let working_dir = std::env::current_dir()?;
+      let working_dir = resolve_working_dir(&matches)?;
       let glob = sub_m.get_one::<String>("glob").cloned();
       let resp =
         rpc_request(&working_dir, DkRequest::Ls { glob }, false).await?;
-      print_task_list(resp);
+      print_task_list(resp, matches.get_flag("json"))?;
     }
     Some(("start", sub_m)) => {
-      let working_dir = std::env::current_dir()?;
+      let working_dir = resolve_working_dir(&matches)?;
       let path = sub_m.get_one::<String>("path").unwrap().clone();
       let resp =
         rpc_request(&working_dir, DkRequest::Start { path }, true).await?;
-      match resp {
-        DkResponse::Ok => println!("Started."),
-        DkResponse::Error(e) => eprintln!("Error: {}", e),
-        _ => eprintln!("Unexpected response"),
-      }
+      report_ok(resp, "Started.")?;
     }
     Some(("stop", sub_m)) => {
-      let working_dir = std::env::current_dir()?;
+      let working_dir = resolve_working_dir(&matches)?;
       let path = sub_m.get_one::<String>("path").unwrap().clone();
       let resp =
         rpc_request(&working_dir, DkRequest::Stop { path }, false).await?;
-      match resp {
-        DkResponse::Ok => println!("Stopped."),
-        DkResponse::Error(e) => eprintln!("Error: {}", e),
-        _ => eprintln!("Unexpected response"),
-      }
+      report_ok(resp, "Stopped.")?;
     }
     Some(("kill", sub_m)) => {
-      let working_dir = std::env::current_dir()?;
+      let working_dir = resolve_working_dir(&matches)?;
       let path = sub_m.get_one::<String>("path").unwrap().clone();
       let resp =
         rpc_request(&working_dir, DkRequest::Kill { path }, false).await?;
-      match resp {
-        DkResponse::Ok => println!("Killed."),
-        DkResponse::Error(e) => eprintln!("Error: {}", e),
-        _ => eprintln!("Unexpected response"),
-      }
+      report_ok(resp, "Killed.")?;
     }
     Some(("restart", sub_m)) => {
-      let working_dir = std::env::current_dir()?;
+      let working_dir = resolve_working_dir(&matches)?;
       let path = sub_m.get_one::<String>("path").unwrap().clone();
       let resp =
         rpc_request(&working_dir, DkRequest::Restart { path }, true).await?;
-      match resp {
-        DkResponse::Ok => println!("Restarted."),
-        DkResponse::Error(e) => eprintln!("Error: {}", e),
-        _ => eprintln!("Unexpected response"),
-      }
+      report_ok(resp, "Restarted.")?;
     }
     Some(("screen", sub_m)) => {
-      let working_dir = std::env::current_dir()?;
+      let working_dir = resolve_working_dir(&matches)?;
       let path = sub_m.get_one::<String>("path").unwrap().clone();
       let resp =
         rpc_request(&working_dir, DkRequest::Screen { path }, false).await?;
@@ -214,21 +281,21 @@ pub async fn dekit_main() -> anyhow::Result<()> {
           print!("\x1b[0m\n");
         }
         DkResponse::Screen(None) => {
-          eprintln!("No screen content for this task.");
+          anyhow::bail!("no screen content for this task");
         }
-        DkResponse::Error(e) => eprintln!("Error: {}", e),
-        _ => eprintln!("Unexpected response"),
+        DkResponse::Error(e) => anyhow::bail!("{}", e),
+        _ => anyhow::bail!("unexpected response from daemon"),
       }
     }
     Some(("up", _sub_m)) => {
-      let working_dir = std::env::current_dir()?;
+      let working_dir = resolve_working_dir(&matches)?;
       let resp =
         rpc_request(&working_dir, DkRequest::Ls { glob: None }, true).await?;
-      print_task_list(resp);
+      print_task_list(resp, matches.get_flag("json"))?;
     }
     Some(("down", _sub_m)) => {
-      let working_dir = std::env::current_dir()?;
-      lockfile::stop_daemon(&working_dir)?;
+      let working_dir = resolve_working_dir(&matches)?;
+      shutdown_daemon(&working_dir).await?;
       println!("Daemon stopped.");
     }
     Some(("server", sub_m)) => match sub_m.subcommand() {
@@ -239,7 +306,7 @@ pub async fn dekit_main() -> anyhow::Result<()> {
         run_server(PathBuf::from(dir), log_level).await?;
       }
       Some(("start", _sub_m)) => {
-        let working_dir = std::env::current_dir()?;
+        let working_dir = resolve_working_dir(&matches)?;
         // Check if already running.
         if let Some(info) = lockfile::get_daemon_status(&working_dir)? {
           if info.is_running {
@@ -250,34 +317,44 @@ pub async fn dekit_main() -> anyhow::Result<()> {
           lockfile::cleanup_stale(&working_dir)?;
         }
         spawn_server_daemon(&working_dir)?;
+        wait_for_daemon(&working_dir).await?;
         println!("Daemon started for {}.", working_dir.display());
       }
       Some(("stop", _sub_m)) => {
-        let working_dir = std::env::current_dir()?;
-        lockfile::stop_daemon(&working_dir)?;
+        let working_dir = resolve_working_dir(&matches)?;
+        shutdown_daemon(&working_dir).await?;
         println!("Daemon stopped.");
       }
       Some(("status", _sub_m)) => {
-        let working_dir = std::env::current_dir()?;
-        match lockfile::get_daemon_status(&working_dir)? {
-          Some(info) => {
-            let status = if info.is_running { "running" } else { "stale" };
-            println!(
-              "[{}] pid={} socket={} version={}",
-              status,
-              info.contents.pid,
-              info.contents.socket,
-              info.contents.version,
-            );
-          }
-          None => {
-            println!("No daemon for this directory.");
+        let working_dir = resolve_working_dir(&matches)?;
+        let info = lockfile::get_daemon_status(&working_dir)?;
+        if matches.get_flag("json") {
+          println!("{}", serde_json::to_string(&daemon_json(info.as_ref()))?);
+        } else {
+          match info {
+            Some(info) => {
+              let status = if info.is_running { "running" } else { "stale" };
+              println!(
+                "[{}] pid={} socket={} version={}",
+                status,
+                info.contents.pid,
+                info.contents.socket,
+                info.contents.version,
+              );
+            }
+            None => {
+              println!("No daemon for this directory.");
+            }
           }
         }
       }
       Some(("list", _sub_m)) => {
         let daemons = lockfile::list_daemons()?;
-        if daemons.is_empty() {
+        if matches.get_flag("json") {
+          let arr: Vec<_> =
+            daemons.iter().map(|d| daemon_json(Some(d))).collect();
+          println!("{}", serde_json::to_string(&arr)?);
+        } else if daemons.is_empty() {
           println!("No daemons found.");
         } else {
           for d in &daemons {
@@ -298,11 +375,13 @@ pub async fn dekit_main() -> anyhow::Result<()> {
         println!("Removed {} stale lock file(s).", count);
       }
       _ => {
-        println!("Expected more arguments after `dk server`");
+        anyhow::bail!(
+          "expected a subcommand after `dk server` (run, start, stop, status, list, clean)"
+        );
       }
     },
     Some((arg, _sub_m)) => {
-      println!("Unknown: {}", arg);
+      anyhow::bail!("unknown command: {}", arg);
     }
     None => {
       let paths = matches
@@ -316,20 +395,24 @@ pub async fn dekit_main() -> anyhow::Result<()> {
           let src = std::fs::read_to_string(first)?;
 
           let vm = JsVm::new().await?;
-          let root =
-            vm.eval_file(Path::new("dekit.js"), src.as_bytes()).await?;
+          let root = vm
+            .eval_file(Path::new(first.as_str()), src.as_bytes())
+            .await?;
 
-          let r: anyhow::Result<()> =
-            rquickjs::async_with!(vm.context => |ctx| {
-              run_module_main(&ctx, &root).await
-            })
-            .await;
-          r?;
+          rquickjs::async_with!(vm.context => |ctx| {
+            run_module_main(&ctx, &root).await
+          })
+          .await?;
+        } else {
+          anyhow::bail!(
+            "unknown command or unsupported file: `{}` (expected a subcommand or a .js script)",
+            first
+          );
         }
       } else {
         // No args: connect to daemon for current dir, starting it on
         // demand.
-        let working_dir = std::env::current_dir()?;
+        let working_dir = resolve_working_dir(&matches)?;
         let (sender, receiver) =
           connect_client_socket::<CltToSrv, SrvToClt>(&working_dir, true)
             .await?;

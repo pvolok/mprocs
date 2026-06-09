@@ -197,8 +197,7 @@ async fn handle_rpc(
 
     DkRequest::Restart { path } => {
       let path = TaskPath::new(&path)?;
-      pc.send_to_path(path.clone(), TaskCmd::Stop);
-      pc.send_to_path(path, TaskCmd::Start);
+      pc.restart_path(path);
       DkResponse::Ok
     }
 
@@ -209,6 +208,11 @@ async fn handle_rpc(
         KernelQueryResponse::Screen(content) => DkResponse::Screen(content),
         _ => DkResponse::Error("unexpected query response".to_string()),
       }
+    }
+
+    DkRequest::Shutdown => {
+      pc.send(KernelCommand::Quit);
+      DkResponse::Ok
     }
 
     DkRequest::Spawn { path, cmd, cwd } => {

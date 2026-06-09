@@ -221,6 +221,37 @@ impl Kernel {
           }
         }
 
+        KernelCommand::RestartTaskByPath(path) => {
+          if let Some(task_id) = self.path_trie.resolve(&path) {
+            self
+              .sender
+              .send(KernelMessage {
+                from: msg.from,
+                command: KernelCommand::RestartTask(task_id),
+              })
+              .log_ignore();
+          } else {
+            log::warn!("No task at path: {}", path);
+          }
+        }
+
+        KernelCommand::RestartTask(task_id) => {
+          let mut fx = Effects::new();
+          if let Some(task) = self.tasks.get_mut(&task_id) {
+            task.target = Target::Started;
+            if task.status == TaskStatus::Running {
+              task.pending_start = false;
+              task.task.handle_cmd(TaskCmd::Stop, &mut fx);
+            } else if Self::all_deps_ready(task) {
+              task.pending_start = false;
+              task.task.handle_cmd(TaskCmd::Start, &mut fx);
+            } else {
+              task.pending_start = true;
+            }
+          }
+          self.apply_effects(task_id, &mut fx);
+        }
+
         KernelCommand::SetTaskPath(task_id, path) => {
           let taken_by_other = self
             .path_trie

@@ -25,6 +25,7 @@ pub enum DkRequest {
   Screen {
     path: String,
   },
+  Shutdown,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
