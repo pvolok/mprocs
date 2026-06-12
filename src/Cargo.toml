@@ -64,6 +64,9 @@ itoa = "1"
 rquickjs = { version = "0.11", features = ["full-async"] }
 rustix = { version = "1", features = ["all-apis"] }
 
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+
 [target."cfg(unix)".dependencies]
 daemonize = "0.5.0"
 

@@ -1,3 +1,4 @@
+pub mod ansi;
 pub mod attrs;
 pub mod cell;
 pub mod color;

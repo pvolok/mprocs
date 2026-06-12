@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::collections::HashMap;
 use std::fmt;
 use std::time::Instant;
 
@@ -9,8 +8,21 @@ use tokio::sync::mpsc::UnboundedSender;
 use super::kernel_message::SharedVt;
 use super::task_path::TaskPath;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(
+  Clone,
+  Copy,
+  Debug,
+  Deserialize,
+  Eq,
+  Hash,
+  Ord,
+  PartialEq,
+  PartialOrd,
+  Serialize,
+)]
 pub struct TaskId(pub usize);
+
+pub const INIT_TASK_ID: TaskId = TaskId(0);
 
 pub trait Task: Send + 'static {
   fn handle_cmd(&mut self, cmd: TaskCmd, fx: &mut Effects);
@@ -18,8 +30,8 @@ pub trait Task: Send + 'static {
 
 pub enum TaskEffect {
   Started,
-  Stopped(u32),
-  Remove,
+  Ready,
+  Stopped(ExitInfo),
 }
 
 pub struct Effects(Vec<TaskEffect>);
@@ -33,12 +45,12 @@ impl Effects {
     self.0.push(TaskEffect::Started);
   }
 
-  pub fn stopped(&mut self, code: u32) {
-    self.0.push(TaskEffect::Stopped(code));
+  pub fn ready(&mut self) {
+    self.0.push(TaskEffect::Ready);
   }
 
-  pub fn remove(&mut self) {
-    self.0.push(TaskEffect::Remove);
+  pub fn stopped(&mut self, info: ExitInfo) {
+    self.0.push(TaskEffect::Stopped(info));
   }
 
   pub fn drain(&mut self) -> std::vec::Drain<'_, TaskEffect> {
@@ -70,6 +82,104 @@ impl fmt::Debug for TaskCmd {
   }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExitInfo {
+  pub code: Option<i32>,
+  pub signal: Option<i32>,
+}
+
+impl ExitInfo {
+  pub fn code(code: i32) -> Self {
+    Self {
+      code: Some(code),
+      signal: None,
+    }
+  }
+
+  pub fn signal(signal: i32) -> Self {
+    Self {
+      code: None,
+      signal: Some(signal),
+    }
+  }
+
+  /// The task could not run at all (e.g. spawn failure).
+  pub fn error() -> Self {
+    Self {
+      code: None,
+      signal: None,
+    }
+  }
+
+  pub fn success(&self) -> bool {
+    self.code == Some(0)
+  }
+}
+
+impl fmt::Display for ExitInfo {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match (self.code, self.signal) {
+      (Some(code), _) => write!(f, "exited:{}", code),
+      (None, Some(signal)) => write!(f, "signal:{}", signal),
+      (None, None) => write!(f, "error"),
+    }
+  }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TaskState {
+  Idle,
+  Starting,
+  Running,
+  Ready,
+  Stopping,
+  /// Crashed; waiting out the restart delay.
+  Backoff,
+  /// Ran to successful completion (jobs). Satisfies dependents.
+  Done(ExitInfo),
+  /// Exited and will not be brought back automatically.
+  Exited(ExitInfo),
+}
+
+impl TaskState {
+  /// The task occupies its slot: it must wind down before its deps may stop.
+  pub fn is_active(&self) -> bool {
+    match self {
+      TaskState::Starting
+      | TaskState::Running
+      | TaskState::Ready
+      | TaskState::Stopping => true,
+      TaskState::Idle
+      | TaskState::Backoff
+      | TaskState::Done(_)
+      | TaskState::Exited(_) => false,
+    }
+  }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskKind {
+  /// Long-running; satisfies dependents while `Ready`.
+  Service,
+  /// Run-to-completion; satisfies dependents once `Done`.
+  Job,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReadyMode {
+  /// Ready as soon as the task reports started.
+  Immediate,
+  /// Ready only when the task reports it (readiness probe).
+  Reported,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RestartMode {
+  Never,
+  OnFailure,
+  Always,
+}
+
 pub struct TaskNotification {
   pub from: TaskId,
   pub from_path: Option<TaskPath>,
@@ -81,11 +191,10 @@ pub enum TaskNotify {
   Added {
     path: Option<TaskPath>,
     label: Option<String>,
-    status: TaskStatus,
+    state: TaskState,
     vt: Option<SharedVt>,
   },
-  Started,
-  Stopped(u32),
+  StateChanged(TaskState),
   Removed,
   PathChanged(Option<TaskPath>, Option<TaskPath>),
   LabelChanged(Option<String>),
@@ -95,15 +204,11 @@ impl fmt::Debug for TaskNotify {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       TaskNotify::Added {
-        path,
-        label,
-        status,
-        ..
+        path, label, state, ..
       } => {
-        write!(f, "Added({:?}, {:?}, {:?})", path, label, status)
+        write!(f, "Added({:?}, {:?}, {:?})", path, label, state)
       }
-      TaskNotify::Started => write!(f, "Started"),
-      TaskNotify::Stopped(code) => write!(f, "Stopped({})", code),
+      TaskNotify::StateChanged(state) => write!(f, "StateChanged({:?})", state),
       TaskNotify::Removed => write!(f, "Removed"),
       TaskNotify::PathChanged(old, new) => {
         write!(f, "PathChanged({:?}, {:?})", old, new)
@@ -126,56 +231,79 @@ impl ChannelTask {
 }
 
 impl Task for ChannelTask {
-  fn handle_cmd(&mut self, cmd: TaskCmd, _fx: &mut Effects) {
-    let _ = self.sender.send(cmd);
+  fn handle_cmd(&mut self, cmd: TaskCmd, fx: &mut Effects) {
+    // A closed channel means the driving future is gone; report the task
+    // dead so it cannot wedge in an active state.
+    if self.sender.send(cmd).is_err() {
+      fx.stopped(ExitInfo::error());
+    }
+  }
+}
+
+/// A task with no process of its own; it exists to hold edges.
+pub struct TargetTask;
+
+impl Task for TargetTask {
+  fn handle_cmd(&mut self, cmd: TaskCmd, fx: &mut Effects) {
+    match cmd {
+      TaskCmd::Start => fx.started(),
+      TaskCmd::Stop | TaskCmd::Kill => fx.stopped(ExitInfo::code(0)),
+      TaskCmd::Msg(_) => (),
+    }
   }
 }
 
 pub struct TaskHandle {
-  #[allow(dead_code)]
-  pub task_id: TaskId,
   pub task: Box<dyn Task>,
 
-  pub stop_on_quit: bool,
-  pub status: TaskStatus,
-  pub pending_start: bool,
-
-  pub autorestart: bool,
-  /// Desired run state, used to decide whether an exit triggers a restart.
-  pub target: Target,
+  pub state: TaskState,
+  /// Bumped on every state change (and hard kill); state timeouts from an
+  /// earlier epoch are ignored.
+  pub epoch: u64,
+  /// Kept down: excluded from want-propagation until demanded again
+  /// (a direct start, or a start of a dependent pulling this task).
+  pub kept_down: bool,
+  /// A hard kill was sent; if the task is still stopping when its timeout
+  /// runs out again, the kernel gives up waiting.
+  pub killed: bool,
+  pub attempts: u32,
   pub last_start: Option<Instant>,
 
-  pub deps: HashMap<TaskId, DepInfo>,
+  pub kind: TaskKind,
+  pub ready: ReadyMode,
+  pub restart: RestartMode,
 
   pub path: Option<TaskPath>,
   pub label: Option<String>,
   pub vt: Option<SharedVt>,
 }
 
-#[derive(Clone, Copy)]
-pub enum Target {
-  None,
-  Started,
-  Stopped,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum TaskStatus {
-  NotStarted,
-  Running,
-  Exited(u32),
-}
-
-pub struct DepInfo {
-  pub status: TaskStatus,
+impl TaskHandle {
+  /// Whether this task currently satisfies its dependents.
+  pub fn is_satisfied(&self) -> bool {
+    match self.kind {
+      TaskKind::Service => self.state == TaskState::Ready,
+      TaskKind::Job => match self.state {
+        TaskState::Done(_) => true,
+        TaskState::Idle
+        | TaskState::Starting
+        | TaskState::Running
+        | TaskState::Ready
+        | TaskState::Stopping
+        | TaskState::Backoff
+        | TaskState::Exited(_) => false,
+      },
+    }
+  }
 }
 
 pub struct TaskDef {
-  pub stop_on_quit: bool,
-  pub status: TaskStatus,
-  pub autostart: bool,
-  pub autorestart: bool,
+  pub kind: TaskKind,
+  pub ready: ReadyMode,
+  pub restart: RestartMode,
   pub deps: Vec<TaskId>,
+  /// aka autostart
+  pub pinned: bool,
   pub path: Option<TaskPath>,
   pub label: Option<String>,
   pub vt: Option<SharedVt>,
@@ -184,11 +312,11 @@ pub struct TaskDef {
 impl Default for TaskDef {
   fn default() -> Self {
     Self {
-      stop_on_quit: false,
-      status: TaskStatus::NotStarted,
-      autostart: false,
-      autorestart: false,
+      kind: TaskKind::Service,
+      ready: ReadyMode::Immediate,
+      restart: RestartMode::Never,
       deps: Vec::new(),
+      pinned: false,
       path: None,
       label: None,
       vt: None,

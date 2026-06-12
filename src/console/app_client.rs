@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use crate::{
   console::server_message::ServerMessage,
   ipc::{receiver::MsgReceiver, sender::MsgSender},
-  kernel::{kernel_message::TaskSender, task::TaskCmd},
+  kernel::kernel_message::TaskSender,
   protocol::{ClientId, CltToSrv, SrvToClt},
   term::{ScreenDiffer, Size},
 };
@@ -42,7 +42,7 @@ pub async fn client_session(
 ) {
   match ClientHandle::create(id, client_sender, size) {
     Ok(handle) => {
-      app_sender.send(TaskCmd::msg(ServerMessage::ClientConnected { handle }));
+      app_sender.send(ServerMessage::ClientConnected { handle });
     }
     Err(err) => {
       log::error!("Client creation error: {:?}", err);
@@ -59,17 +59,12 @@ pub async fn client_session(
 
     match msg {
       Ok(msg) => {
-        app_sender.send(TaskCmd::msg(ServerMessage::ClientMessage {
-          client_id: id,
-          msg,
-        }));
+        app_sender.send(ServerMessage::ClientMessage { client_id: id, msg });
       }
       Err(_err) => break,
     }
   }
-  app_sender.send(TaskCmd::msg(ServerMessage::ClientDisconnected {
-    client_id: id,
-  }));
+  app_sender.send(ServerMessage::ClientDisconnected { client_id: id });
 }
 
 pub struct ClientHandle {

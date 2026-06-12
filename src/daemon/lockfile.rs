@@ -99,13 +99,16 @@ pub fn create_lock_file(working_dir: &Path) -> anyhow::Result<LockFileGuard> {
       .ok_or_else(|| anyhow::anyhow!("No parent for lock path"))?,
   )?;
 
+  // Truncate only after the flock is ours; truncating first would wipe the
+  // contents out from under a live daemon holding the lock.
   let file = std::fs::OpenOptions::new()
     .write(true)
     .create(true)
-    .truncate(true)
+    .truncate(false)
     .open(&lock_path)?;
 
   acquire_flock(&file)?;
+  file.set_len(0)?;
 
   let contents = LockFileContents {
     pid: std::process::id(),
@@ -242,7 +245,7 @@ pub fn stop_daemon(working_dir: &Path) -> anyhow::Result<()> {
 
 #[cfg(unix)]
 fn kill_process(pid: u32) -> anyhow::Result<()> {
-  use rustix::process::{kill_process as rk, Pid, Signal};
+  use rustix::process::{Pid, Signal, kill_process as rk};
   let pid = Pid::from_raw(pid as i32)
     .ok_or_else(|| anyhow::anyhow!("Invalid PID: {}", pid))?;
   rk(pid, Signal::TERM)
@@ -253,7 +256,7 @@ fn kill_process(pid: u32) -> anyhow::Result<()> {
 fn kill_process(pid: u32) -> anyhow::Result<()> {
   use windows::Win32::Foundation::CloseHandle;
   use windows::Win32::System::Threading::{
-    OpenProcess, TerminateProcess, PROCESS_TERMINATE,
+    OpenProcess, PROCESS_TERMINATE, TerminateProcess,
   };
 
   unsafe {
@@ -299,7 +302,7 @@ fn acquire_flock(file: &std::fs::File) -> anyhow::Result<()> {
   use std::os::windows::io::AsRawHandle;
   use windows::Win32::Foundation::HANDLE;
   use windows::Win32::Storage::FileSystem::{
-    LockFileEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY,
+    LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx,
   };
 
   let handle = HANDLE(file.as_raw_handle() as _);
@@ -325,7 +328,7 @@ fn try_acquire_flock(file: &std::fs::File) -> bool {
   use std::os::windows::io::AsRawHandle;
   use windows::Win32::Foundation::HANDLE;
   use windows::Win32::Storage::FileSystem::{
-    LockFileEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY,
+    LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx,
   };
 
   let handle = HANDLE(file.as_raw_handle() as _);

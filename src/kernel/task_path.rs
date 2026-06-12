@@ -100,51 +100,6 @@ impl TaskPath {
   pub fn depth(&self) -> usize {
     self.components().count()
   }
-
-  /// Test whether this path matches a glob pattern.
-  /// Supports `*` (single component wildcard) and `**` (recursive wildcard).
-  /// Pattern must start with `/`.
-  pub fn matches_glob(&self, pattern: &str) -> bool {
-    if !pattern.starts_with('/') {
-      return false;
-    }
-    let path_parts: Vec<&str> = self.components().collect();
-    let pat_parts: Vec<&str> =
-      pattern[1..].split('/').filter(|c| !c.is_empty()).collect();
-    glob_match(&path_parts, &pat_parts)
-  }
-}
-
-fn glob_match(path: &[&str], pattern: &[&str]) -> bool {
-  if pattern.is_empty() {
-    return path.is_empty();
-  }
-
-  let pat = pattern[0];
-  let rest_pat = &pattern[1..];
-
-  if pat == "**" {
-    // `**` matches zero or more components
-    // Try matching rest of pattern at every position
-    for i in 0..=path.len() {
-      if glob_match(&path[i..], rest_pat) {
-        return true;
-      }
-    }
-    false
-  } else if pat == "*" {
-    // `*` matches exactly one component
-    if path.is_empty() {
-      return false;
-    }
-    glob_match(&path[1..], rest_pat)
-  } else {
-    // Literal match
-    if path.is_empty() || path[0] != pat {
-      return false;
-    }
-    glob_match(&path[1..], rest_pat)
-  }
 }
 
 impl fmt::Display for TaskPath {
@@ -218,52 +173,5 @@ mod tests {
     assert_eq!(TaskPath::new("/").unwrap().depth(), 0);
     assert_eq!(TaskPath::new("/web").unwrap().depth(), 1);
     assert_eq!(TaskPath::new("/a/b/c").unwrap().depth(), 3);
-  }
-
-  #[test]
-  fn test_glob_exact() {
-    let p = TaskPath::new("/services/api").unwrap();
-    assert!(p.matches_glob("/services/api"));
-    assert!(!p.matches_glob("/services/web"));
-    assert!(!p.matches_glob("/services"));
-  }
-
-  #[test]
-  fn test_glob_star() {
-    let p1 = TaskPath::new("/services/api").unwrap();
-    let p2 = TaskPath::new("/services/web").unwrap();
-    let p3 = TaskPath::new("/services/api/v2").unwrap();
-    let p4 = TaskPath::new("/tools/lint").unwrap();
-
-    assert!(p1.matches_glob("/services/*"));
-    assert!(p2.matches_glob("/services/*"));
-    assert!(!p3.matches_glob("/services/*")); // too deep
-    assert!(!p4.matches_glob("/services/*"));
-  }
-
-  #[test]
-  fn test_glob_double_star() {
-    let p1 = TaskPath::new("/services/api").unwrap();
-    let p2 = TaskPath::new("/services/api/v2").unwrap();
-    let p3 = TaskPath::new("/services/web").unwrap();
-    let p4 = TaskPath::new("/tools/lint").unwrap();
-
-    assert!(p1.matches_glob("/services/**"));
-    assert!(p2.matches_glob("/services/**"));
-    assert!(p3.matches_glob("/services/**"));
-    assert!(!p4.matches_glob("/services/**"));
-
-    // /** matches everything
-    assert!(p1.matches_glob("/**"));
-    assert!(p4.matches_glob("/**"));
-  }
-
-  #[test]
-  fn test_glob_mixed() {
-    let p = TaskPath::new("/a/b/c/d").unwrap();
-    assert!(p.matches_glob("/**/c/d"));
-    assert!(p.matches_glob("/a/**/d"));
-    assert!(p.matches_glob("/a/*/c/*"));
-    assert!(!p.matches_glob("/a/*/d"));
   }
 }

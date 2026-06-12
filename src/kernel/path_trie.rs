@@ -23,11 +23,7 @@ impl TrieNode {
   }
 
   /// Collect all (path, task_id) pairs under this node via DFS.
-  fn collect_all(
-    &self,
-    prefix: &str,
-    result: &mut Vec<(TaskPath, TaskId)>,
-  ) {
+  fn collect_all(&self, prefix: &str, result: &mut Vec<(TaskPath, TaskId)>) {
     if let Some(id) = self.task {
       if let Ok(path) = TaskPath::new(prefix) {
         result.push((path, id));
@@ -197,10 +193,7 @@ impl PathTrie {
 
   /// List direct children of a path node.
   /// Returns (component_name, Option<TaskId>) for each child.
-  pub fn children(
-    &self,
-    path: &TaskPath,
-  ) -> Vec<(String, Option<TaskId>)> {
+  pub fn children(&self, path: &TaskPath) -> Vec<(String, Option<TaskId>)> {
     let node = self.walk_to(path);
     let Some(node) = node else {
       return Vec::new();
@@ -213,10 +206,7 @@ impl PathTrie {
   }
 
   /// Recursively collect all tasks under a prefix path.
-  pub fn descendants(
-    &self,
-    path: &TaskPath,
-  ) -> Vec<(TaskPath, TaskId)> {
+  pub fn descendants(&self, path: &TaskPath) -> Vec<(TaskPath, TaskId)> {
     let node = self.walk_to(path);
     let Some(node) = node else {
       return Vec::new();
@@ -234,7 +224,7 @@ impl PathTrie {
     result
   }
 
-  /// Find all tasks whose paths match a glob pattern.
+  /// Find all tasks whose paths match a glob pattern, sorted by path.
   /// Pattern must start with `/`.
   /// Supports `*` (single component) and `**` (recursive).
   pub fn glob(&self, pattern: &str) -> Vec<(TaskPath, TaskId)> {
@@ -245,6 +235,9 @@ impl PathTrie {
       pattern[1..].split('/').filter(|c| !c.is_empty()).collect();
     let mut result = Vec::new();
     self.root.glob_walk("/", &parts, &mut result);
+    // A path can match through several `**` derivations.
+    result.sort();
+    result.dedup();
     result
   }
 
@@ -252,7 +245,6 @@ impl PathTrie {
   pub fn iter(&self) -> Vec<(TaskPath, TaskId)> {
     let mut result = Vec::new();
     self.root.collect_all("/", &mut result);
-    // Remove root if it was collected (root "/" with no task won't be)
     result
   }
 
@@ -380,6 +372,10 @@ mod tests {
 
     let results = trie.glob("/**");
     assert_eq!(results.len(), 4);
+
+    // Several `**` derivations can match the same path; no duplicates.
+    let results = trie.glob("/**/**");
+    assert_eq!(results.len(), 4);
   }
 
   #[test]
@@ -404,8 +400,7 @@ mod tests {
     trie.insert(&path("/m"), TaskId(4)).unwrap();
 
     let items = trie.iter();
-    let paths: Vec<&str> =
-      items.iter().map(|(p, _)| p.as_str()).collect();
+    let paths: Vec<&str> = items.iter().map(|(p, _)| p.as_str()).collect();
     assert_eq!(paths, vec!["/a/a", "/a/b", "/m", "/z"]);
   }
 }

@@ -6,7 +6,7 @@ use crate::{
   kernel::{
     copy_mode::{CopyMove, CopyState, Pos},
     kernel_message::{SharedVt, TaskSender},
-    task::{TaskCmd, TaskId},
+    task::TaskId,
   },
   term::{
     Color, MouseProtocolMode, Parser, Size, VtEvent, Winsize,
@@ -21,7 +21,7 @@ pub struct TaskScreen {
   task_id: TaskId,
   size: Winsize,
   vt: SharedVt,
-  // Per read events buffer. It is cleared in the beginning of each process().
+  // Per-read events buffer; drained at the end of each process().
   events_buf: Vec<VtEvent>,
 
   observers: Vec<TaskScreenObs>,
@@ -110,7 +110,13 @@ impl TaskScreen {
   }
 
   pub fn new(task_id: TaskId, vt: SharedVt, wheel_lines: usize) -> Self {
-    let size = vt.read().unwrap().screen().size();
+    let size = match vt.read() {
+      Ok(parser) => parser.screen().size(),
+      Err(_) => Size {
+        width: 80,
+        height: 24,
+      },
+    };
     TaskScreen {
       task_id,
       size: Winsize {
@@ -133,9 +139,7 @@ impl TaskScreen {
     let task_id = self.task_id;
     for obs in &self.observers {
       match &obs.target {
-        ObsTarget::Framed { sender, .. } => {
-          sender.send(TaskCmd::msg(make(task_id)))
-        }
+        ObsTarget::Framed { sender, .. } => sender.send(make(task_id)),
         ObsTarget::Direct { .. } => {}
       }
     }
@@ -152,26 +156,15 @@ impl TaskScreen {
       vt.screen.process(&bytes, &mut self.events_buf);
     }
 
-    for obs in &self.observers {
-      match &obs.target {
-        ObsTarget::Framed { sender, .. } => {
-          for event in &self.events_buf {
-            match event {
-              VtEvent::Bell => {
-                sender.send(TaskCmd::msg(FramedScreenNotify::Bell {
-                  task_id: self.task_id,
-                }));
-              }
-              VtEvent::Reply(_) => (),
-            }
-          }
-          sender.send(TaskCmd::msg(FramedScreenNotify::Render {
-            task_id: self.task_id,
-          }));
+    for event in &self.events_buf {
+      match event {
+        VtEvent::Bell => {
+          self.broadcast(|task_id| FramedScreenNotify::Bell { task_id })
         }
-        ObsTarget::Direct { .. } => {}
+        VtEvent::Reply(_) => (),
       }
     }
+    self.broadcast(|task_id| FramedScreenNotify::Render { task_id });
 
     for event in self.events_buf.drain(..) {
       match event {
@@ -197,16 +190,21 @@ impl TaskScreen {
   ) {
     match cmd {
       TaskScreenCmd::Observe { size, sender } => {
-        sender.send(TaskCmd::msg(FramedScreenNotify::ObserveStarted {
+        sender.send(FramedScreenNotify::ObserveStarted {
           task_id: self.task_id,
-        }));
+        });
         // A late joiner during copy mode must also render the presentation.
         if let Some(session) = &self.copy {
-          sender.send(TaskCmd::msg(FramedScreenNotify::CopyPresent {
+          sender.send(FramedScreenNotify::CopyPresent {
             task_id: self.task_id,
             vt: Some(session.present.clone()),
-          }));
+          });
         }
+        // Re-observe replaces the previous registration.
+        self.observers.retain(|o| match &o.target {
+          ObsTarget::Framed { sender: s, .. } => s.task_id != sender.task_id,
+          ObsTarget::Direct { .. } => true,
+        });
         self.observers.push(TaskScreenObs {
           target: ObsTarget::Framed { sender, size },
         });
@@ -238,24 +236,13 @@ impl TaskScreen {
       }
 
       TaskScreenCmd::CopyEnter => {
-        if self.copy.is_some() {
-          return;
+        if let Some(present) = self.enter_copy() {
+          self.render_present();
+          self.broadcast(|task_id| FramedScreenNotify::CopyPresent {
+            task_id,
+            vt: Some(present.clone()),
+          });
         }
-        let snapshot = match self.vt.read() {
-          Ok(parser) => parser.screen().clone(),
-          Err(_) => return,
-        };
-        let present =
-          SharedVt::new(Parser::new(self.size.y.max(1), self.size.x.max(1), 0));
-        self.copy = Some(CopySession {
-          state: CopyState::new(snapshot),
-          present: present.clone(),
-        });
-        self.render_present();
-        self.broadcast(|task_id| FramedScreenNotify::CopyPresent {
-          task_id,
-          vt: Some(present.clone()),
-        });
       }
       TaskScreenCmd::CopyLeave => {
         self.leave_copy();
@@ -288,6 +275,22 @@ impl TaskScreen {
         self.leave_copy();
       }
     }
+  }
+
+  /// Freezes the live screen into a copy session. Returns the presentation
+  /// surface on fresh entry, None when already in copy mode.
+  fn enter_copy(&mut self) -> Option<SharedVt> {
+    if self.copy.is_some() {
+      return None;
+    }
+    let snapshot = self.vt.read().ok()?.screen().clone();
+    let present =
+      SharedVt::new(Parser::new(self.size.y.max(1), self.size.x.max(1), 0));
+    self.copy = Some(CopySession {
+      state: CopyState::new(snapshot),
+      present: present.clone(),
+    });
+    Some(present)
   }
 
   fn leave_copy(&mut self) {
@@ -333,24 +336,7 @@ impl TaskScreen {
         }
       }
       MouseEventKind::Drag(MouseButton::Left) => {
-        let entered = if self.copy.is_none() {
-          let snapshot = match self.vt.read() {
-            Ok(parser) => parser.screen().clone(),
-            Err(_) => return,
-          };
-          let present = SharedVt::new(Parser::new(
-            self.size.y.max(1),
-            self.size.x.max(1),
-            0,
-          ));
-          self.copy = Some(CopySession {
-            state: CopyState::new(snapshot),
-            present: present.clone(),
-          });
-          Some(present)
-        } else {
-          None
-        };
+        let entered = self.enter_copy();
         // A fresh drag anchors at the press cell; later drags only extend.
         let anchor = self.mouse_down.unwrap_or((row, col));
         if let Some(session) = &mut self.copy {
@@ -391,14 +377,16 @@ impl TaskScreen {
       if delta >= 0 {
         session.state.scroll_up(delta as usize);
       } else {
-        session.state.scroll_down((-delta) as usize);
+        session.state.scroll_down(delta.unsigned_abs() as usize);
       }
       self.render_present();
     } else if let Ok(mut parser) = self.vt.write() {
       if delta >= 0 {
         parser.screen.scroll_screen_up(delta as usize);
       } else {
-        parser.screen.scroll_screen_down((-delta) as usize);
+        parser
+          .screen
+          .scroll_screen_down(delta.unsigned_abs() as usize);
       }
     }
     self.broadcast(|task_id| FramedScreenNotify::Render { task_id });
@@ -497,28 +485,21 @@ impl TaskScreen {
     });
   }
 
-  pub fn notify_render(&mut self) {
-    for obs in &mut self.observers {
+  pub fn sync_size(&mut self, effects: &mut Vec<TaskScreenEffect>) {
+    // The smallest attached viewer wins, so every observer sees the whole
+    // screen. With no framed observers the last size is kept.
+    let mut size: Option<Winsize> = None;
+    for obs in &self.observers {
       match &obs.target {
-        ObsTarget::Framed { sender, .. } => {
-          sender.send(TaskCmd::msg(FramedScreenNotify::Render {
-            task_id: self.task_id,
-          }));
+        ObsTarget::Framed { size: s, .. } => {
+          let acc = size.get_or_insert(*s);
+          acc.x = acc.x.min(s.x);
+          acc.y = acc.y.min(s.y);
         }
         ObsTarget::Direct { .. } => {}
       }
     }
-  }
-
-  pub fn sync_size(&mut self, effects: &mut Vec<TaskScreenEffect>) {
-    let mut size = self.size;
-    let framed = self.observers.iter().find_map(|o| match &o.target {
-      ObsTarget::Framed { size, .. } => Some(*size),
-      ObsTarget::Direct { .. } => None,
-    });
-    if let Some(observer_size) = framed {
-      size = observer_size;
-    }
+    let size = size.unwrap_or(self.size);
     if size != self.size {
       self.size = size;
       effects.push(TaskScreenEffect::Resize(size));

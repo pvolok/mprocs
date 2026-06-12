@@ -34,6 +34,7 @@ pub enum Action {
   StartProc,
   TermProc,
   KillProc,
+  KeepDownProc,
   RestartProc,
   RestartAll,
   RenameProc {
@@ -100,6 +101,7 @@ impl Action {
       Action::StartProc => "Start".to_string(),
       Action::TermProc => "Stop".to_string(),
       Action::KillProc => "Kill".to_string(),
+      Action::KeepDownProc => "Keep down (until started)".to_string(),
       Action::RestartProc => "Restart".to_string(),
       Action::RestartAll => "Restart all".to_string(),
       Action::RenameProc { name } => format!("Rename to \"{}\"", name),

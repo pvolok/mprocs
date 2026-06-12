@@ -23,6 +23,9 @@ pub struct ProcConfig {
   pub add_path: Option<Vec<PathBuf>>,
   pub autostart: Option<bool>,
   pub autorestart: Option<bool>,
+  /// Readiness probe: the proc is ready once an output line contains this
+  /// string; until then dependents wait.
+  pub ready_log: Option<String>,
   pub stop: Option<StopSignal>,
   pub log: Option<ProcLogConfig>,
   pub scrollback_len: Option<usize>,
@@ -48,6 +51,7 @@ impl ProcConfig {
       add_path: over.add_path.or(self.add_path),
       autostart: over.autostart.or(self.autostart),
       autorestart: over.autorestart.or(self.autorestart),
+      ready_log: over.ready_log.or(self.ready_log),
       stop: over.stop.or(self.stop),
       log: match (over.log, self.log) {
         (Some(over), Some(base)) => Some(base.merged(&over)),
@@ -89,6 +93,7 @@ pub(crate) fn parse_proc_settings(
   p.add_path = obj.optional("add_path", cx)?;
   p.autostart = obj.optional("autostart", cx)?;
   p.autorestart = obj.optional("autorestart", cx)?;
+  p.ready_log = obj.optional("ready_log", cx)?;
   p.stop = obj.optional("stop", cx)?;
   p.log = obj.optional("log", cx)?;
   p.scrollback_len = obj.optional("scrollback_len", cx)?;

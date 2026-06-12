@@ -23,7 +23,54 @@ fn print_task_list(resp: DkResponse, json: bool) -> anyhow::Result<()> {
         println!("No tasks.");
       } else {
         for t in &tasks {
-          println!("{}\t{}", t.path, t.status);
+          println!("{}\t{}", t.path, t.state);
+        }
+      }
+      Ok(())
+    }
+    DkResponse::Error(e) => anyhow::bail!("{}", e),
+    _ => anyhow::bail!("unexpected response from daemon"),
+  }
+}
+
+fn print_why(resp: DkResponse, json: bool) -> anyhow::Result<()> {
+  match resp {
+    DkResponse::Why(why) => {
+      if json {
+        println!("{}", serde_json::to_string(&why)?);
+        return Ok(());
+      }
+      println!("{}: {}", why.path, why.state);
+      println!("  wanted: {}", why.wanted);
+      if why.wanted && !why.supported {
+        println!("  blocked: a dependency is not ready");
+      }
+      if why.kept_down {
+        println!("  kept down: yes (start it to release)");
+      }
+      println!("  pinned: {}", why.pinned);
+      if !why.required_by.is_empty() {
+        println!("  required by: {}", why.required_by.join(", "));
+      }
+      if why.attempts > 0 {
+        println!("  restart attempts: {}", why.attempts);
+      }
+      if !why.deps.is_empty() {
+        println!("  deps:");
+        for dep in &why.deps {
+          let mut notes = Vec::new();
+          if !dep.wanted {
+            notes.push("not wanted");
+          }
+          if !dep.satisfied {
+            notes.push("not satisfied");
+          }
+          let notes = if notes.is_empty() {
+            String::new()
+          } else {
+            format!(" ({})", notes.join(", "))
+          };
+          println!("    {}\t{}{}", dep.path, dep.state, notes);
         }
       }
       Ok(())
@@ -109,9 +156,13 @@ fn report_ok(resp: DkResponse, ok_msg: &str) -> anyhow::Result<()> {
 pub async fn dekit_main() -> anyhow::Result<()> {
   let cmd = clap::command!()
     .subcommands([
-      Command::new("attach") ,
-      Command::new("up"),
-      Command::new("down"),
+      Command::new("attach").about("Attach the TUI to the running daemon"),
+      Command::new("up")
+        .about("Start the daemon if needed and start autostart tasks"),
+      Command::new("down").about(
+        "Unpin tasks matching a pattern; without a pattern, stop the daemon",
+      )
+      .arg(Arg::new("pattern").help("Task path or glob")),
       Command::new("spawn")
         .arg(
           Arg::new("path")
@@ -135,16 +186,19 @@ pub async fn dekit_main() -> anyhow::Result<()> {
         .about("List tasks")
         .arg(Arg::new("glob").help("Optional glob pattern")),
       Command::new("start")
-        .about("Start a task")
-        .arg(Arg::new("path").required(true).help("Task path")),
+        .about("Start tasks matching a path or glob")
+        .arg(Arg::new("pattern").required(true).help("Task path or glob")),
       Command::new("stop")
-        .about("Stop a task")
-        .arg(Arg::new("path").required(true).help("Task path")),
+        .about("Stop tasks; each comes back if something still wants it")
+        .arg(Arg::new("pattern").required(true).help("Task path or glob")),
       Command::new("kill")
-        .about("Force kill a task")
-        .arg(Arg::new("path").required(true).help("Task path")),
+        .about("Like stop, but with an immediate hard kill")
+        .arg(Arg::new("pattern").required(true).help("Task path or glob")),
       Command::new("restart")
-        .about("Restart a task")
+        .about("Restart tasks matching a path or glob")
+        .arg(Arg::new("pattern").required(true).help("Task path or glob")),
+      Command::new("why")
+        .about("Explain why a task is (not) running")
         .arg(Arg::new("path").required(true).help("Task path")),
       Command::new("screen")
         .about("Print the current screen of a task")
@@ -243,31 +297,38 @@ pub async fn dekit_main() -> anyhow::Result<()> {
     }
     Some(("start", sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
-      let path = sub_m.get_one::<String>("path").unwrap().clone();
+      let pattern = sub_m.get_one::<String>("pattern").unwrap().clone();
       let resp =
-        rpc_request(&working_dir, DkRequest::Start { path }, true).await?;
+        rpc_request(&working_dir, DkRequest::Start { pattern }, true).await?;
       report_ok(resp, "Started.")?;
     }
     Some(("stop", sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
-      let path = sub_m.get_one::<String>("path").unwrap().clone();
+      let pattern = sub_m.get_one::<String>("pattern").unwrap().clone();
       let resp =
-        rpc_request(&working_dir, DkRequest::Stop { path }, false).await?;
+        rpc_request(&working_dir, DkRequest::Stop { pattern }, false).await?;
       report_ok(resp, "Stopped.")?;
     }
     Some(("kill", sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
-      let path = sub_m.get_one::<String>("path").unwrap().clone();
+      let pattern = sub_m.get_one::<String>("pattern").unwrap().clone();
       let resp =
-        rpc_request(&working_dir, DkRequest::Kill { path }, false).await?;
+        rpc_request(&working_dir, DkRequest::Kill { pattern }, false).await?;
       report_ok(resp, "Killed.")?;
     }
     Some(("restart", sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
+      let pattern = sub_m.get_one::<String>("pattern").unwrap().clone();
+      let resp =
+        rpc_request(&working_dir, DkRequest::Restart { pattern }, true).await?;
+      report_ok(resp, "Restarted.")?;
+    }
+    Some(("why", sub_m)) => {
+      let working_dir = resolve_working_dir(&matches)?;
       let path = sub_m.get_one::<String>("path").unwrap().clone();
       let resp =
-        rpc_request(&working_dir, DkRequest::Restart { path }, true).await?;
-      report_ok(resp, "Restarted.")?;
+        rpc_request(&working_dir, DkRequest::Why { path }, false).await?;
+      print_why(resp, matches.get_flag("json"))?;
     }
     Some(("screen", sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
@@ -289,14 +350,30 @@ pub async fn dekit_main() -> anyhow::Result<()> {
     }
     Some(("up", _sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
-      let resp =
-        rpc_request(&working_dir, DkRequest::Ls { glob: None }, true).await?;
-      print_task_list(resp, matches.get_flag("json"))?;
+      let resp = rpc_request(&working_dir, DkRequest::Up, true).await?;
+      report_ok(resp, "Started autostart tasks.")?;
     }
-    Some(("down", _sub_m)) => {
+    Some(("down", sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
-      shutdown_daemon(&working_dir).await?;
-      println!("Daemon stopped.");
+      match sub_m.get_one::<String>("pattern").cloned() {
+        Some(pattern) => {
+          let resp =
+            rpc_request(&working_dir, DkRequest::Down { pattern }, false)
+              .await?;
+          report_ok(resp, "Unpinned.")?;
+        }
+        None => match lockfile::get_daemon_status(&working_dir)? {
+          None => println!("Nothing is running."),
+          Some(info) if !info.is_running => {
+            lockfile::cleanup_stale(&working_dir)?;
+            println!("Nothing is running.");
+          }
+          Some(_) => {
+            shutdown_daemon(&working_dir).await?;
+            println!("Daemon stopped.");
+          }
+        },
+      }
     }
     Some(("server", sub_m)) => match sub_m.subcommand() {
       Some(("run", run_m)) => {
@@ -410,9 +487,14 @@ pub async fn dekit_main() -> anyhow::Result<()> {
           );
         }
       } else {
-        // No args: connect to daemon for current dir, starting it on
-        // demand.
+        // No args: bring the workspace up (start the daemon if needed and
+        // start autostart tasks), then attach the TUI.
         let working_dir = resolve_working_dir(&matches)?;
+        match rpc_request(&working_dir, DkRequest::Up, true).await? {
+          DkResponse::Ok => (),
+          DkResponse::Error(e) => anyhow::bail!("{}", e),
+          _ => anyhow::bail!("unexpected response from daemon"),
+        }
         let (sender, receiver) =
           connect_client_socket::<CltToSrv, SrvToClt>(&working_dir, true)
             .await?;

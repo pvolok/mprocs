@@ -4,7 +4,9 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::{KernelCommand, SharedVt, TaskContext};
-use crate::kernel::task::{TaskCmd, TaskDef, TaskId};
+use crate::kernel::task::{
+  ExitInfo, ReadyMode, RestartMode, TaskCmd, TaskDef, TaskId,
+};
 use crate::kernel::task_path::TaskPath;
 use crate::kernel::task_screen::{TaskScreen, TaskScreenCmd, TaskScreenEffect};
 use crate::process::NativeProcess;
@@ -15,7 +17,7 @@ use crate::term::encode::{KeyCodeEncodeModes, encode_key};
 use crate::term::key::Key;
 use crate::term::{Parser, Winsize};
 
-struct ProcExited(u32);
+struct ProcExited(ExitInfo);
 
 pub struct ProcInput(pub Key);
 
@@ -43,8 +45,10 @@ pub struct ProcTaskConfig {
   pub label: Option<String>,
   pub stop: StopSignal,
   pub log: Option<LogResolver>,
-  pub autostart: bool,
-  pub autorestart: bool,
+  pub restart: RestartMode,
+  /// Readiness probe: the task reports ready once an output line contains
+  /// this string. Without it the task is ready as soon as it starts.
+  pub ready_log: Option<String>,
   pub scrollback_len: usize,
   pub mouse_scroll_speed: usize,
   pub deps: Vec<TaskId>,
@@ -57,8 +61,8 @@ impl ProcTaskConfig {
       label: None,
       stop: StopSignal::default(),
       log: None,
-      autostart: true,
-      autorestart: false,
+      restart: RestartMode::Never,
+      ready_log: None,
       scrollback_len: 1000,
       mouse_scroll_speed: 5,
       deps: Vec::new(),
@@ -86,8 +90,8 @@ pub fn spawn_proc_task_with_id(
     spec,
     stop,
     log,
-    autostart,
-    autorestart,
+    restart,
+    ready_log,
     scrollback_len,
     mouse_scroll_speed,
     deps,
@@ -95,12 +99,15 @@ pub fn spawn_proc_task_with_id(
   } = config;
   let vt = SharedVt::new(Parser::new(24, 80, scrollback_len));
   let task_vt = vt.clone();
+  let ready = match ready_log {
+    Some(_) => ReadyMode::Reported,
+    None => ReadyMode::Immediate,
+  };
   parent.spawn_async_with_id(
     task_id,
     TaskDef {
-      stop_on_quit: true,
-      autostart,
-      autorestart,
+      ready,
+      restart,
       deps,
       path: task_path,
       label,
@@ -117,7 +124,8 @@ pub fn spawn_proc_task_with_id(
         stop,
         scrollback_len,
         mouse_scroll_speed,
-        autorestart,
+        restart,
+        ready_log,
       )
       .await;
     },
@@ -133,7 +141,8 @@ async fn proc_main(
   stop: StopSignal,
   scrollback_len: usize,
   mouse_scroll_speed: usize,
-  autorestart: bool,
+  restart: RestartMode,
+  ready_log: Option<String>,
 ) {
   let mut task_screen = TaskScreen::new(ctx.task_id, vt, mouse_scroll_speed);
   let mut screen_effects: Vec<TaskScreenEffect> = Vec::new();
@@ -143,14 +152,16 @@ async fn proc_main(
   let mut current_log: Option<(std::path::PathBuf, u64)> = None;
   let mut read_buf = [0u8; 8 * 1024];
   let mut stdout_eof = false;
-  let mut exit_code: Option<u32> = None;
+  let mut exit_info: Option<ExitInfo> = None;
+  let mut ready_line_buf: Vec<u8> = Vec::new();
+  let mut ready_sent = false;
 
   loop {
     if stdout_eof
-      && let Some(code) = exit_code
+      && let Some(info) = exit_info
       && process.take().is_some()
     {
-      ctx.send(KernelCommand::TaskStopped(code));
+      ctx.send(KernelCommand::TaskStopped(info));
     }
 
     enum Next {
@@ -175,8 +186,10 @@ async fn proc_main(
           if process.is_none() {
             process = start_instance(&ctx, &spec, task_screen.vt());
             if let Some(p) = &process {
-              exit_code = None;
+              exit_info = None;
               stdout_eof = false;
+              ready_line_buf.clear();
+              ready_sent = false;
               update_log_observer(
                 &mut task_screen,
                 &mut log,
@@ -199,7 +212,7 @@ async fn proc_main(
         TaskCmd::Msg(msg) => {
           let msg = match msg.downcast::<ProcExited>() {
             Ok(exited) => {
-              exit_code = Some(exited.0);
+              exit_info = Some(exited.0);
               if let Some(p) = process.as_mut() {
                 p.on_exited();
               }
@@ -241,14 +254,15 @@ async fn proc_main(
                   spec: spec.clone(),
                   stop: stop.clone(),
                   log: None,
-                  autostart: true,
-                  autorestart,
+                  restart,
+                  ready_log: ready_log.clone(),
                   scrollback_len,
                   mouse_scroll_speed,
                   deps: Vec::new(),
                   label: dup.0,
                 },
               );
+              ctx.send(KernelCommand::Start(new_id));
               continue;
             }
             Err(msg) => msg,
@@ -260,6 +274,12 @@ async fn proc_main(
 
       Next::Read(Ok(0)) => stdout_eof = true,
       Next::Read(Ok(n)) => {
+        if let Some(pattern) = &ready_log
+          && !ready_sent
+        {
+          ready_sent =
+            scan_ready(&ctx, pattern, &mut ready_line_buf, &read_buf[..n]);
+        }
         task_screen
           .process(&read_buf[..n], &mut screen_effects)
           .await;
@@ -272,6 +292,28 @@ async fn proc_main(
       }
     }
   }
+}
+
+/// Match completed output lines against the readiness pattern; reports
+/// `TaskReady` and returns true on the first match.
+fn scan_ready(
+  ctx: &TaskContext,
+  pattern: &str,
+  line_buf: &mut Vec<u8>,
+  bytes: &[u8],
+) -> bool {
+  for b in bytes {
+    if *b == b'\n' {
+      if String::from_utf8_lossy(line_buf).contains(pattern) {
+        ctx.send(KernelCommand::TaskReady);
+        return true;
+      }
+      line_buf.clear();
+    } else if line_buf.len() < 4096 {
+      line_buf.push(*b);
+    }
+  }
+  false
 }
 
 fn update_log_observer(
@@ -332,7 +374,7 @@ fn start_instance(
     }
     Err(err) => {
       log::warn!("Process spawn error: {}", err);
-      ctx.send(KernelCommand::TaskStopped(255));
+      ctx.send(KernelCommand::TaskStopped(ExitInfo::error()));
       None
     }
   }
@@ -506,7 +548,7 @@ mod tests {
       "printf hello-log".to_string(),
     ]);
     let sink_path = log_path.clone();
-    spawn_proc_task(
+    let id = spawn_proc_task(
       &pc,
       Some(path),
       ProcTaskConfig {
@@ -519,6 +561,7 @@ mod tests {
         ..ProcTaskConfig::new(spec)
       },
     );
+    pc.send(KernelCommand::Start(id));
 
     let kernel_task = tokio::spawn(kernel.run());
 
@@ -569,7 +612,7 @@ mod tests {
     let seen_pid = Arc::new(Mutex::new(None::<u32>));
     let cap = seen_pid.clone();
     let log_dir = dir.clone();
-    spawn_proc_task(
+    let id = spawn_proc_task(
       &pc,
       Some(TaskPath::new("/pidlog").unwrap()),
       ProcTaskConfig {
@@ -583,6 +626,7 @@ mod tests {
         ..ProcTaskConfig::new(spec)
       },
     );
+    pc.send(KernelCommand::Start(id));
 
     let kernel_task = tokio::spawn(kernel.run());
 
@@ -628,7 +672,7 @@ mod tests {
       "-c".to_string(),
       "sleep 100".to_string(),
     ]);
-    spawn_proc_task(
+    let id = spawn_proc_task(
       &pc,
       Some(path),
       ProcTaskConfig {
@@ -636,11 +680,12 @@ mod tests {
         ..ProcTaskConfig::new(spec)
       },
     );
+    pc.send(KernelCommand::Start(id));
 
     let kernel_task = tokio::spawn(kernel.run());
 
     let id = resolve(&pc, "/sleeper").await;
-    pc.send(KernelCommand::TaskCmd(id, TaskCmd::Stop));
+    pc.send(KernelCommand::Stop(id));
 
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
@@ -651,7 +696,7 @@ mod tests {
       tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
-    pc.send(KernelCommand::TaskCmd(id, TaskCmd::Kill));
+    pc.send(KernelCommand::Kill(id));
     pc.send(KernelCommand::RemoveTask(id));
     pc.send(KernelCommand::Quit);
     tokio::time::timeout(Duration::from_secs(2), kernel_task)
@@ -677,8 +722,11 @@ fn spawn_native(
       spec,
       size,
       Box::new(move |wait_status| {
-        let code = wait_status.exit_status().unwrap_or(212) as u32;
-        exit_ctx.send_self_custom(ProcExited(code));
+        let info = ExitInfo {
+          code: wait_status.exit_status().map(|code| code as i32),
+          signal: wait_status.terminating_signal().map(|sig| sig as i32),
+        };
+        exit_ctx.send_self_custom(ProcExited(info));
       }),
     )?)
   }
@@ -691,8 +739,11 @@ fn spawn_native(
       spec,
       size,
       Box::new(move |exit_code| {
-        let code = exit_code.unwrap_or(213) as u32;
-        exit_ctx.send_self_custom(ProcExited(code));
+        let info = match exit_code {
+          Some(code) => ExitInfo::code(code as i32),
+          None => ExitInfo::error(),
+        };
+        exit_ctx.send_self_custom(ProcExited(info));
       }),
     )
     .context("WinProcess::spawn")

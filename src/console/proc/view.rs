@@ -1,13 +1,13 @@
 use crate::kernel::{
   kernel_message::SharedVt,
-  task::{TaskId, TaskStatus},
+  task::{TaskId, TaskState},
 };
 
 pub struct ProcView {
   pub id: TaskId,
   pub name: String,
 
-  pub status: TaskStatus,
+  pub status: TaskState,
   pub vt: SharedVt,
   /// Presentation surface from the kernel's copy mode, rendered instead of
   /// `vt` while copy mode is active. Set/cleared by `CopyEntered`/`CopyLeft`.
@@ -20,7 +20,7 @@ impl ProcView {
   pub fn new(
     id: TaskId,
     name: String,
-    status: TaskStatus,
+    status: TaskState,
     vt: SharedVt,
   ) -> Self {
     Self {
@@ -41,11 +41,15 @@ impl ProcView {
     self.id
   }
 
-  pub fn exit_code(&self) -> Option<u32> {
+  pub fn exit_code(&self) -> Option<i32> {
     match self.status {
-      TaskStatus::NotStarted => None,
-      TaskStatus::Running => None,
-      TaskStatus::Exited(code) => Some(code),
+      TaskState::Done(info) | TaskState::Exited(info) => info.code,
+      TaskState::Idle
+      | TaskState::Starting
+      | TaskState::Running
+      | TaskState::Ready
+      | TaskState::Stopping
+      | TaskState::Backoff => None,
     }
   }
 
@@ -54,11 +58,7 @@ impl ProcView {
   }
 
   pub fn is_up(&self) -> bool {
-    match self.status {
-      TaskStatus::NotStarted => false,
-      TaskStatus::Running => true,
-      TaskStatus::Exited(_) => false,
-    }
+    self.status.is_active()
   }
 
   pub fn copy_active(&self) -> bool {

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use tui_input::Input;
 
-use crate::kernel::kernel_message::TaskContext;
+use crate::console::action::Action;
 use crate::console::{
   app::LoopAction,
   keymap::Keymap,
@@ -12,14 +12,14 @@ use crate::console::{
     text_input::{render_text_input, to_input_request},
   },
 };
-use crate::console::action::Action;
+use crate::kernel::kernel_message::TaskContext;
 use crate::term::{
+  Color, Grid, TermEvent,
   attrs::Attrs,
   encode::print_key,
   grid::{BorderType, Pos, Rect},
   key::{Key, KeyCode, KeyMods},
   line_symbols::{HORIZONTAL, VERTICAL_LEFT, VERTICAL_RIGHT},
-  Color, Grid, TermEvent,
 };
 
 use super::modal::Modal;
@@ -153,7 +153,11 @@ impl Modal for CommandsMenuModal {
       height: grid.size().height,
     });
 
-    grid.draw_block(area.into(), &BorderType::Rounded.chars(), Attrs::default());
+    grid.draw_block(
+      area.into(),
+      &BorderType::Rounded.chars(),
+      Attrs::default(),
+    );
 
     let inner = area.inner(1);
 
@@ -394,6 +398,7 @@ fn get_commands(search: &str) -> Vec<CommandInfo> {
     ("start-proc", Action::StartProc),
     ("term-proc", Action::TermProc),
     ("kill-proc", Action::KillProc),
+    ("keep-down-proc", Action::KeepDownProc),
     ("restart-proc", Action::RestartProc),
     ("restart-all", Action::RestartAll),
     ("duplicate-proc", Action::DuplicateProc),

@@ -9,12 +9,15 @@ use crate::{
   kernel::{
     kernel::Kernel,
     kernel_message::{
-      KernelCommand, KernelQuery, KernelQueryResponse, TaskContext,
+      KernelCommand, KernelQuery, KernelQueryResponse, TaskContext, TaskInfo,
     },
-    task::{TaskCmd, TaskStatus},
+    task::{TargetTask, TaskDef, TaskId, TaskState},
     task_path::TaskPath,
   },
-  protocol::{ClientId, CltToSrv, DkRequest, DkResponse, DkTaskInfo, SrvToClt},
+  protocol::{
+    ClientId, CltToSrv, DkRequest, DkResponse, DkTaskInfo, DkWhy, DkWhyDep,
+    SrvToClt,
+  },
   term::Size,
 };
 
@@ -62,6 +65,16 @@ pub async fn run_server(
   let app_task_id = create_app_task(config, keymap, &pc);
   let app_sender = pc.get_task_sender(app_task_id);
 
+  // Umbrella target that wants every task spawned over RPC.
+  let user_target_id = pc.register(
+    TaskDef {
+      pinned: true,
+      path: TaskPath::new("/user").ok(),
+      ..Default::default()
+    },
+    Box::new(|_| Box::new(TargetTask)),
+  );
+
   tokio::spawn(async move {
     let mut last_client_id = 0;
 
@@ -93,8 +106,15 @@ pub async fn run_server(
           let app_sender = app_sender.clone();
           let pc = pc.clone();
           tokio::spawn(async move {
-            dispatch_connection(client_id, app_sender, pc, sender, receiver)
-              .await;
+            dispatch_connection(
+              client_id,
+              app_sender,
+              pc,
+              user_target_id,
+              sender,
+              receiver,
+            )
+            .await;
           });
         }
         Err(err) => {
@@ -121,13 +141,14 @@ async fn dispatch_connection(
   client_id: ClientId,
   app_sender: crate::kernel::kernel_message::TaskSender,
   pc: TaskContext,
+  user_target_id: TaskId,
   mut sender: MsgSender<SrvToClt>,
   mut receiver: MsgReceiver<CltToSrv>,
 ) {
   let first_msg = receiver.recv().await;
   match first_msg {
     Some(Ok(CltToSrv::Rpc(req))) => {
-      let resp = handle_rpc(&pc, req)
+      let resp = handle_rpc(&pc, user_target_id, req)
         .await
         .unwrap_or_else(|e| DkResponse::Error(e.to_string()));
       let _ = sender.send(SrvToClt::Rpc(resp)).await;
@@ -148,57 +169,145 @@ async fn dispatch_connection(
   }
 }
 
+fn state_str(state: TaskState) -> String {
+  match state {
+    TaskState::Idle => "idle".to_string(),
+    TaskState::Starting => "starting".to_string(),
+    TaskState::Running => "running".to_string(),
+    TaskState::Ready => "ready".to_string(),
+    TaskState::Stopping => "stopping".to_string(),
+    TaskState::Backoff => "backoff".to_string(),
+    TaskState::Done(info) => format!("done ({})", info),
+    TaskState::Exited(info) => info.to_string(),
+  }
+}
+
+async fn list_tasks(
+  pc: &TaskContext,
+  glob: Option<String>,
+) -> anyhow::Result<Vec<TaskInfo>> {
+  match pc.query(KernelQuery::ListTasks(glob)).await? {
+    KernelQueryResponse::TaskList(tasks) => Ok(tasks),
+    _ => bail!("unexpected query response"),
+  }
+}
+
+async fn match_tasks(
+  pc: &TaskContext,
+  pattern: &str,
+) -> anyhow::Result<Vec<TaskInfo>> {
+  let tasks = list_tasks(pc, Some(pattern.to_string())).await?;
+  if tasks.is_empty() {
+    bail!("no tasks match '{}'", pattern);
+  }
+  Ok(tasks)
+}
+
 async fn handle_rpc(
   pc: &TaskContext,
+  user_target_id: TaskId,
   req: DkRequest,
 ) -> anyhow::Result<DkResponse> {
   let response = match req {
     DkRequest::Ls { glob } => {
-      let query = KernelQuery::ListTasks(glob);
-      match pc.query(query).await? {
-        KernelQueryResponse::TaskList(tasks) => {
-          let items = tasks
-            .into_iter()
-            .map(|t| DkTaskInfo {
-              path: t
-                .path
-                .map(|p| p.to_string())
-                .unwrap_or_else(|| format!("<task:{}>", t.id.0)),
-              status: match t.status {
-                TaskStatus::Running => "running".to_string(),
-                TaskStatus::NotStarted => "not-started".to_string(),
-                TaskStatus::Exited(code) => format!("exited:{}", code),
-              },
-            })
-            .collect();
-          DkResponse::TaskList(items)
+      let items = list_tasks(pc, glob)
+        .await?
+        .into_iter()
+        .map(|t| DkTaskInfo {
+          path: t
+            .path
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| format!("<task:{}>", t.id.0)),
+          state: state_str(t.state),
+        })
+        .collect();
+      DkResponse::TaskList(items)
+    }
+
+    DkRequest::Up => {
+      let path = TaskPath::new("/autostart")?;
+      match pc.query(KernelQuery::ResolvePath(path)).await? {
+        KernelQueryResponse::ResolvedPath(Some(id)) => {
+          pc.send(KernelCommand::Start(id));
+          DkResponse::Ok
         }
-        _ => DkResponse::Error("unexpected query response".to_string()),
+        KernelQueryResponse::ResolvedPath(None) => {
+          bail!("no autostart target")
+        }
+        _ => bail!("unexpected query response"),
       }
     }
 
-    DkRequest::Start { path } => {
-      let path = TaskPath::new(&path)?;
-      pc.send_to_path(path, TaskCmd::Start);
+    DkRequest::Start { pattern } => {
+      for t in match_tasks(pc, &pattern).await? {
+        pc.send(KernelCommand::Start(t.id));
+      }
       DkResponse::Ok
     }
 
-    DkRequest::Stop { path } => {
-      let path = TaskPath::new(&path)?;
-      pc.send_to_path(path, TaskCmd::Stop);
+    DkRequest::Stop { pattern } => {
+      for t in match_tasks(pc, &pattern).await? {
+        pc.send(KernelCommand::Stop(t.id));
+      }
       DkResponse::Ok
     }
 
-    DkRequest::Kill { path } => {
-      let path = TaskPath::new(&path)?;
-      pc.send_to_path(path, TaskCmd::Kill);
+    DkRequest::KeepDown { pattern } => {
+      for t in match_tasks(pc, &pattern).await? {
+        pc.send(KernelCommand::KeepDown(t.id));
+      }
       DkResponse::Ok
     }
 
-    DkRequest::Restart { path } => {
-      let path = TaskPath::new(&path)?;
-      pc.restart_path(path);
+    DkRequest::Down { pattern } => {
+      for t in match_tasks(pc, &pattern).await? {
+        pc.send(KernelCommand::Down(t.id));
+      }
       DkResponse::Ok
+    }
+
+    DkRequest::Kill { pattern } => {
+      for t in match_tasks(pc, &pattern).await? {
+        pc.send(KernelCommand::Kill(t.id));
+      }
+      DkResponse::Ok
+    }
+
+    DkRequest::Restart { pattern } => {
+      for t in match_tasks(pc, &pattern).await? {
+        pc.send(KernelCommand::Restart(t.id));
+      }
+      DkResponse::Ok
+    }
+
+    DkRequest::Why { path } => {
+      let task_path = TaskPath::new(&path)?;
+      match pc.query(KernelQuery::Explain(task_path)).await? {
+        KernelQueryResponse::Explain(Some(explain)) => DkResponse::Why(DkWhy {
+          path,
+          state: state_str(explain.state),
+          wanted: explain.wanted,
+          supported: explain.supported,
+          kept_down: explain.kept_down,
+          pinned: explain.pinned,
+          required_by: explain.required_by,
+          deps: explain
+            .deps
+            .into_iter()
+            .map(|d| DkWhyDep {
+              path: d.name,
+              state: state_str(d.state),
+              wanted: d.wanted,
+              satisfied: d.satisfied,
+            })
+            .collect(),
+          attempts: explain.attempts,
+        }),
+        KernelQueryResponse::Explain(None) => {
+          bail!("no task at '{}'", path)
+        }
+        _ => bail!("unexpected query response"),
+      }
     }
 
     DkRequest::Screen { path } => {
@@ -226,11 +335,15 @@ async fn handle_rpc(
       } else if let Ok(cwd) = std::env::current_dir() {
         spec.cwd(cwd.to_string_lossy());
       }
-      crate::task::proc_task::spawn_proc_task(
+      let id = crate::task::proc_task::spawn_proc_task(
         pc,
         Some(task_path),
         crate::task::proc_task::ProcTaskConfig::new(spec),
       );
+      pc.send(KernelCommand::AddEdge {
+        from: user_target_id,
+        to: id,
+      });
       DkResponse::Ok
     }
   };

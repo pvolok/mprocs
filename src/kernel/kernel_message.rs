@@ -10,7 +10,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::term::Parser;
 
 use super::sub_trie::SubMode;
-use super::task::{Task, TaskCmd, TaskDef, TaskId, TaskStatus};
+use super::task::{ExitInfo, Task, TaskCmd, TaskDef, TaskId, TaskState};
 use super::task_path::TaskPath;
 
 pub struct KernelMessage {
@@ -27,12 +27,24 @@ pub enum KernelCommand {
     Box<dyn FnOnce(TaskContext) -> Box<dyn Task> + Send>,
   ),
   RemoveTask(TaskId),
-  TaskCmd(TaskId, TaskCmd),
 
-  TaskCmdByPath(TaskPath, TaskCmd),
+  Start(TaskId),
+  Stop(TaskId),
+  Kill(TaskId),
+  Restart(TaskId),
+  Down(TaskId),
+  KeepDown(TaskId),
+  /// `from` requires `to`.
+  AddEdge {
+    from: TaskId,
+    to: TaskId,
+  },
+  RemoveEdge {
+    from: TaskId,
+    to: TaskId,
+  },
 
-  RestartTask(TaskId),
-  RestartTaskByPath(TaskPath),
+  TaskMsg(TaskId, Box<dyn Any + Send>),
 
   SetTaskPath(TaskId, TaskPath),
   SetTaskLabel(TaskId, Option<String>),
@@ -42,15 +54,18 @@ pub enum KernelCommand {
     tokio::sync::oneshot::Sender<KernelQueryResponse>,
   ),
 
-  ListenTaskUpdates,
-  UnlistenTaskUpdates,
-
   SubscribePath(TaskPath, SubMode),
   UnsubscribePath(TaskPath, SubMode),
 
   // Task reporting
   TaskStarted,
-  TaskStopped(u32),
+  TaskReady,
+  TaskStopped(ExitInfo),
+
+  /// A time limit set on the task's current state ran out (stop grace,
+  /// backoff delay). The epoch says which state it was set for, so a
+  /// timeout from an earlier state is ignored.
+  StateTimeout(TaskId, u64),
 }
 
 pub enum KernelQuery {
@@ -60,6 +75,8 @@ pub enum KernelQuery {
   ResolvePath(TaskPath),
   /// Get the current screen content for a task (rendered as ANSI text).
   GetScreen(TaskPath),
+  /// Explain why a task is (not) running.
+  Explain(TaskPath),
 }
 
 pub enum KernelQueryResponse {
@@ -67,6 +84,7 @@ pub enum KernelQueryResponse {
   ResolvedPath(Option<TaskId>),
   /// ANSI-rendered screen content, or None if the task has no screen.
   Screen(Option<String>),
+  Explain(Option<TaskExplain>),
 }
 
 #[derive(Clone, Debug)]
@@ -74,8 +92,30 @@ pub struct TaskInfo {
   pub id: TaskId,
   pub path: Option<TaskPath>,
   pub label: Option<String>,
-  pub status: TaskStatus,
+  pub state: TaskState,
   pub vt: Option<SharedVt>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TaskExplain {
+  pub state: TaskState,
+  pub wanted: bool,
+  /// Wanted and every dependency transitively supported and satisfied;
+  /// false on a wanted task means it is blocked by a dep below.
+  pub supported: bool,
+  pub kept_down: bool,
+  pub pinned: bool,
+  pub required_by: Vec<String>,
+  pub deps: Vec<DepExplain>,
+  pub attempts: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct DepExplain {
+  pub name: String,
+  pub state: TaskState,
+  pub wanted: bool,
+  pub satisfied: bool,
 }
 
 #[derive(Clone)]
@@ -133,8 +173,12 @@ impl TaskContext {
     }
   }
 
+  pub fn send_msg<T: Any + Send + 'static>(&self, to: TaskId, msg: T) {
+    self.send(KernelCommand::TaskMsg(to, Box::new(msg)));
+  }
+
   pub fn send_self_custom<T: Any + Send + 'static>(&self, custom: T) {
-    self.send(KernelCommand::TaskCmd(self.task_id, TaskCmd::msg(custom)));
+    self.send_msg(self.task_id, custom);
   }
 
   pub fn alloc_id(&self) -> TaskId {
@@ -199,14 +243,6 @@ impl TaskContext {
     )
   }
 
-  pub fn send_to_path(&self, path: TaskPath, cmd: TaskCmd) {
-    self.send(KernelCommand::TaskCmdByPath(path, cmd));
-  }
-
-  pub fn restart_path(&self, path: TaskPath) {
-    self.send(KernelCommand::RestartTaskByPath(path));
-  }
-
   pub fn set_task_path(&self, task_id: TaskId, path: TaskPath) {
     self.send(KernelCommand::SetTaskPath(task_id, path));
   }
@@ -249,10 +285,10 @@ pub struct TaskSender {
 }
 
 impl TaskSender {
-  pub fn send(&self, cmd: TaskCmd) {
+  pub fn send<T: Any + Send + 'static>(&self, msg: T) {
     let r = self.sender.send(KernelMessage {
       from: self.from_id,
-      command: KernelCommand::TaskCmd(self.task_id, cmd),
+      command: KernelCommand::TaskMsg(self.task_id, Box::new(msg)),
     });
     if let Err(_err) = r {
       log::debug!(
