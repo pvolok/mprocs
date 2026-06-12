@@ -3,10 +3,10 @@ use std::fmt::Write;
 use unicode_width::UnicodeWidthStr;
 
 use super::{
+  Cell,
   attrs::Attrs,
   common::{CursorStyle, Size},
   grid::{Grid, Pos},
-  Cell,
 };
 
 pub struct ScreenDiffer {

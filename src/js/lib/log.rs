@@ -1,4 +1,4 @@
-use rquickjs::{function::Rest, Object};
+use rquickjs::{Object, function::Rest};
 
 use crate::js::rquickjs_ext::ObjectExt;
 

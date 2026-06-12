@@ -11,7 +11,6 @@ use crate::console::keymap::Keymap;
 use crate::console::proc::StopSignal;
 #[cfg(unix)]
 use crate::error::ResultLogger;
-use crate::ipc::{receiver::MsgReceiver, sender::MsgSender};
 use crate::kernel::kernel::Kernel;
 use crate::mprocs::config::{
   CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig,
@@ -23,8 +22,9 @@ use crate::mprocs::proc_log_config::{LogConfig, LogMode};
 use crate::mprocs::settings::Settings;
 use crate::mprocs::yaml_val::Val;
 use crate::{
-  attach_client::client_main, console::app_client::client_loop,
-  protocol::ClientId,
+  attach_client::client_main,
+  console::{app_client::client_loop, server_message::ClientId},
+  protocol::{ConnReceiver, ConnSender},
 };
 use anyhow::{Result, bail};
 use clap::{ArgMatches, arg, command};
@@ -210,15 +210,11 @@ pub async fn run_app(args: Vec<String>) -> anyhow::Result<()> {
 
       let (srv_to_clt_sender, srv_to_clt_receiver) = {
         let (reader, writer) = tokio::io::simplex(8 * 1024);
-        let sender = MsgSender::new(writer);
-        let receiver = MsgReceiver::new(reader);
-        (sender, receiver)
+        (ConnSender::new(writer), ConnReceiver::new(reader))
       };
       let (clt_to_srv_sender, clt_to_srv_receiver) = {
         let (reader, writer) = tokio::io::simplex(8 * 1024);
-        let sender = MsgSender::new(writer);
-        let receiver = MsgReceiver::new(reader);
-        (sender, receiver)
+        (ConnSender::new(writer), ConnReceiver::new(reader))
       };
 
       #[cfg(unix)]

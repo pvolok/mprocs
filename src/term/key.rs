@@ -611,8 +611,8 @@ mod tests {
       },
     ];
     for key in keys {
-      let bytes = bincode::serialize(&key).unwrap();
-      let decoded: Key = bincode::deserialize(&bytes)
+      let json = serde_json::to_string(&key).unwrap();
+      let decoded: Key = serde_json::from_str(&json)
         .unwrap_or_else(|e| panic!("decode of {key:?} failed: {e}"));
       assert_eq!(decoded, key);
     }

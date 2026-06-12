@@ -2,8 +2,8 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
+use crate::console::server_message::ClientId;
 use crate::kernel::task::TaskId;
-use crate::protocol::ClientId;
 use crate::term::key::{Key, key_spec};
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]

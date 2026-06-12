@@ -27,10 +27,9 @@ use crate::{
     ui_zoom_tip::render_zoom_tip,
     widgets::list::ListState,
   },
-  protocol::ClientId,
 };
 use crate::{
-  console::server_message::ServerMessage,
+  console::server_message::{ClientId, ServerMessage},
   error::ResultLogger,
   kernel::{
     copy_mode::CopyMove as KernelCopyMove,
@@ -46,7 +45,7 @@ use crate::{
     task_screen::{FramedScreenNotify, TaskScreenCmd},
   },
   process::process_spec::ProcessSpec,
-  protocol::{CltToSrv, SrvToClt},
+  protocol::{Bye, CtlMsg, codes},
   task::{
     logger::{LogResolver, LogSink},
     proc_task::{
@@ -185,12 +184,7 @@ impl App {
           client_handle.differ.diff(&mut out, grid).log_ignore();
           client_handle
             .sender
-            .send(SrvToClt::Print(out))
-            .await
-            .log_ignore();
-          client_handle
-            .sender
-            .send(SrvToClt::Flush)
+            .send_out(out.into_bytes().into())
             .await
             .log_ignore();
         }
@@ -218,7 +212,14 @@ impl App {
     }
 
     for mut client in self.clients.into_iter() {
-      client.sender.send(SrvToClt::Quit).await.log_ignore();
+      client
+        .sender
+        .send_ctl(CtlMsg::Bye(Bye {
+          code: codes::QUIT.to_string(),
+          message: String::new(),
+        }))
+        .await
+        .log_ignore();
     }
 
     for proc in &self.state.procs {
@@ -351,8 +352,10 @@ impl App {
     msg: ServerMessage,
   ) -> anyhow::Result<()> {
     match msg {
-      ServerMessage::ClientMessage { client_id, msg } => {
-        self.handle_client_msg(loop_action, client_id, msg)?;
+      ServerMessage::ClientInput { client_id, event } => {
+        self.state.current_client_id = Some(client_id);
+        self.handle_input(loop_action, client_id, event);
+        self.state.current_client_id = None;
       }
       ServerMessage::ClientConnected { handle } => {
         self.clients.push(handle);
@@ -373,25 +376,6 @@ impl App {
       self.screen_size = client.size();
       self.grid.set_size(client.size());
     }
-  }
-
-  fn handle_client_msg(
-    &mut self,
-    loop_action: &mut LoopAction,
-    client_id: ClientId,
-    msg: CltToSrv,
-  ) -> anyhow::Result<()> {
-    self.state.current_client_id = Some(client_id);
-    let ret = match msg {
-      CltToSrv::Init { .. } => bail!("Init message is unexpected."),
-      CltToSrv::Key(event) => {
-        self.handle_input(loop_action, client_id, event);
-        Ok(())
-      }
-      CltToSrv::Rpc(_) => bail!("Rpc message is unexpected in app."),
-    };
-    self.state.current_client_id = None;
-    ret
   }
 
   fn handle_input(

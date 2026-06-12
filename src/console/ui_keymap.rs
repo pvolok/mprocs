@@ -1,9 +1,9 @@
+use crate::console::action::Action;
 use crate::console::{
   keymap::{Keymap, KeymapGroup},
   state::State,
 };
-use crate::console::action::Action;
-use crate::term::{attrs::Attrs, encode::print_key, grid::Rect, Color, Grid};
+use crate::term::{Color, Grid, attrs::Attrs, encode::print_key, grid::Rect};
 
 pub fn render_keymap(
   area: Rect,

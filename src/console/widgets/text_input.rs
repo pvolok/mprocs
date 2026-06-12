@@ -1,10 +1,10 @@
 use tui_input::{Input, InputRequest};
 
 use crate::term::{
+  Grid, TermEvent,
   attrs::Attrs,
   grid::Rect,
   key::{Key, KeyCode, KeyEventKind, KeyMods},
-  Grid, TermEvent,
 };
 
 pub fn render_text_input(

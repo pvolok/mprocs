@@ -1,4 +1,4 @@
-use rquickjs::{function::Opt, Ctx, Exception, Object};
+use rquickjs::{Ctx, Exception, Object, function::Opt};
 
 use crate::js::rquickjs_ext::ObjectExt;
 

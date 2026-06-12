@@ -1,11 +1,12 @@
 use std::path::PathBuf;
 
-use anyhow::bail;
+use serde_json::Value;
 
 use crate::{
-  console::{app::create_app_task, app_client::client_session},
+  console::{
+    app::create_app_task, app_client::client_session, server_message::ClientId,
+  },
   daemon::{lockfile, socket::bind_server_socket},
-  ipc::{receiver::MsgReceiver, sender::MsgSender},
   kernel::{
     kernel::Kernel,
     kernel_message::{
@@ -15,8 +16,8 @@ use crate::{
     task_path::TaskPath,
   },
   protocol::{
-    ClientId, CltToSrv, DkRequest, DkResponse, DkTaskInfo, DkWhy, DkWhyDep,
-    SrvToClt,
+    ConnReceiver, ConnSender, CtlMsg, DkRequest, DkTaskInfo, DkWhy, DkWhyDep,
+    RpcError, TaskListResult, codes, ok_result, server_handshake,
   },
   term::Size,
 };
@@ -81,15 +82,7 @@ pub async fn run_server(
     let mut server_socket = match bind_server_socket(&socket_path).await {
       Ok(server_socket) => {
         log::info!("Server is listening.");
-        #[cfg(unix)]
-        {
-          server_socket
-        }
-        #[cfg(windows)]
-        {
-          let (sock, _addr) = server_socket;
-          sock
-        }
+        server_socket
       }
       Err(err) => {
         log::error!("Failed to bind the server: {:?}", err);
@@ -136,35 +129,54 @@ pub async fn run_server(
   Ok(())
 }
 
-/// Dispatch an accepted connection: RPC or TUI.
+/// Dispatch an accepted connection: handshake, then one RPC request or an
+/// attach session.
 async fn dispatch_connection(
   client_id: ClientId,
   app_sender: crate::kernel::kernel_message::TaskSender,
   pc: TaskContext,
   user_target_id: TaskId,
-  mut sender: MsgSender<SrvToClt>,
-  mut receiver: MsgReceiver<CltToSrv>,
+  mut sender: ConnSender,
+  mut receiver: ConnReceiver,
 ) {
-  let first_msg = receiver.recv().await;
-  match first_msg {
-    Some(Ok(CltToSrv::Rpc(req))) => {
-      let resp = handle_rpc(&pc, user_target_id, req)
-        .await
-        .unwrap_or_else(|e| DkResponse::Error(e.to_string()));
-      let _ = sender.send(SrvToClt::Rpc(resp)).await;
+  if let Err(err) = server_handshake(&mut sender, &mut receiver).await {
+    log::debug!("Client handshake failed: {err}");
+    return;
+  }
+
+  let request = match receiver.recv_ctl().await {
+    Ok(CtlMsg::Request(request)) => request,
+    Ok(msg) => {
+      log::warn!("Expected a request from client, got {msg:?}");
+      return;
     }
-    Some(Ok(CltToSrv::Init { width, height })) => {
+    Err(err) => {
+      log::debug!("Client connection closed: {err}");
+      return;
+    }
+  };
+
+  match DkRequest::from_wire(&request.method, request.params) {
+    Ok(DkRequest::Attach { width, height }) => {
       client_session(
         client_id,
         app_sender,
         Size { width, height },
+        request.id,
         sender,
         receiver,
       )
       .await;
     }
-    _ => {
-      log::warn!("Unexpected first message from client");
+    Ok(req) => {
+      let msg = match handle_rpc(&pc, user_target_id, req).await {
+        Ok(result) => CtlMsg::ok(request.id, result),
+        Err(error) => CtlMsg::err(request.id, error),
+      };
+      let _ = sender.send_ctl(msg).await;
+    }
+    Err(error) => {
+      let _ = sender.send_ctl(CtlMsg::err(request.id, error)).await;
     }
   }
 }
@@ -182,35 +194,54 @@ fn state_str(state: TaskState) -> String {
   }
 }
 
+async fn query(
+  pc: &TaskContext,
+  query: KernelQuery,
+) -> Result<KernelQueryResponse, RpcError> {
+  pc.query(query).await.map_err(RpcError::internal)
+}
+
 async fn list_tasks(
   pc: &TaskContext,
   glob: Option<String>,
-) -> anyhow::Result<Vec<TaskInfo>> {
-  match pc.query(KernelQuery::ListTasks(glob)).await? {
+) -> Result<Vec<TaskInfo>, RpcError> {
+  match query(pc, KernelQuery::ListTasks(glob)).await? {
     KernelQueryResponse::TaskList(tasks) => Ok(tasks),
-    _ => bail!("unexpected query response"),
+    _ => Err(RpcError::internal("unexpected query response")),
   }
 }
 
 async fn match_tasks(
   pc: &TaskContext,
   pattern: &str,
-) -> anyhow::Result<Vec<TaskInfo>> {
+) -> Result<Vec<TaskInfo>, RpcError> {
   let tasks = list_tasks(pc, Some(pattern.to_string())).await?;
   if tasks.is_empty() {
-    bail!("no tasks match '{}'", pattern);
+    return Err(RpcError::new(
+      codes::NO_MATCH,
+      format!("no tasks match '{}'", pattern),
+    ));
   }
   Ok(tasks)
+}
+
+fn parse_path(path: &str) -> Result<TaskPath, RpcError> {
+  TaskPath::new(path)
+    .map_err(|err| RpcError::new(codes::BAD_PATH, err.to_string()))
 }
 
 async fn handle_rpc(
   pc: &TaskContext,
   user_target_id: TaskId,
   req: DkRequest,
-) -> anyhow::Result<DkResponse> {
-  let response = match req {
+) -> Result<Value, RpcError> {
+  match req {
+    DkRequest::Attach { .. } => Err(RpcError::internal(
+      "attach must be the first request on a connection",
+    )),
+
     DkRequest::Ls { glob } => {
-      let items = list_tasks(pc, glob)
+      let tasks = list_tasks(pc, glob)
         .await?
         .into_iter()
         .map(|t| DkTaskInfo {
@@ -221,20 +252,21 @@ async fn handle_rpc(
           state: state_str(t.state),
         })
         .collect();
-      DkResponse::TaskList(items)
+      serde_json::to_value(TaskListResult { tasks }).map_err(RpcError::internal)
     }
 
-    DkRequest::Up => {
-      let path = TaskPath::new("/autostart")?;
-      match pc.query(KernelQuery::ResolvePath(path)).await? {
+    DkRequest::Up {} => {
+      let path = parse_path("/autostart")?;
+      match query(pc, KernelQuery::ResolvePath(path)).await? {
         KernelQueryResponse::ResolvedPath(Some(id)) => {
           pc.send(KernelCommand::Start(id));
-          DkResponse::Ok
+          Ok(ok_result())
         }
-        KernelQueryResponse::ResolvedPath(None) => {
-          bail!("no autostart target")
-        }
-        _ => bail!("unexpected query response"),
+        KernelQueryResponse::ResolvedPath(None) => Err(RpcError::new(
+          codes::NO_AUTOSTART_TARGET,
+          "no autostart target",
+        )),
+        _ => Err(RpcError::internal("unexpected query response")),
       }
     }
 
@@ -242,92 +274,107 @@ async fn handle_rpc(
       for t in match_tasks(pc, &pattern).await? {
         pc.send(KernelCommand::Start(t.id));
       }
-      DkResponse::Ok
+      Ok(ok_result())
     }
 
     DkRequest::Stop { pattern } => {
       for t in match_tasks(pc, &pattern).await? {
         pc.send(KernelCommand::Stop(t.id));
       }
-      DkResponse::Ok
+      Ok(ok_result())
     }
 
     DkRequest::KeepDown { pattern } => {
       for t in match_tasks(pc, &pattern).await? {
         pc.send(KernelCommand::KeepDown(t.id));
       }
-      DkResponse::Ok
+      Ok(ok_result())
     }
 
     DkRequest::Down { pattern } => {
       for t in match_tasks(pc, &pattern).await? {
         pc.send(KernelCommand::Down(t.id));
       }
-      DkResponse::Ok
+      Ok(ok_result())
     }
 
     DkRequest::Kill { pattern } => {
       for t in match_tasks(pc, &pattern).await? {
         pc.send(KernelCommand::Kill(t.id));
       }
-      DkResponse::Ok
+      Ok(ok_result())
     }
 
     DkRequest::Restart { pattern } => {
       for t in match_tasks(pc, &pattern).await? {
         pc.send(KernelCommand::Restart(t.id));
       }
-      DkResponse::Ok
+      Ok(ok_result())
     }
 
     DkRequest::Why { path } => {
-      let task_path = TaskPath::new(&path)?;
-      match pc.query(KernelQuery::Explain(task_path)).await? {
-        KernelQueryResponse::Explain(Some(explain)) => DkResponse::Why(DkWhy {
-          path,
-          state: state_str(explain.state),
-          wanted: explain.wanted,
-          supported: explain.supported,
-          kept_down: explain.kept_down,
-          pinned: explain.pinned,
-          required_by: explain.required_by,
-          deps: explain
-            .deps
-            .into_iter()
-            .map(|d| DkWhyDep {
-              path: d.name,
-              state: state_str(d.state),
-              wanted: d.wanted,
-              satisfied: d.satisfied,
-            })
-            .collect(),
-          attempts: explain.attempts,
-        }),
-        KernelQueryResponse::Explain(None) => {
-          bail!("no task at '{}'", path)
+      let task_path = parse_path(&path)?;
+      match query(pc, KernelQuery::Explain(task_path)).await? {
+        KernelQueryResponse::Explain(Some(explain)) => {
+          let why = DkWhy {
+            path,
+            state: state_str(explain.state),
+            wanted: explain.wanted,
+            supported: explain.supported,
+            kept_down: explain.kept_down,
+            pinned: explain.pinned,
+            required_by: explain.required_by,
+            deps: explain
+              .deps
+              .into_iter()
+              .map(|d| DkWhyDep {
+                path: d.name,
+                state: state_str(d.state),
+                wanted: d.wanted,
+                satisfied: d.satisfied,
+              })
+              .collect(),
+            attempts: explain.attempts,
+          };
+          serde_json::to_value(why).map_err(RpcError::internal)
         }
-        _ => bail!("unexpected query response"),
+        KernelQueryResponse::Explain(None) => Err(RpcError::new(
+          codes::NO_MATCH,
+          format!("no task at '{}'", path),
+        )),
+        _ => Err(RpcError::internal("unexpected query response")),
       }
     }
 
     DkRequest::Screen { path } => {
-      let path = TaskPath::new(&path)?;
-      let query = KernelQuery::GetScreen(path);
-      match pc.query(query).await? {
-        KernelQueryResponse::Screen(content) => DkResponse::Screen(content),
-        _ => DkResponse::Error("unexpected query response".to_string()),
+      let task_path = parse_path(&path)?;
+      match query(pc, KernelQuery::GetScreen(task_path)).await? {
+        KernelQueryResponse::Screen(Some(content)) => {
+          serde_json::to_value(crate::protocol::ScreenResult {
+            screen: Some(content),
+          })
+          .map_err(RpcError::internal)
+        }
+        KernelQueryResponse::Screen(None) => Err(RpcError::new(
+          codes::NO_SCREEN,
+          format!("no screen content for '{}'", path),
+        )),
+        _ => Err(RpcError::internal("unexpected query response")),
       }
     }
 
-    DkRequest::Shutdown => {
+    DkRequest::Shutdown {} => {
       pc.send(KernelCommand::Quit);
-      DkResponse::Ok
+      Ok(ok_result())
     }
 
     DkRequest::Spawn { path, cmd, cwd } => {
-      let task_path = TaskPath::new(&path)?;
+      let task_path = parse_path(&path)?;
       if cmd.is_empty() {
-        bail!("cmd must not be empty".to_string());
+        return Err(RpcError::new(
+          codes::INVALID_PARAMS,
+          "cmd must not be empty",
+        ));
       }
       let mut spec = crate::process::process_spec::ProcessSpec::from_argv(cmd);
       if let Some(cwd) = cwd {
@@ -344,8 +391,7 @@ async fn handle_rpc(
         from: user_target_id,
         to: id,
       });
-      DkResponse::Ok
+      Ok(ok_result())
     }
-  };
-  Ok(response)
+  }
 }

@@ -8,7 +8,10 @@ pub(crate) mod internal;
 #[cfg(windows)]
 mod windows;
 
-use crate::{error::ResultLogger, term::{TermEvent, Size}};
+use crate::{
+  error::ResultLogger,
+  term::{Size, TermEvent},
+};
 
 use self::{
   input_parser::InputParser,
@@ -386,7 +389,7 @@ impl TermDriver {
       use ::windows::Win32::{
         Foundation::HANDLE,
         System::Console::{
-          GetConsoleScreenBufferInfo, CONSOLE_SCREEN_BUFFER_INFO,
+          CONSOLE_SCREEN_BUFFER_INFO, GetConsoleScreenBufferInfo,
         },
       };
 

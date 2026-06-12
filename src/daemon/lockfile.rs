@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LockFileContents {
   pub pid: u32,
-  /// Socket path (Unix) or TCP address (Windows).
+  /// Socket path (Unix) or named pipe name (Windows).
   pub socket: String,
   /// Canonical absolute path of the working directory this daemon manages.
   pub working_dir: String,
@@ -85,7 +85,10 @@ pub fn daemon_paths(working_dir: &Path) -> anyhow::Result<(PathBuf, PathBuf)> {
   let hash = dir_to_hash(&canonical);
   let runtime_dir = get_runtime_dir()?;
   let lock_path = runtime_dir.join(format!("{}.lock", hash));
+  #[cfg(unix)]
   let socket_path = runtime_dir.join(format!("{}.sock", hash));
+  #[cfg(windows)]
+  let socket_path = PathBuf::from(format!(r"\\.\pipe\dekit-{}", hash));
   Ok((lock_path, socket_path))
 }
 
@@ -93,11 +96,19 @@ pub fn create_lock_file(working_dir: &Path) -> anyhow::Result<LockFileGuard> {
   let canonical = dunce::canonicalize(working_dir)?;
   let (lock_path, socket_path) = daemon_paths(working_dir)?;
 
-  std::fs::create_dir_all(
-    lock_path
-      .parent()
-      .ok_or_else(|| anyhow::anyhow!("No parent for lock path"))?,
-  )?;
+  let runtime_dir = lock_path
+    .parent()
+    .ok_or_else(|| anyhow::anyhow!("No parent for lock path"))?;
+  std::fs::create_dir_all(runtime_dir)?;
+  // Lock files and sockets are private to the owner.
+  #[cfg(unix)]
+  {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(
+      runtime_dir,
+      std::fs::Permissions::from_mode(0o700),
+    )?;
+  }
 
   // Truncate only after the flock is ours; truncating first would wipe the
   // contents out from under a live daemon holding the lock.

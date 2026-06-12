@@ -12,7 +12,6 @@ use tokio::{
   net::windows::named_pipe::NamedPipeServer,
 };
 use windows::{
-  core::{PCWSTR, PWSTR},
   Win32::{
     Foundation::{CloseHandle, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE},
     Storage::FileSystem::{
@@ -22,24 +21,25 @@ use windows::{
     },
     System::{
       Console::{
-        ClosePseudoConsole, CreatePseudoConsole, ResizePseudoConsole, COORD,
-        HPCON,
+        COORD, ClosePseudoConsole, CreatePseudoConsole, HPCON,
+        ResizePseudoConsole,
       },
       Pipes::{
         CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS,
         PIPE_TYPE_BYTE,
       },
       Threading::{
-        CreateProcessW, DeleteProcThreadAttributeList, GetExitCodeProcess,
-        InitializeProcThreadAttributeList, RegisterWaitForSingleObject,
+        CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
+        DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT,
+        GetExitCodeProcess, InitializeProcThreadAttributeList,
+        LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+        PROCESS_INFORMATION, RegisterWaitForSingleObject, STARTUPINFOEXW,
         TerminateProcess, UnregisterWait, UpdateProcThreadAttribute,
-        CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT,
-        LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION,
-        PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, STARTUPINFOEXW,
         WT_EXECUTEONLYONCE,
       },
     },
   },
+  core::{PCWSTR, PWSTR},
 };
 
 use crate::{

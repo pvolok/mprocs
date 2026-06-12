@@ -1,11 +1,11 @@
-use crate::kernel::kernel_message::TaskContext;
-use crate::console::{app::LoopAction, state::State};
 use crate::console::action::Action;
+use crate::console::{app::LoopAction, state::State};
+use crate::kernel::kernel_message::TaskContext;
 use crate::term::{
+  TermEvent,
   attrs::Attrs,
   grid::{BorderType, Rect},
   key::{Key, KeyCode},
-  TermEvent,
 };
 
 use super::modal::Modal;

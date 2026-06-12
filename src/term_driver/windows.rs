@@ -1,14 +1,15 @@
 use windows::Win32::{
   Foundation::HANDLE,
   System::Console::{
-    GetConsoleMode, GetStdHandle, SetConsoleMode, CAPSLOCK_ON, CONSOLE_MODE,
-    ENABLE_EXTENDED_FLAGS, ENABLE_MOUSE_INPUT, ENABLE_PROCESSED_OUTPUT,
-    ENABLE_QUICK_EDIT_MODE, ENABLE_VIRTUAL_TERMINAL_PROCESSING,
-    ENABLE_WINDOW_INPUT, FROM_LEFT_1ST_BUTTON_PRESSED,
-    FROM_LEFT_2ND_BUTTON_PRESSED, INPUT_RECORD, KEY_EVENT, KEY_EVENT_RECORD,
-    MOUSE_EVENT, MOUSE_EVENT_RECORD, MOUSE_HWHEELED, MOUSE_MOVED,
-    MOUSE_WHEELED, RIGHTMOST_BUTTON_PRESSED, SHIFT_PRESSED, STD_INPUT_HANDLE,
-    STD_OUTPUT_HANDLE, WINDOW_BUFFER_SIZE_EVENT, WINDOW_BUFFER_SIZE_RECORD,
+    CAPSLOCK_ON, CONSOLE_MODE, ENABLE_EXTENDED_FLAGS, ENABLE_MOUSE_INPUT,
+    ENABLE_PROCESSED_OUTPUT, ENABLE_QUICK_EDIT_MODE,
+    ENABLE_VIRTUAL_TERMINAL_PROCESSING, ENABLE_WINDOW_INPUT,
+    FROM_LEFT_1ST_BUTTON_PRESSED, FROM_LEFT_2ND_BUTTON_PRESSED, GetConsoleMode,
+    GetStdHandle, INPUT_RECORD, KEY_EVENT, KEY_EVENT_RECORD, MOUSE_EVENT,
+    MOUSE_EVENT_RECORD, MOUSE_HWHEELED, MOUSE_MOVED, MOUSE_WHEELED,
+    RIGHTMOST_BUTTON_PRESSED, SHIFT_PRESSED, STD_INPUT_HANDLE,
+    STD_OUTPUT_HANDLE, SetConsoleMode, WINDOW_BUFFER_SIZE_EVENT,
+    WINDOW_BUFFER_SIZE_RECORD,
   },
   UI::{
     Input::KeyboardAndMouse::{GetKeyboardLayout, ToUnicodeEx, VK_MENU},
@@ -192,21 +193,13 @@ fn try_ensure_char_case(ch: char, desired_case: CharCase) -> char {
       let mut iter = ch.to_lowercase();
       // Unwrap is safe; iterator yields one or more chars.
       let ch_lower = iter.next().unwrap();
-      if iter.next().is_none() {
-        ch_lower
-      } else {
-        ch
-      }
+      if iter.next().is_none() { ch_lower } else { ch }
     }
     CharCase::UpperCase if ch.is_lowercase() => {
       let mut iter = ch.to_uppercase();
       // Unwrap is safe; iterator yields one or more chars.
       let ch_upper = iter.next().unwrap();
-      if iter.next().is_none() {
-        ch_upper
-      } else {
-        ch
-      }
+      if iter.next().is_none() { ch_upper } else { ch }
     }
     _ => ch,
   }

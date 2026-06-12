@@ -1,11 +1,11 @@
-use crate::kernel::{kernel_message::TaskContext, task::TaskId};
-use crate::console::{app::LoopAction, state::State};
 use crate::console::action::Action;
+use crate::console::{app::LoopAction, state::State};
+use crate::kernel::{kernel_message::TaskContext, task::TaskId};
 use crate::term::{
+  Grid, TermEvent,
   attrs::Attrs,
   grid::{BorderType, Rect},
   key::{Key, KeyCode},
-  Grid, TermEvent,
 };
 
 use super::modal::Modal;
@@ -35,9 +35,7 @@ impl Modal for RemoveProcModal {
         ..
       }) if mods.is_empty() => {
         self.pc.send_self_custom(Action::CloseCurrentModal);
-        self
-          .pc
-          .send_self_custom(Action::RemoveProc { id: self.id });
+        self.pc.send_self_custom(Action::RemoveProc { id: self.id });
         // Skip because RemoveProc event will immediately rerender.
         return true;
       }

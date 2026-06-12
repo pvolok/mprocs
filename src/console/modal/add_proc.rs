@@ -1,17 +1,17 @@
 use tui_input::Input;
 
-use crate::kernel::kernel_message::TaskContext;
+use crate::console::action::Action;
 use crate::console::{
   app::LoopAction,
   state::State,
   widgets::text_input::{render_text_input, to_input_request},
 };
-use crate::console::action::Action;
+use crate::kernel::kernel_message::TaskContext;
 use crate::term::{
+  Grid, TermEvent,
   attrs::Attrs,
   grid::{Pos, Rect},
   key::{Key, KeyCode},
-  Grid, TermEvent,
 };
 
 use super::modal::Modal;

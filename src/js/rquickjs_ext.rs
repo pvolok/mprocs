@@ -1,7 +1,7 @@
 use rquickjs::{
+  Object,
   function::IntoJsFunc,
   prelude::{Async, Func},
-  Object,
 };
 
 pub(crate) trait ObjectExt<'js> {

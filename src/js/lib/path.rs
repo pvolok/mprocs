@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use rquickjs::{function::Rest, Ctx, Object};
+use rquickjs::{Ctx, Object, function::Rest};
 
 use crate::js::rquickjs_ext::ObjectExt;
 

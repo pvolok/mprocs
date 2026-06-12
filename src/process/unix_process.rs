@@ -68,12 +68,8 @@ impl UnixProcess {
       let mut master_fd = -1;
       // Some args are *mut on some BSD variants.
       #[allow(clippy::unnecessary_mut_passed)]
-      let pid = libc::forkpty(
-        &mut master_fd,
-        null_mut(),
-        null_mut(),
-        &mut size.into(),
-      );
+      let pid =
+        libc::forkpty(&mut master_fd, null_mut(), null_mut(), &mut size.into());
       if pid < 0 {
         libc::pthread_sigmask(libc::SIG_SETMASK, &old_set, null_mut());
         return Err(std::io::Error::last_os_error());

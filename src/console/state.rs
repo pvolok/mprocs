@@ -1,8 +1,8 @@
-use crate::kernel::task::TaskId;
+use crate::console::server_message::ClientId;
 use crate::console::{
   keymap::KeymapGroup, proc::view::ProcView, widgets::list::ListState,
 };
-use crate::protocol::ClientId;
+use crate::kernel::task::TaskId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Scope {

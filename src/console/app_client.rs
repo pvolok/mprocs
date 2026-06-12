@@ -1,67 +1,110 @@
 use std::fmt::Debug;
 
 use crate::{
-  console::server_message::ServerMessage,
-  ipc::{receiver::MsgReceiver, sender::MsgSender},
+  console::server_message::{ClientId, ServerMessage},
   kernel::kernel_message::TaskSender,
-  protocol::{ClientId, CltToSrv, SrvToClt},
-  term::{ScreenDiffer, Size},
+  protocol::{
+    ConnReceiver, ConnSender, CtlMsg, DkRequest, Msg, RpcError, codes,
+    ctl::EVENT_INPUT, ok_result, server_handshake,
+  },
+  term::{ScreenDiffer, Size, TermEvent},
 };
 
 pub async fn client_loop(
   id: ClientId,
   app_sender: TaskSender,
-  (client_sender, mut server_receiver): (
-    MsgSender<SrvToClt>,
-    MsgReceiver<CltToSrv>,
-  ),
+  (mut sender, mut receiver): (ConnSender, ConnReceiver),
 ) {
-  log::debug!("client_loop: server_receiver.recv()");
-  let init_msg = server_receiver.recv().await;
-  let size = match init_msg {
-    Some(Ok(CltToSrv::Init { width, height })) => Size { width, height },
-    Some(Ok(msg)) => {
-      log::warn!("client_loop: expected init message, got {msg:?}");
+  if let Err(err) = server_handshake(&mut sender, &mut receiver).await {
+    log::warn!("client_loop: handshake failed: {err}");
+    return;
+  }
+  let request = match receiver.recv_ctl().await {
+    Ok(CtlMsg::Request(request)) => request,
+    Ok(msg) => {
+      log::warn!("client_loop: expected attach request, got {msg:?}");
       return;
     }
-    Some(Err(err)) => {
-      log::warn!("client_loop: failed to decode init message: {err}");
+    Err(err) => {
+      log::warn!("client_loop: {err}");
       return;
     }
-    None => return,
   };
-  client_session(id, app_sender, size, client_sender, server_receiver).await;
+  match DkRequest::from_wire(&request.method, request.params) {
+    Ok(DkRequest::Attach { width, height }) => {
+      client_session(
+        id,
+        app_sender,
+        Size { width, height },
+        request.id,
+        sender,
+        receiver,
+      )
+      .await;
+    }
+    Ok(_) | Err(_) => {
+      let error =
+        RpcError::new(codes::UNKNOWN_METHOD, "only attach is supported here");
+      let _ = sender.send_ctl(CtlMsg::err(request.id, error)).await;
+    }
+  }
 }
 
 pub async fn client_session(
   id: ClientId,
   app_sender: TaskSender,
   size: Size,
-  client_sender: MsgSender<SrvToClt>,
-  mut server_receiver: MsgReceiver<CltToSrv>,
+  request_id: u64,
+  mut sender: ConnSender,
+  mut receiver: ConnReceiver,
 ) {
-  match ClientHandle::create(id, client_sender, size) {
-    Ok(handle) => {
-      app_sender.send(ServerMessage::ClientConnected { handle });
-    }
-    Err(err) => {
-      log::error!("Client creation error: {:?}", err);
-      return;
-    }
+  if let Err(err) = sender.send_ctl(CtlMsg::ok(request_id, ok_result())).await {
+    log::warn!("client_session: failed to confirm attach: {err}");
+    return;
   }
 
-  loop {
-    let msg = if let Some(msg) = server_receiver.recv().await {
-      msg
-    } else {
-      break;
-    };
+  app_sender.send(ServerMessage::ClientConnected {
+    handle: ClientHandle {
+      id,
+      sender,
+      screen_size: size,
+      differ: ScreenDiffer::new(),
+    },
+  });
 
-    match msg {
-      Ok(msg) => {
-        app_sender.send(ServerMessage::ClientMessage { client_id: id, msg });
+  loop {
+    let msg = match receiver.recv().await {
+      Some(Ok(msg)) => msg,
+      Some(Err(err)) => {
+        log::warn!("client_session: closing: {err}");
+        break;
       }
-      Err(_err) => break,
+      None => break,
+    };
+    match msg {
+      Msg::Ctl(CtlMsg::Event(event)) => {
+        if event.name != EVENT_INPUT {
+          log::debug!("client_session: ignoring event '{}'", event.name);
+          continue;
+        }
+        match serde_json::from_value::<TermEvent>(event.params) {
+          Ok(event) => {
+            app_sender.send(ServerMessage::ClientInput {
+              client_id: id,
+              event,
+            });
+          }
+          Err(err) => {
+            log::debug!("client_session: dropping input event: {err}");
+          }
+        }
+      }
+      Msg::Ctl(msg) => {
+        log::debug!("client_session: ignoring message {msg:?}");
+      }
+      Msg::Out(_) => {
+        log::debug!("client_session: ignoring output frame from client");
+      }
     }
   }
   app_sender.send(ServerMessage::ClientDisconnected { client_id: id });
@@ -69,7 +112,7 @@ pub async fn client_session(
 
 pub struct ClientHandle {
   pub id: ClientId,
-  pub sender: MsgSender<SrvToClt>,
+  pub sender: ConnSender,
   pub screen_size: Size,
   pub differ: ScreenDiffer,
 }
@@ -83,19 +126,6 @@ impl Debug for ClientHandle {
 }
 
 impl ClientHandle {
-  pub fn create(
-    id: ClientId,
-    client_sender: MsgSender<SrvToClt>,
-    size: Size,
-  ) -> anyhow::Result<Self> {
-    Ok(Self {
-      id,
-      sender: client_sender,
-      screen_size: size,
-      differ: ScreenDiffer::new(),
-    })
-  }
-
   pub fn size(&self) -> Size {
     self.screen_size
   }

@@ -1,5 +1,5 @@
-use crate::console::keymap::{Keymap, KeymapGroup};
 use crate::console::action::Action;
+use crate::console::keymap::{Keymap, KeymapGroup};
 use crate::term::{Color, Grid, attrs::Attrs, grid::Rect};
 
 pub fn render_zoom_tip(area: Rect, grid: &mut Grid, keymap: &Keymap) {
@@ -7,11 +7,7 @@ pub fn render_zoom_tip(area: Rect, grid: &mut Grid, keymap: &Keymap) {
     return;
   }
 
-  let events = vec![
-    Action::FocusTerm,
-    Action::ToggleFocus,
-    Action::FocusProcs,
-  ];
+  let events = vec![Action::FocusTerm, Action::ToggleFocus, Action::FocusProcs];
   let key = events
     .into_iter()
     .find_map(|event| keymap.resolve_key(KeymapGroup::Term, &event));

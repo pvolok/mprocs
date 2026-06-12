@@ -5,7 +5,7 @@ mod path;
 mod process;
 mod tui;
 
-use rquickjs::{function::This, object::Accessor, Ctx, Object};
+use rquickjs::{Ctx, Object, function::This, object::Accessor};
 
 pub fn init(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
   let dk = Object::new(ctx.clone())?;

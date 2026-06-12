@@ -1,5 +1,13 @@
-pub mod attach;
+pub mod conn;
+pub mod ctl;
 pub mod rpc;
+pub mod wire;
 
-pub use attach::{ClientId, CltToSrv, SrvToClt};
-pub use rpc::{DkRequest, DkResponse, DkTaskInfo, DkWhy, DkWhyDep};
+pub use conn::{
+  ConnReceiver, ConnSender, Msg, client_handshake, server_handshake,
+};
+pub use ctl::{Bye, CtlMsg, Event, Request, RpcError, codes};
+pub use rpc::{
+  DkRequest, DkTaskInfo, DkWhy, DkWhyDep, ScreenResult, TaskListResult,
+  ok_result,
+};
