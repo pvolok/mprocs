@@ -396,7 +396,7 @@ fn get_commands(search: &str) -> Vec<CommandInfo> {
     ("next-proc", Action::NextProc),
     ("prev-proc", Action::PrevProc),
     ("start-proc", Action::StartProc),
-    ("term-proc", Action::TermProc),
+    ("stop-proc", Action::StopProc),
     ("kill-proc", Action::KillProc),
     ("keep-down-proc", Action::KeepDownProc),
     ("restart-proc", Action::RestartProc),

@@ -607,7 +607,7 @@ impl App {
           pc.send(KernelCommand::Start(proc.id));
         }
       }
-      Action::TermProc => {
+      Action::StopProc => {
         if let Some(proc) = self.state.get_current_proc() {
           pc.send(KernelCommand::Stop(proc.id));
         }

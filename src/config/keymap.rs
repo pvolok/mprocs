@@ -78,7 +78,7 @@ impl KeymapConfig {
     );
     s.keymap_add_p(
       Key::new(KeyCode::Char('x'), KeyMods::NONE),
-      Action::TermProc,
+      Action::StopProc,
     );
     s.keymap_add_p(
       Key::new(KeyCode::Char('X'), KeyMods::NONE),

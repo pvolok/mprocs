@@ -34,7 +34,7 @@ pub fn render_keymap(
       Action::NextProc,
       Action::PrevProc,
       Action::StartProc,
-      Action::TermProc,
+      Action::StopProc,
       Action::RestartProc,
       Action::Zoom,
       Action::ShowCommandsMenu,
