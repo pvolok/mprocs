@@ -537,14 +537,11 @@ impl App {
       }
       Action::Quit => {
         self.state.quitting = true;
-        for proc in self.state.procs.iter() {
-          if proc.is_up() {
-            pc.send(KernelCommand::Stop(proc.id()));
-          }
-        }
+        pc.send(KernelCommand::Quit);
         loop_action.render();
       }
       Action::ForceQuit => {
+        pc.send(KernelCommand::Quit);
         for proc in self.state.procs.iter() {
           if proc.is_up() {
             pc.send(KernelCommand::Kill(proc.id()));
