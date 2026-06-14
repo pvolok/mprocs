@@ -25,7 +25,7 @@ pub async fn connect_client_socket(
     if spawn_server {
       spawn_server_daemon(working_dir)?;
     } else {
-      anyhow::bail!("Daemon is not running. Start it with `dk up`.");
+      anyhow::bail!("Daemon is not running. Start it with `dekit up`.");
     }
   }
 

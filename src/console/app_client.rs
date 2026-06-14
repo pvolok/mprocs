@@ -4,7 +4,7 @@ use crate::{
   console::server_message::{ClientId, ServerMessage},
   kernel::kernel_message::TaskSender,
   protocol::{
-    ConnReceiver, ConnSender, CtlMsg, DkRequest, Msg, RpcError, codes,
+    ConnReceiver, ConnSender, CtlMsg, Msg, RpcError, RpcRequest, codes,
     ctl::EVENT_INPUT, ok_result, server_handshake,
   },
   term::{ScreenDiffer, Size, TermEvent},
@@ -30,8 +30,8 @@ pub async fn client_loop(
       return;
     }
   };
-  match DkRequest::from_wire(&request.method, request.params) {
-    Ok(DkRequest::Attach { width, height }) => {
+  match RpcRequest::from_wire(&request.method, request.params) {
+    Ok(RpcRequest::Attach { width, height }) => {
       client_session(
         id,
         app_sender,

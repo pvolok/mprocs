@@ -38,7 +38,7 @@ fn get_tui_store(
   let guard = ctx.userdata::<TuiStore>().ok_or_else(|| {
     Exception::throw_message(
       ctx,
-      "tui: storage is not initialized; reload dk.tui module",
+      "tui: storage is not initialized; reload std.tui module",
     )
   })?;
   Ok(Arc::clone(&guard.0))
@@ -64,7 +64,7 @@ fn with_tui_state_sync<R>(
   let Some(state) = guard.as_mut() else {
     return Err(Exception::throw_message(
       ctx,
-      "tui: not opened; call dk.tui.open()",
+      "tui: not opened; call std.tui.open()",
     ));
   };
   f(state)
@@ -124,7 +124,7 @@ async fn input_fn(
   let store = get_tui_store(&ctx)?;
   let mut guard = lock_tui_store(&ctx, "input", &store)?;
   let tui = guard.as_mut().ok_or_else(|| {
-    Exception::throw_message(&ctx, "tui: not opened; call dk.tui.open()")
+    Exception::throw_message(&ctx, "tui: not opened; call std.tui.open()")
   })?;
 
   let event = if let Some(timeout_ms) = timeout_ms {

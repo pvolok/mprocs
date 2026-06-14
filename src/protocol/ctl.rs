@@ -10,7 +10,7 @@ pub const PROTOCOL_VERSION: u32 = 1;
 pub fn local_hello() -> Hello {
   Hello {
     protocol: PROTOCOL_VERSION,
-    app: format!("dk {}", env!("CARGO_PKG_VERSION")),
+    app: format!("dekit {}", env!("CARGO_PKG_VERSION")),
     features: Vec::new(),
   }
 }
@@ -152,10 +152,10 @@ mod tests {
       (
         CtlMsg::Hello(Hello {
           protocol: 1,
-          app: "dk 0.9.6".to_string(),
+          app: "dekit 0.9.6".to_string(),
           features: vec![],
         }),
-        r#"{"type":"hello","protocol":1,"app":"dk 0.9.6","features":[]}"#,
+        r#"{"type":"hello","protocol":1,"app":"dekit 0.9.6","features":[]}"#,
       ),
       (
         CtlMsg::Request(Request {

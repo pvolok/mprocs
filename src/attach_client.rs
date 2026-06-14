@@ -2,7 +2,7 @@ use anyhow::bail;
 use tokio::io::AsyncWriteExt;
 
 use crate::protocol::{
-  ConnReceiver, ConnSender, CtlMsg, DkRequest, Event, Msg, Request,
+  ConnReceiver, ConnSender, CtlMsg, Event, Msg, Request, RpcRequest,
   client_handshake, codes, ctl::EVENT_INPUT,
 };
 use crate::term::TermEvent;
@@ -27,7 +27,7 @@ async fn client_loop(
   mut receiver: ConnReceiver,
 ) -> anyhow::Result<()> {
   let size = term_driver.size()?;
-  let (method, params) = DkRequest::Attach {
+  let (method, params) = RpcRequest::Attach {
     width: size.width,
     height: size.height,
   }

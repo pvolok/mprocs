@@ -1,4 +1,4 @@
-declare const dk: {
+declare const std: {
   /** Log a message to stderr at info level. */
   log(...args: unknown[]): void;
   /** Log a message to stderr at warn level. */

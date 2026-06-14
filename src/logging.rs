@@ -10,7 +10,7 @@ use flexi_logger::{DeferredNow, FormatFunction, Logger, LoggerHandle};
 use log::{LevelFilter, Record};
 
 pub struct Config<'a> {
-  /// Binary name, used for the default file basename (e.g. `mprocs`, `dk`).
+  /// Binary name, used for the default file basename (e.g. `mprocs`, `dekit`).
   pub binary: &'a str,
   /// `--log-level` value passed on the CLI, if any.
   pub cli_level: Option<&'a str>,

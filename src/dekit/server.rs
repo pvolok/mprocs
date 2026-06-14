@@ -16,8 +16,8 @@ use crate::{
     task_path::TaskPath,
   },
   protocol::{
-    ConnReceiver, ConnSender, CtlMsg, DkRequest, DkTaskInfo, DkWhy, DkWhyDep,
-    RpcError, TaskListResult, codes, ok_result, server_handshake,
+    ConnReceiver, ConnSender, CtlMsg, RpcError, RpcRequest, RpcTaskInfo,
+    RpcWhy, RpcWhyDep, TaskListResult, codes, ok_result, server_handshake,
   },
   term::Size,
 };
@@ -40,10 +40,10 @@ pub async fn run_server(
     };
 
   let _logger = crate::logging::init(crate::logging::Config {
-    binary: "dk",
+    binary: "dekit",
     cli_level: log_level,
-    log_env: "DK_LOG",
-    file_env: "DK_LOG_FILE",
+    log_env: "DEKIT_LOG",
+    file_env: "DEKIT_LOG_FILE",
     config_level: config.log.level.as_deref(),
     config_file: config.log.file.as_deref(),
     default_dir: Some(&working_dir),
@@ -156,8 +156,8 @@ async fn dispatch_connection(
     }
   };
 
-  match DkRequest::from_wire(&request.method, request.params) {
-    Ok(DkRequest::Attach { width, height }) => {
+  match RpcRequest::from_wire(&request.method, request.params) {
+    Ok(RpcRequest::Attach { width, height }) => {
       client_session(
         client_id,
         app_sender,
@@ -233,18 +233,18 @@ fn parse_path(path: &str) -> Result<TaskPath, RpcError> {
 async fn handle_rpc(
   pc: &TaskContext,
   user_target_id: TaskId,
-  req: DkRequest,
+  req: RpcRequest,
 ) -> Result<Value, RpcError> {
   match req {
-    DkRequest::Attach { .. } => Err(RpcError::internal(
+    RpcRequest::Attach { .. } => Err(RpcError::internal(
       "attach must be the first request on a connection",
     )),
 
-    DkRequest::Ls { glob } => {
+    RpcRequest::Ls { glob } => {
       let tasks = list_tasks(pc, glob)
         .await?
         .into_iter()
-        .map(|t| DkTaskInfo {
+        .map(|t| RpcTaskInfo {
           path: t
             .path
             .map(|p| p.to_string())
@@ -255,7 +255,7 @@ async fn handle_rpc(
       serde_json::to_value(TaskListResult { tasks }).map_err(RpcError::internal)
     }
 
-    DkRequest::Up {} => {
+    RpcRequest::Up {} => {
       let path = parse_path("/autostart")?;
       match query(pc, KernelQuery::ResolvePath(path)).await? {
         KernelQueryResponse::ResolvedPath(Some(id)) => {
@@ -270,53 +270,53 @@ async fn handle_rpc(
       }
     }
 
-    DkRequest::Start { pattern } => {
+    RpcRequest::Start { pattern } => {
       for t in match_tasks(pc, &pattern).await? {
         pc.send(KernelCommand::Start(t.id));
       }
       Ok(ok_result())
     }
 
-    DkRequest::Stop { pattern } => {
+    RpcRequest::Stop { pattern } => {
       for t in match_tasks(pc, &pattern).await? {
         pc.send(KernelCommand::Stop(t.id));
       }
       Ok(ok_result())
     }
 
-    DkRequest::KeepDown { pattern } => {
+    RpcRequest::KeepDown { pattern } => {
       for t in match_tasks(pc, &pattern).await? {
         pc.send(KernelCommand::KeepDown(t.id));
       }
       Ok(ok_result())
     }
 
-    DkRequest::Down { pattern } => {
+    RpcRequest::Down { pattern } => {
       for t in match_tasks(pc, &pattern).await? {
         pc.send(KernelCommand::Down(t.id));
       }
       Ok(ok_result())
     }
 
-    DkRequest::Kill { pattern } => {
+    RpcRequest::Kill { pattern } => {
       for t in match_tasks(pc, &pattern).await? {
         pc.send(KernelCommand::Kill(t.id));
       }
       Ok(ok_result())
     }
 
-    DkRequest::Restart { pattern } => {
+    RpcRequest::Restart { pattern } => {
       for t in match_tasks(pc, &pattern).await? {
         pc.send(KernelCommand::Restart(t.id));
       }
       Ok(ok_result())
     }
 
-    DkRequest::Why { path } => {
+    RpcRequest::Why { path } => {
       let task_path = parse_path(&path)?;
       match query(pc, KernelQuery::Explain(task_path)).await? {
         KernelQueryResponse::Explain(Some(explain)) => {
-          let why = DkWhy {
+          let why = RpcWhy {
             path,
             state: state_str(explain.state),
             wanted: explain.wanted,
@@ -327,7 +327,7 @@ async fn handle_rpc(
             deps: explain
               .deps
               .into_iter()
-              .map(|d| DkWhyDep {
+              .map(|d| RpcWhyDep {
                 path: d.name,
                 state: state_str(d.state),
                 wanted: d.wanted,
@@ -346,7 +346,7 @@ async fn handle_rpc(
       }
     }
 
-    DkRequest::Screen { path } => {
+    RpcRequest::Screen { path } => {
       let task_path = parse_path(&path)?;
       match query(pc, KernelQuery::GetScreen(task_path)).await? {
         KernelQueryResponse::Screen(Some(content)) => {
@@ -363,12 +363,12 @@ async fn handle_rpc(
       }
     }
 
-    DkRequest::Shutdown {} => {
+    RpcRequest::Shutdown {} => {
       pc.send(KernelCommand::Quit);
       Ok(ok_result())
     }
 
-    DkRequest::Spawn { path, cmd, cwd } => {
+    RpcRequest::Spawn { path, cmd, cwd } => {
       let task_path = parse_path(&path)?;
       if cmd.is_empty() {
         return Err(RpcError::new(

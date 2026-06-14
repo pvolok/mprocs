@@ -11,7 +11,7 @@ use crate::{
   },
   dekit::{rpc_client::rpc_request, server::run_server},
   js::js_vm::JsVm,
-  protocol::{DkRequest, DkWhy, ScreenResult, TaskListResult},
+  protocol::{RpcRequest, RpcWhy, ScreenResult, TaskListResult},
 };
 
 fn print_task_list(
@@ -32,7 +32,7 @@ fn print_task_list(
 }
 
 fn print_why(result: serde_json::Value, json: bool) -> anyhow::Result<()> {
-  let why: DkWhy = serde_json::from_value(result)?;
+  let why: RpcWhy = serde_json::from_value(result)?;
   if json {
     println!("{}", serde_json::to_string(&why)?);
     return Ok(());
@@ -91,7 +91,7 @@ async fn shutdown_daemon(working_dir: &Path) -> anyhow::Result<()> {
     Some(_) => {}
   }
 
-  let _ = rpc_request(working_dir, DkRequest::Shutdown {}, false).await;
+  let _ = rpc_request(working_dir, RpcRequest::Shutdown {}, false).await;
 
   for _ in 0..50 {
     match lockfile::get_daemon_status(working_dir)? {
@@ -199,7 +199,7 @@ pub async fn dekit_main() -> anyhow::Result<()> {
           .arg(
             Arg::new("log-level")
               .long("log-level")
-              .help("Diagnostic log level (off|error|warn|info|debug|trace, or env_logger spec). Falls back to $DK_LOG, $RUST_LOG, then 'error' (release) or 'trace' (debug)."),
+              .help("Diagnostic log level (off|error|warn|info|debug|trace, or env_logger spec). Falls back to $DEKIT_LOG, $RUST_LOG, then 'error' (release) or 'trace' (debug)."),
           ),
         Command::new("start")
           .about("Start the server for the current directory"),
@@ -264,7 +264,7 @@ pub async fn dekit_main() -> anyhow::Result<()> {
       let cwd = sub_m.get_one::<String>("cwd").cloned();
       let cmd: Vec<String> =
         sub_m.get_many::<String>("cmd").unwrap().cloned().collect();
-      rpc_request(&working_dir, DkRequest::Spawn { path, cmd, cwd }, true)
+      rpc_request(&working_dir, RpcRequest::Spawn { path, cmd, cwd }, true)
         .await?;
       println!("Spawned.");
     }
@@ -272,45 +272,45 @@ pub async fn dekit_main() -> anyhow::Result<()> {
       let working_dir = resolve_working_dir(&matches)?;
       let glob = sub_m.get_one::<String>("glob").cloned();
       let result =
-        rpc_request(&working_dir, DkRequest::Ls { glob }, false).await?;
+        rpc_request(&working_dir, RpcRequest::Ls { glob }, false).await?;
       print_task_list(result, matches.get_flag("json"))?;
     }
     Some(("start", sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
       let pattern = sub_m.get_one::<String>("pattern").unwrap().clone();
-      rpc_request(&working_dir, DkRequest::Start { pattern }, true).await?;
+      rpc_request(&working_dir, RpcRequest::Start { pattern }, true).await?;
       println!("Started.");
     }
     Some(("stop", sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
       let pattern = sub_m.get_one::<String>("pattern").unwrap().clone();
-      rpc_request(&working_dir, DkRequest::Stop { pattern }, false).await?;
+      rpc_request(&working_dir, RpcRequest::Stop { pattern }, false).await?;
       println!("Stopped.");
     }
     Some(("kill", sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
       let pattern = sub_m.get_one::<String>("pattern").unwrap().clone();
-      rpc_request(&working_dir, DkRequest::Kill { pattern }, false).await?;
+      rpc_request(&working_dir, RpcRequest::Kill { pattern }, false).await?;
       println!("Killed.");
     }
     Some(("restart", sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
       let pattern = sub_m.get_one::<String>("pattern").unwrap().clone();
-      rpc_request(&working_dir, DkRequest::Restart { pattern }, true).await?;
+      rpc_request(&working_dir, RpcRequest::Restart { pattern }, true).await?;
       println!("Restarted.");
     }
     Some(("why", sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
       let path = sub_m.get_one::<String>("path").unwrap().clone();
       let result =
-        rpc_request(&working_dir, DkRequest::Why { path }, false).await?;
+        rpc_request(&working_dir, RpcRequest::Why { path }, false).await?;
       print_why(result, matches.get_flag("json"))?;
     }
     Some(("screen", sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
       let path = sub_m.get_one::<String>("path").unwrap().clone();
       let result =
-        rpc_request(&working_dir, DkRequest::Screen { path }, false).await?;
+        rpc_request(&working_dir, RpcRequest::Screen { path }, false).await?;
       let screen: ScreenResult = serde_json::from_value(result)?;
       match screen.screen {
         Some(content) => {
@@ -323,14 +323,15 @@ pub async fn dekit_main() -> anyhow::Result<()> {
     }
     Some(("up", _sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
-      rpc_request(&working_dir, DkRequest::Up {}, true).await?;
+      rpc_request(&working_dir, RpcRequest::Up {}, true).await?;
       println!("Started autostart tasks.");
     }
     Some(("down", sub_m)) => {
       let working_dir = resolve_working_dir(&matches)?;
       match sub_m.get_one::<String>("pattern").cloned() {
         Some(pattern) => {
-          rpc_request(&working_dir, DkRequest::Down { pattern }, false).await?;
+          rpc_request(&working_dir, RpcRequest::Down { pattern }, false)
+            .await?;
           println!("Unpinned.");
         }
         None => match lockfile::get_daemon_status(&working_dir)? {
@@ -424,7 +425,7 @@ pub async fn dekit_main() -> anyhow::Result<()> {
       }
       _ => {
         anyhow::bail!(
-          "expected a subcommand after `dk server` (run, start, stop, status, list, clean)"
+          "expected a subcommand after `dekit server` (run, start, stop, status, list, clean)"
         );
       }
     },
@@ -461,7 +462,7 @@ pub async fn dekit_main() -> anyhow::Result<()> {
         // No args: bring the workspace up (start the daemon if needed and
         // start autostart tasks), then attach the TUI.
         let working_dir = resolve_working_dir(&matches)?;
-        rpc_request(&working_dir, DkRequest::Up {}, true).await?;
+        rpc_request(&working_dir, RpcRequest::Up {}, true).await?;
         let (sender, receiver) =
           connect_client_socket(&working_dir, true).await?;
         client_main(sender, receiver).await?;

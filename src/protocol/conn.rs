@@ -135,7 +135,7 @@ pub async fn client_handshake(
       if hello.protocol != PROTOCOL_VERSION {
         bail!(
           "daemon ({}) speaks protocol {}, this binary speaks {}; \
-           restart it with `dk server stop && dk up`",
+           restart it with `dekit server stop && dekit up`",
           hello.app,
           hello.protocol,
           PROTOCOL_VERSION,
@@ -192,7 +192,7 @@ mod tests {
 
   use super::*;
   use crate::protocol::ctl::{Request, RpcError};
-  use crate::protocol::rpc::DkRequest;
+  use crate::protocol::rpc::RpcRequest;
 
   fn pair() -> (ConnSender, ConnReceiver, ConnSender, ConnReceiver) {
     let (client, server) = tokio::io::duplex(64 * 1024);
@@ -238,7 +238,7 @@ mod tests {
     let client_hello = server.await.unwrap();
     assert_eq!(server_hello.protocol, PROTOCOL_VERSION);
     assert_eq!(client_hello.protocol, PROTOCOL_VERSION);
-    assert!(client_hello.app.starts_with("dk "));
+    assert!(client_hello.app.starts_with("dekit "));
   }
 
   #[tokio::test]
@@ -250,7 +250,7 @@ mod tests {
       );
     cs.send_ctl(CtlMsg::Hello(Hello {
       protocol: 999,
-      app: "dk future".to_string(),
+      app: "dekit future".to_string(),
       features: vec![],
     }))
     .await
@@ -274,7 +274,7 @@ mod tests {
       }
       ss.send_ctl(CtlMsg::Hello(Hello {
         protocol: 999,
-        app: "dk future".to_string(),
+        app: "dekit future".to_string(),
         features: vec![],
       }))
       .await
@@ -293,10 +293,10 @@ mod tests {
         CtlMsg::Request(request) => request,
         msg => panic!("expected request, got {msg:?}"),
       };
-      let req = DkRequest::from_wire(&request.method, request.params).unwrap();
+      let req = RpcRequest::from_wire(&request.method, request.params).unwrap();
       assert_eq!(
         req,
-        DkRequest::Start {
+        RpcRequest::Start {
           pattern: "/web".to_string()
         }
       );
@@ -304,7 +304,7 @@ mod tests {
         .await
         .unwrap();
     });
-    let (method, params) = DkRequest::Start {
+    let (method, params) = RpcRequest::Start {
       pattern: "/web".to_string(),
     }
     .to_wire();

@@ -2,14 +2,14 @@ use rquickjs::{Object, function::Rest};
 
 use crate::js::rquickjs_ext::ObjectExt;
 
-pub fn define(dk: &Object<'_>) -> rquickjs::Result<()> {
-  dk.def_fn("log", |Rest(args): Rest<String>| {
+pub fn define(obj: &Object<'_>) -> rquickjs::Result<()> {
+  obj.def_fn("log", |Rest(args): Rest<String>| {
     eprintln!("{}", args.join(" "));
   })?;
-  dk.def_fn("warn", |Rest(args): Rest<String>| {
+  obj.def_fn("warn", |Rest(args): Rest<String>| {
     eprintln!("{}", args.join(" "));
   })?;
-  dk.def_fn("error", |Rest(args): Rest<String>| {
+  obj.def_fn("error", |Rest(args): Rest<String>| {
     eprintln!("{}", args.join(" "));
   })?;
   Ok(())

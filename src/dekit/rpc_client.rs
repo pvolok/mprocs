@@ -4,11 +4,11 @@ use anyhow::bail;
 use serde_json::Value;
 
 use crate::daemon::socket::connect_client_socket;
-use crate::protocol::{CtlMsg, DkRequest, Request, client_handshake};
+use crate::protocol::{CtlMsg, Request, RpcRequest, client_handshake};
 
 pub async fn rpc_request(
   working_dir: &Path,
-  req: DkRequest,
+  req: RpcRequest,
   spawn_server: bool,
 ) -> anyhow::Result<Value> {
   let (mut sender, mut receiver) =

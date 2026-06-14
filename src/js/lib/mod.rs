@@ -8,17 +8,17 @@ mod tui;
 use rquickjs::{Ctx, Object, function::This, object::Accessor};
 
 pub fn init(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
-  let dk = Object::new(ctx.clone())?;
+  let obj = Object::new(ctx.clone())?;
 
-  log::define(&dk)?;
+  log::define(&obj)?;
 
-  register_lazy(&dk, "fs", fs::init)?;
-  register_lazy(&dk, "path", path::init)?;
-  register_lazy(&dk, "env", env::init)?;
-  register_lazy(&dk, "process", process::init)?;
-  register_lazy(&dk, "tui", tui::init)?;
+  register_lazy(&obj, "fs", fs::init)?;
+  register_lazy(&obj, "path", path::init)?;
+  register_lazy(&obj, "env", env::init)?;
+  register_lazy(&obj, "process", process::init)?;
+  register_lazy(&obj, "tui", tui::init)?;
 
-  ctx.globals().set("dk", dk)?;
+  ctx.globals().set("std", obj)?;
   Ok(())
 }
 

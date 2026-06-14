@@ -7,7 +7,7 @@ use crate::protocol::ctl::{RpcError, codes};
 /// `params: {}` still parse.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(tag = "method", content = "params", rename_all = "snake_case")]
-pub enum DkRequest {
+pub enum RpcRequest {
   Attach {
     width: u16,
     height: u16,
@@ -76,7 +76,7 @@ const METHODS: &[&str] = &[
   "shutdown",
 ];
 
-impl DkRequest {
+impl RpcRequest {
   pub fn to_wire(&self) -> (String, Value) {
     let value = serde_json::to_value(self).expect("serialize request");
     let Value::Object(mut map) = value else {
@@ -93,7 +93,10 @@ impl DkRequest {
     (method, params)
   }
 
-  pub fn from_wire(method: &str, params: Value) -> Result<DkRequest, RpcError> {
+  pub fn from_wire(
+    method: &str,
+    params: Value,
+  ) -> Result<RpcRequest, RpcError> {
     if !METHODS.contains(&method) {
       return Err(RpcError::new(
         codes::UNKNOWN_METHOD,
@@ -118,7 +121,7 @@ pub fn ok_result() -> Value {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TaskListResult {
-  pub tasks: Vec<DkTaskInfo>,
+  pub tasks: Vec<RpcTaskInfo>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -127,13 +130,13 @@ pub struct ScreenResult {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct DkTaskInfo {
+pub struct RpcTaskInfo {
   pub path: String,
   pub state: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct DkWhy {
+pub struct RpcWhy {
   pub path: String,
   pub state: String,
   pub wanted: bool,
@@ -141,12 +144,12 @@ pub struct DkWhy {
   pub kept_down: bool,
   pub pinned: bool,
   pub required_by: Vec<String>,
-  pub deps: Vec<DkWhyDep>,
+  pub deps: Vec<RpcWhyDep>,
   pub attempts: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct DkWhyDep {
+pub struct RpcWhyDep {
   pub path: String,
   pub state: String,
   pub wanted: bool,
@@ -157,47 +160,47 @@ pub struct DkWhyDep {
 mod tests {
   use super::*;
 
-  fn samples() -> Vec<DkRequest> {
+  fn samples() -> Vec<RpcRequest> {
     vec![
-      DkRequest::Attach {
+      RpcRequest::Attach {
         width: 80,
         height: 24,
       },
-      DkRequest::Spawn {
+      RpcRequest::Spawn {
         path: "/web".to_string(),
         cmd: vec!["npm".to_string(), "start".to_string()],
         cwd: Some("/repo".to_string()),
       },
-      DkRequest::Ls { glob: None },
-      DkRequest::Ls {
+      RpcRequest::Ls { glob: None },
+      RpcRequest::Ls {
         glob: Some("/web*".to_string()),
       },
-      DkRequest::Up {},
-      DkRequest::Start {
+      RpcRequest::Up {},
+      RpcRequest::Start {
         pattern: "/web".to_string(),
       },
-      DkRequest::Stop {
+      RpcRequest::Stop {
         pattern: "/web".to_string(),
       },
-      DkRequest::Down {
+      RpcRequest::Down {
         pattern: "/web".to_string(),
       },
-      DkRequest::Kill {
+      RpcRequest::Kill {
         pattern: "/web".to_string(),
       },
-      DkRequest::KeepDown {
+      RpcRequest::KeepDown {
         pattern: "/web".to_string(),
       },
-      DkRequest::Restart {
+      RpcRequest::Restart {
         pattern: "/web".to_string(),
       },
-      DkRequest::Why {
+      RpcRequest::Why {
         path: "/web".to_string(),
       },
-      DkRequest::Screen {
+      RpcRequest::Screen {
         path: "/web".to_string(),
       },
-      DkRequest::Shutdown {},
+      RpcRequest::Shutdown {},
     ]
   }
 
@@ -236,7 +239,7 @@ mod tests {
   fn every_request_round_trips_through_wire() {
     for req in samples() {
       let (method, params) = req.to_wire();
-      let back = DkRequest::from_wire(&method, params)
+      let back = RpcRequest::from_wire(&method, params)
         .unwrap_or_else(|e| panic!("{method}: {e}"));
       assert_eq!(back, req);
     }
@@ -253,13 +256,13 @@ mod tests {
 
   #[test]
   fn unknown_method_is_reported_as_such() {
-    let err = DkRequest::from_wire("frobnicate", Value::Null).unwrap_err();
+    let err = RpcRequest::from_wire("frobnicate", Value::Null).unwrap_err();
     assert_eq!(err.code, codes::UNKNOWN_METHOD);
   }
 
   #[test]
   fn bad_params_are_reported_as_such() {
-    let err = DkRequest::from_wire("start", serde_json::json!({"pattern": 5}))
+    let err = RpcRequest::from_wire("start", serde_json::json!({"pattern": 5}))
       .unwrap_err();
     assert_eq!(err.code, codes::INVALID_PARAMS);
   }
@@ -267,25 +270,25 @@ mod tests {
   #[test]
   fn missing_params_object_is_tolerated() {
     assert_eq!(
-      DkRequest::from_wire("ls", Value::Null).unwrap(),
-      DkRequest::Ls { glob: None }
+      RpcRequest::from_wire("ls", Value::Null).unwrap(),
+      RpcRequest::Ls { glob: None }
     );
     assert_eq!(
-      DkRequest::from_wire("up", serde_json::json!({})).unwrap(),
-      DkRequest::Up {}
+      RpcRequest::from_wire("up", serde_json::json!({})).unwrap(),
+      RpcRequest::Up {}
     );
   }
 
   #[test]
   fn unknown_param_fields_are_ignored() {
-    let req = DkRequest::from_wire(
+    let req = RpcRequest::from_wire(
       "start",
       serde_json::json!({"pattern": "/x", "future_field": true}),
     )
     .unwrap();
     assert_eq!(
       req,
-      DkRequest::Start {
+      RpcRequest::Start {
         pattern: "/x".to_string()
       }
     );
