@@ -185,19 +185,86 @@ impl Process for UnixProcess {
     Ok(())
   }
 
-  fn send_signal(&mut self, sig: i32) -> std::io::Result<()> {
-    if unsafe { libc::kill(self.pid.as_raw_nonzero().into(), sig) } < 0 {
+  fn send_signal(&mut self, sig: i32, group: bool) -> std::io::Result<()> {
+    // forkpty puts the child in its own session/process group (pgid == pid).
+    // Signaling the whole group reaches children that outlive the shell — e.g.
+    // `sh -c "...; tail -f /dev/null"`, which would otherwise keep the pty slave
+    // open so the master never EOFs and the task never reports as stopped.
+    let pid: i32 = self.pid.as_raw_nonzero().into();
+    let target = if group { -pid } else { pid };
+    if unsafe { libc::kill(target, sig) } < 0 {
       return Err(std::io::Error::last_os_error());
     }
     Ok(())
   }
 
-  async fn kill(&mut self) -> std::io::Result<()> {
-    self.send_signal(libc::SIGKILL)
+  async fn kill(&mut self, group: bool) -> std::io::Result<()> {
+    self.send_signal(libc::SIGKILL, group)
   }
 
   fn resize(&mut self, size: Winsize) -> std::io::Result<()> {
     rustix::termios::tcsetwinsize(&self.master, size.into())?;
     Ok(())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::time::{Duration, Instant};
+
+  use crate::process::process::Process as _;
+  use crate::process::process_spec::ProcessSpec;
+  use crate::term::Winsize;
+
+  use super::*;
+
+  // The shell forks `sleep` as a child that inherits the pty. A group SIGTERM
+  // must reap the child too; otherwise the orphan keeps the slave open and the
+  // master never EOFs — the "task won't stop" bug. (Exit is detected here via
+  // the pty EOF, not the SIGCHLD waiter, which is only set up in the real app.)
+  #[tokio::test]
+  async fn group_signal_reaps_lingering_child() {
+    let spec = ProcessSpec::from_argv(vec![
+      "sh".into(),
+      "-c".into(),
+      "echo hi; sleep 100; true".into(),
+    ]);
+    let size = Winsize {
+      x: 80,
+      y: 24,
+      x_px: 0,
+      y_px: 0,
+    };
+    let mut proc =
+      UnixProcess::spawn(TaskId(0), &spec, size, Box::new(|_| {})).unwrap();
+
+    // Let the shell print and fork the child before signaling.
+    let mut buf = [0u8; 1024];
+    tokio::time::timeout(Duration::from_secs(2), proc.read(&mut buf))
+      .await
+      .expect("no initial output")
+      .expect("read failed");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    proc.send_signal(libc::SIGTERM, true).unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let eof = loop {
+      let remaining = deadline.saturating_duration_since(Instant::now());
+      if remaining.is_zero() {
+        break false;
+      }
+      match tokio::time::timeout(remaining, proc.read(&mut buf)).await {
+        Err(_) => break false,
+        Ok(Ok(0)) | Ok(Err(_)) => break true,
+        Ok(Ok(_)) => continue,
+      }
+    };
+
+    // Reap any straggler if the assert is about to fail.
+    unsafe {
+      libc::kill(-(proc.pid() as i32), libc::SIGKILL);
+    }
+    assert!(eof, "group SIGTERM should kill the child and EOF the pty");
   }
 }

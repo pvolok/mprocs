@@ -5,12 +5,13 @@ use indexmap::IndexMap;
 use serde_yaml::Value;
 
 use crate::console::action::Action;
-use crate::console::proc::StopSignal;
+use crate::console::proc::{Sig, StopSignal};
 use crate::mprocs::{
   proc_log_config::LogConfig,
   settings::Settings,
   yaml_val::{Val, value_to_string},
 };
+use crate::term::key::KeySpec;
 
 pub struct ConfigContext {
   pub path: PathBuf,
@@ -137,6 +138,49 @@ impl Config {
   }
 }
 
+pub(crate) fn default_stop() -> StopSignal {
+  StopSignal::Signal {
+    sig: Sig::Term,
+    group: false,
+  }
+}
+
+fn parse_stop(val: &Val) -> Result<StopSignal> {
+  match val.raw() {
+    Value::String(name) => match name.as_str() {
+      "SIGINT" => Ok(StopSignal::Signal {
+        sig: Sig::Int,
+        group: false,
+      }),
+      "SIGTERM" => Ok(StopSignal::Signal {
+        sig: Sig::Term,
+        group: false,
+      }),
+      "SIGKILL" | "hard-kill" => Ok(StopSignal::Signal {
+        sig: Sig::Kill,
+        group: false,
+      }),
+      _ => Err(val.error_at(format!("Unknown stop signal {name:?}"))),
+    },
+    Value::Mapping(map) => {
+      if let Some(keys) = map.get("send-keys") {
+        let keys: Vec<KeySpec> = serde_yaml::from_value(keys.clone())?;
+        Ok(StopSignal::SendKeys(
+          keys.into_iter().map(KeySpec::key).collect(),
+        ))
+      } else if let Some(cmd) = map.get("cmd") {
+        match cmd {
+          Value::String(shell) => Ok(StopSignal::Cmd(shell.clone())),
+          _ => Err(val.error_at("Expected `cmd` to be a string")),
+        }
+      } else {
+        Err(val.error_at("Expected `send-keys` or `cmd`"))
+      }
+    }
+    _ => Err(val.error_at("Expected a string or mapping")),
+  }
+}
+
 #[derive(Clone)]
 pub struct ProcConfig {
   pub name: String,
@@ -181,7 +225,7 @@ impl ProcConfig {
         add_path: Vec::new(),
         autostart: true,
         autorestart: false,
-        stop: StopSignal::default(),
+        stop: default_stop(),
         deps: Vec::new(),
 
         mouse_scroll_speed,
@@ -203,7 +247,7 @@ impl ProcConfig {
           add_path: Vec::new(),
           autostart: true,
           autorestart: false,
-          stop: StopSignal::default(),
+          stop: default_stop(),
           deps: Vec::new(),
           mouse_scroll_speed,
           scrollback_len,
@@ -317,9 +361,9 @@ impl ProcConfig {
           .map_or(Ok(false), |v| v.as_bool())?;
 
         let stop_signal = if let Some(val) = map.get(&Value::from("stop")) {
-          StopSignal::from_val(val)?
+          parse_stop(val)?
         } else {
-          StopSignal::default()
+          default_stop()
         };
 
         let deps = if let Some(deps) = map.get(&Value::from("deps")) {

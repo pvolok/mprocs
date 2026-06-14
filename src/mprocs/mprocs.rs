@@ -8,12 +8,11 @@ use std::{
 
 use crate::console::app::create_app_task;
 use crate::console::keymap::Keymap;
-use crate::console::proc::StopSignal;
 #[cfg(unix)]
 use crate::error::ResultLogger;
 use crate::kernel::kernel::Kernel;
 use crate::mprocs::config::{
-  CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig,
+  CmdConfig, Config, ConfigContext, ProcConfig, ServerConfig, default_stop,
 };
 use crate::mprocs::ctl::run_ctl;
 use crate::mprocs::just::load_just_procs;
@@ -159,7 +158,7 @@ pub async fn run_app(args: Vec<String>) -> anyhow::Result<()> {
           add_path: Vec::new(),
           autostart: true,
           autorestart: false,
-          stop: StopSignal::default(),
+          stop: default_stop(),
           deps: Vec::new(),
           mouse_scroll_speed: settings.mouse_scroll_speed,
           scrollback_len: settings.scrollback_len,
@@ -279,7 +278,7 @@ fn load_procfile_procs(
         add_path: Vec::new(),
         autostart: false,
         autorestart: false,
-        stop: StopSignal::default(),
+        stop: default_stop(),
         deps: Vec::new(),
         mouse_scroll_speed: settings.mouse_scroll_speed,
         scrollback_len: settings.scrollback_len,

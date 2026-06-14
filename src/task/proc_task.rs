@@ -23,21 +23,105 @@ pub struct ProcInput(pub Key);
 
 pub struct DuplicateProc(pub Option<String>);
 
-/// How a proc task should react to `Stop` (`Kill` is always a hard kill).
-#[derive(Clone, Debug, Default)]
+/// An OS signal a `Signal` stop can deliver. The name table and the libc
+/// mapping are generated from one list so they can't drift. On Windows only
+/// INT/TERM/KILL have a (terminate) fallback; every other signal is ignored.
+macro_rules! signals {
+  ($($name:literal => $variant:ident => $libc:ident,)+) => {
+    #[derive(Clone, Copy, Debug)]
+    pub enum Sig {
+      $($variant,)+
+    }
+
+    impl Sig {
+      pub fn from_name(name: &str) -> Option<Sig> {
+        match name {
+          $($name => Some(Sig::$variant),)+
+          _ => None,
+        }
+      }
+
+      #[cfg(not(windows))]
+      fn to_libc(self) -> i32 {
+        match self {
+          $(Sig::$variant => libc::$libc,)+
+        }
+      }
+    }
+  };
+}
+
+signals! {
+  "SIGHUP" => Hup => SIGHUP,
+  "SIGINT" => Int => SIGINT,
+  "SIGQUIT" => Quit => SIGQUIT,
+  "SIGILL" => Ill => SIGILL,
+  "SIGTRAP" => Trap => SIGTRAP,
+  "SIGABRT" => Abrt => SIGABRT,
+  "SIGBUS" => Bus => SIGBUS,
+  "SIGFPE" => Fpe => SIGFPE,
+  "SIGKILL" => Kill => SIGKILL,
+  "SIGUSR1" => Usr1 => SIGUSR1,
+  "SIGSEGV" => Segv => SIGSEGV,
+  "SIGUSR2" => Usr2 => SIGUSR2,
+  "SIGPIPE" => Pipe => SIGPIPE,
+  "SIGALRM" => Alrm => SIGALRM,
+  "SIGTERM" => Term => SIGTERM,
+  "SIGCHLD" => Chld => SIGCHLD,
+  "SIGCONT" => Cont => SIGCONT,
+  "SIGSTOP" => Stop => SIGSTOP,
+  "SIGTSTP" => Tstp => SIGTSTP,
+  "SIGTTIN" => Ttin => SIGTTIN,
+  "SIGTTOU" => Ttou => SIGTTOU,
+  "SIGURG" => Urg => SIGURG,
+  "SIGXCPU" => Xcpu => SIGXCPU,
+  "SIGXFSZ" => Xfsz => SIGXFSZ,
+  "SIGVTALRM" => Vtalrm => SIGVTALRM,
+  "SIGPROF" => Prof => SIGPROF,
+  "SIGWINCH" => Winch => SIGWINCH,
+  "SIGSYS" => Sys => SIGSYS,
+}
+
+#[derive(Clone, Debug)]
 pub enum StopSignal {
-  SIGINT,
-  #[default]
-  SIGTERM,
-  SIGKILL,
+  /// Graceful stop of the whole process tree. Unix: SIGTERM to the group.
+  /// Windows: Ctrl-C (TODO).
+  Shutdown,
+  /// Force-kill the whole process tree. Unix: SIGKILL to the group. Windows:
+  /// terminate (the process today; TODO: Job Object).
+  Kill,
+  Signal {
+    sig: Sig,
+    group: bool,
+  },
   SendKeys(Vec<Key>),
-  HardKill,
   /// Run a shell command as the stop action. Useful for tools like
   /// `podman compose` that don't reliably respond to signals but do have
   /// an explicit teardown command (e.g. `podman compose down`). The main
   /// process is expected to exit on its own once the stop command
   /// completes (e.g. `compose up` exits when containers go away).
   Cmd(String),
+}
+
+impl Default for StopSignal {
+  fn default() -> Self {
+    StopSignal::Shutdown
+  }
+}
+
+impl StopSignal {
+  /// Target for a force-kill (the grace-period timeout or an explicit `Kill`):
+  /// honor a `Signal` stop's own choice, otherwise force-kill the whole group
+  /// so orphaned children don't leak.
+  fn kill_group(&self) -> bool {
+    match self {
+      StopSignal::Signal { group, .. } => *group,
+      StopSignal::Shutdown
+      | StopSignal::Kill
+      | StopSignal::SendKeys(_)
+      | StopSignal::Cmd(_) => true,
+    }
+  }
 }
 
 pub struct ProcTaskConfig {
@@ -206,7 +290,7 @@ async fn proc_main(
         }
         TaskCmd::Kill => {
           if let Some(p) = process.as_mut() {
-            p.kill().await.log_ignore();
+            p.kill(stop.kill_group()).await.log_ignore();
           }
         }
         TaskCmd::Msg(msg) => {
@@ -428,15 +512,18 @@ async fn stop_process(
   spec: &ProcessSpec,
 ) {
   match stop {
-    StopSignal::SIGINT => process.send_signal(libc::SIGINT).log_ignore(),
-    StopSignal::SIGTERM => process.send_signal(libc::SIGTERM).log_ignore(),
-    StopSignal::SIGKILL => process.send_signal(libc::SIGKILL).log_ignore(),
+    StopSignal::Shutdown => {
+      process.send_signal(libc::SIGTERM, true).log_ignore()
+    }
+    StopSignal::Kill => process.send_signal(libc::SIGKILL, true).log_ignore(),
+    StopSignal::Signal { sig, group } => {
+      process.send_signal(sig.to_libc(), *group).log_ignore();
+    }
     StopSignal::SendKeys(keys) => {
       for key in keys {
         send_key(process, vt, key.clone()).await;
       }
     }
-    StopSignal::HardKill => process.kill().await.log_ignore(),
     StopSignal::Cmd(shell) => run_stop_cmd(spec, shell.clone()),
   }
 }
@@ -449,10 +536,18 @@ async fn stop_process(
   spec: &ProcessSpec,
 ) {
   match stop {
-    StopSignal::SIGINT => log::debug!("SIGINT signal is ignored on Windows"),
-    StopSignal::SIGTERM | StopSignal::SIGKILL | StopSignal::HardKill => {
-      process.kill().await.log_ignore()
-    }
+    // TODO: deliver Ctrl-C through the ConPTY for a graceful shutdown; for now
+    // fall back to terminating the process.
+    StopSignal::Shutdown => process.kill(true).await.log_ignore(),
+    // TODO: terminate the whole tree via a Job Object; for now terminate the
+    // process.
+    StopSignal::Kill => process.kill(true).await.log_ignore(),
+    // Windows has no real signals: INT/TERM/KILL fall back to terminating the
+    // process; everything else has no equivalent and is ignored.
+    StopSignal::Signal { sig, .. } => match sig {
+      Sig::Int | Sig::Term | Sig::Kill => process.kill(true).await.log_ignore(),
+      _ => log::debug!("{sig:?} has no Windows equivalent; ignoring"),
+    },
     StopSignal::SendKeys(keys) => {
       for key in keys {
         send_key(process, vt, key.clone()).await;

@@ -349,7 +349,7 @@ impl Process for WinProcess {
     self.writer.write_all(buf).await
   }
 
-  fn send_signal(&mut self, sig: i32) -> io::Result<()> {
+  fn send_signal(&mut self, sig: i32, _group: bool) -> io::Result<()> {
     if sig == SIGKILL {
       unsafe {
         TerminateProcess(HANDLE(self.process_handle.as_raw_handle()), 1)?
@@ -360,8 +360,8 @@ impl Process for WinProcess {
     Ok(())
   }
 
-  async fn kill(&mut self) -> io::Result<()> {
-    self.send_signal(SIGKILL)
+  async fn kill(&mut self, group: bool) -> io::Result<()> {
+    self.send_signal(SIGKILL, group)
   }
 
   fn resize(&mut self, size: Winsize) -> io::Result<()> {

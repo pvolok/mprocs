@@ -4,8 +4,7 @@ use anyhow::Result;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::console::proc::StopSignal;
-use crate::mprocs::config::{CmdConfig, ProcConfig};
+use crate::mprocs::config::{CmdConfig, ProcConfig, default_stop};
 use crate::mprocs::settings::Settings;
 
 #[derive(Deserialize)]
@@ -46,7 +45,7 @@ pub fn load_npm_procs(settings: &Settings) -> Result<Vec<ProcConfig>> {
     autostart: false,
     autorestart: false,
 
-    stop: StopSignal::default(),
+    stop: default_stop(),
 
     deps: Vec::new(),
 

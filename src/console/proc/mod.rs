@@ -4,32 +4,47 @@ use anyhow::bail;
 
 use crate::cfg::{CfgCx, CfgNode, FromCfg};
 use crate::mprocs::yaml_val::Val;
-pub use crate::task::proc_task::StopSignal;
+pub use crate::task::proc_task::{Sig, StopSignal};
 use crate::term::key::KeySpec;
 
 impl StopSignal {
   pub fn from_val(val: &Val) -> anyhow::Result<Self> {
     match val.raw() {
       serde_yaml::Value::String(str) => match str.as_str() {
-        "SIGINT" => return Ok(Self::SIGINT),
-        "SIGTERM" => return Ok(Self::SIGTERM),
-        "SIGKILL" => return Ok(Self::SIGKILL),
-        "hard-kill" => return Ok(Self::HardKill),
-        _ => (),
+        "shutdown" => return Ok(StopSignal::Shutdown),
+        "kill" => return Ok(StopSignal::Kill),
+        _ => {
+          if let Some(sig) = Sig::from_name(str) {
+            return Ok(Self::Signal { sig, group: true });
+          }
+        }
       },
       serde_yaml::Value::Mapping(map) => {
-        if map.len() == 1 {
-          if let Some(keys) = map.get("send-keys") {
-            let keys: Vec<KeySpec> = serde_yaml::from_value(keys.clone())?;
-            let keys = keys.into_iter().map(KeySpec::key).collect();
-            return Ok(Self::SendKeys(keys));
+        if let Some(keys) = map.get("send-keys") {
+          let keys: Vec<KeySpec> = serde_yaml::from_value(keys.clone())?;
+          let keys = keys.into_iter().map(KeySpec::key).collect();
+          return Ok(Self::SendKeys(keys));
+        }
+        if let Some(cmd) = map.get("cmd") {
+          if let serde_yaml::Value::String(shell) = cmd {
+            return Ok(Self::Cmd(shell.clone()));
           }
-          if let Some(cmd) = map.get("cmd") {
-            if let serde_yaml::Value::String(shell) = cmd {
-              return Ok(Self::Cmd(shell.clone()));
-            }
-            bail!("Expected 'cmd' to be a string");
-          }
+          bail!("Expected 'cmd' to be a string");
+        }
+        if let Some(signal) = map.get("signal") {
+          let serde_yaml::Value::String(name) = signal else {
+            bail!("Expected 'signal' to be a string");
+          };
+          let group = match map.get("group") {
+            None => true,
+            Some(serde_yaml::Value::Bool(group)) => *group,
+            Some(_) => bail!("Expected 'group' to be a boolean"),
+          };
+          return Ok(Self::Signal {
+            sig: Sig::from_name(name)
+              .ok_or_else(|| anyhow::format_err!("Unknown signal: {name:?}"))?,
+            group,
+          });
         }
       }
       _ => (),
@@ -73,5 +88,61 @@ mod tests {
         ),
       ]
     );
+  }
+
+  #[test]
+  fn stop_signal_shutdown_and_kill_are_first_class() {
+    let raw: serde_yaml::Value = serde_yaml::from_str("shutdown").unwrap();
+    let val = Val::new(&raw).unwrap();
+    match StopSignal::from_val(&val).unwrap() {
+      StopSignal::Shutdown => {}
+      other => panic!("Expected Shutdown, got {other:?}"),
+    }
+
+    let raw: serde_yaml::Value = serde_yaml::from_str("kill").unwrap();
+    let val = Val::new(&raw).unwrap();
+    match StopSignal::from_val(&val).unwrap() {
+      StopSignal::Kill => {}
+      other => panic!("Expected Kill, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn stop_signal_bare_signal_name_targets_the_group() {
+    let raw: serde_yaml::Value = serde_yaml::from_str("SIGINT").unwrap();
+    let val = Val::new(&raw).unwrap();
+    match StopSignal::from_val(&val).unwrap() {
+      StopSignal::Signal {
+        sig: Sig::Int,
+        group: true,
+      } => {}
+      other => panic!("Expected group SIGINT, got {other:?}"),
+    }
+
+    // Any standard signal is accepted, not just INT/TERM/KILL.
+    let raw: serde_yaml::Value = serde_yaml::from_str("SIGHUP").unwrap();
+    let val = Val::new(&raw).unwrap();
+    match StopSignal::from_val(&val).unwrap() {
+      StopSignal::Signal {
+        sig: Sig::Hup,
+        group: true,
+      } => {}
+      other => panic!("Expected group SIGHUP, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn stop_signal_object_group_overrides_default() {
+    let raw: serde_yaml::Value =
+      serde_yaml::from_str("signal: SIGKILL\ngroup: false\n").unwrap();
+    let val = Val::new(&raw).unwrap();
+    // Explicit group:false wins over the whole-group default.
+    match StopSignal::from_val(&val).unwrap() {
+      StopSignal::Signal {
+        sig: Sig::Kill,
+        group: false,
+      } => {}
+      other => panic!("Expected leader-only SIGKILL, got {other:?}"),
+    }
   }
 }

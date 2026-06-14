@@ -2,8 +2,7 @@ use anyhow::Result;
 use indexmap::IndexMap;
 use serde_json::Value;
 
-use crate::console::proc::StopSignal;
-use crate::mprocs::config::{CmdConfig, ProcConfig};
+use crate::mprocs::config::{CmdConfig, ProcConfig, default_stop};
 use crate::mprocs::settings::Settings;
 
 #[derive(serde::Deserialize)]
@@ -43,7 +42,7 @@ pub fn load_just_procs(settings: &Settings) -> Result<Vec<ProcConfig>> {
       autostart: false,
       autorestart: false,
 
-      stop: StopSignal::default(),
+      stop: default_stop(),
       deps: Vec::new(),
       mouse_scroll_speed: settings.mouse_scroll_speed,
       scrollback_len: settings.scrollback_len,
