@@ -631,7 +631,7 @@ mod tests {
       .unwrap()
       .as_nanos();
     let mut log_path = std::env::temp_dir();
-    log_path.push(format!("mprocs_log_{}_{}.log", std::process::id(), nanos));
+    log_path.push(format!("dekit_log_{}_{}.log", std::process::id(), nanos));
 
     let kernel = Kernel::new();
     let pc = kernel.context();
@@ -693,7 +693,7 @@ mod tests {
       .unwrap()
       .as_nanos();
     let mut dir = std::env::temp_dir();
-    dir.push(format!("mprocs_pidlog_{}_{}", std::process::id(), nanos));
+    dir.push(format!("dekit_pidlog_{}_{}", std::process::id(), nanos));
     std::fs::create_dir_all(&dir).unwrap();
 
     let kernel = Kernel::new();
@@ -756,7 +756,7 @@ mod tests {
       .unwrap()
       .as_nanos();
     let mut marker = std::env::temp_dir();
-    marker.push(format!("mprocs_stopcmd_{}_{}", std::process::id(), nanos));
+    marker.push(format!("dekit_stopcmd_{}_{}", std::process::id(), nanos));
 
     let kernel = Kernel::new();
     let pc = kernel.context();

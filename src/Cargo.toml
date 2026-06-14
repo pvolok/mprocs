@@ -1,7 +1,7 @@
 [package]
 name = "dekit"
 version = "0.9.6"
-description = "TUI for running multiple processes"
+description = "A scriptable process manager you drive from a CLI, TUI, API, or script"
 repository = "https://github.com/pvolok/mprocs"
 authors = ["Pavel Volokitin <pavelvolokitin@gmail.com>"]
 license = "MIT"
@@ -21,6 +21,9 @@ include = ["*"]
 [[bin]]
 name = "dekit"
 path = "bin/dekit.rs"
+
+[package.metadata.dist]
+dist = true
 
 [lib]
 name = "lib"

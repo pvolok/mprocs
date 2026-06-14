@@ -3,6 +3,7 @@
 /mprocs.log
 /mprocs.yaml
 
+/npm/dekit-*
 /npm/mprocs-*
 
 /release/
