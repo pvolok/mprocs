@@ -1,5 +1,5 @@
 use std::{
-  collections::{HashMap, HashSet},
+  collections::{HashMap, HashSet, VecDeque},
   sync::{Arc, atomic::AtomicUsize},
   time::{Duration, Instant},
 };
@@ -13,8 +13,8 @@ use super::{
     DepExplain, KernelCommand, KernelMessage, KernelQuery, KernelQueryResponse,
     TaskExplain, TaskInfo,
   },
-  path_trie::PathTrie,
-  sub_trie::SubTrie,
+  namespace::Namespace,
+  sub_trie::SubMode,
   task::{
     Effects, ExitInfo, INIT_TASK_ID, ReadyMode, RestartMode, Task, TaskCmd,
     TaskDef, TaskEffect, TaskHandle, TaskId, TaskKind, TaskNotification,
@@ -36,9 +36,16 @@ fn backoff_delay(attempts: u32) -> Duration {
   BACKOFF_MIN.saturating_mul(1 << exp).min(BACKOFF_MAX)
 }
 
-pub struct Kernel {
+/// A timer the runtime must arm: after `delay`, deliver `StateTimeout` for
+/// `(task_id, epoch)`.
+struct TimerRequest {
+  task_id: TaskId,
+  epoch: u64,
+  delay: Duration,
+}
+
+struct Graph {
   sender: UnboundedSender<KernelMessage>,
-  receiver: UnboundedReceiver<KernelMessage>,
 
   quitting: bool,
   next_task_id: Arc<AtomicUsize>,
@@ -48,48 +55,44 @@ pub struct Kernel {
   edges: HashMap<TaskId, HashSet<TaskId>>,
   /// Reverse of `edges`: `redges[b]` contains `a` when `a` requires `b`.
   redges: HashMap<TaskId, HashSet<TaskId>>,
-  path_trie: PathTrie,
-  sub_trie: SubTrie,
+  ns: Namespace,
+
+  /// Tasks whose `wanted`/`supported`/drive decision may have changed and
+  /// need re-evaluating. Drained by `reconcile`.
+  dirty: VecDeque<TaskId>,
+  in_queue: HashSet<TaskId>,
+
+  now: Instant,
+  /// Timers armed during a `step`, taken by the runtime afterwards.
+  pending_timers: Vec<TimerRequest>,
 }
 
-impl Kernel {
-  pub fn new() -> Self {
-    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-
+impl Graph {
+  fn new(sender: UnboundedSender<KernelMessage>) -> Self {
     Self {
       sender,
-      receiver,
 
       quitting: false,
       next_task_id: Arc::new(AtomicUsize::new(1)),
       tasks: HashMap::new(),
       edges: HashMap::new(),
       redges: HashMap::new(),
-      path_trie: PathTrie::new(),
-      sub_trie: SubTrie::new(),
+      ns: Namespace::new(),
+
+      dirty: VecDeque::new(),
+      in_queue: HashSet::new(),
+
+      now: Instant::now(),
+      pending_timers: Vec::new(),
     }
   }
 
-  pub fn context(&self) -> TaskContext {
+  fn context(&self) -> TaskContext {
     TaskContext::new(
       self.next_task_id.clone(),
       INIT_TASK_ID,
       self.sender.clone(),
     )
-  }
-
-  pub fn register_task(
-    &mut self,
-    def: TaskDef,
-    factory: impl FnOnce(TaskContext) -> Box<dyn Task> + 'static,
-  ) -> TaskId {
-    let task_id = TaskId(
-      self
-        .next_task_id
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-    );
-    self.register_task_with_id(task_id, def, Box::new(factory));
-    task_id
   }
 
   fn register_task_with_id(
@@ -109,7 +112,7 @@ impl Kernel {
     // handle and the trie owner never disagree.
     // TODO: Probaly should fail if path already exists.
     let path = match def.path {
-      Some(p) => match self.path_trie.insert(&p, task_id) {
+      Some(p) => match self.ns.insert(&p, task_id) {
         Ok(()) => Some(p),
         Err(err) => {
           log::warn!("Path conflict while registering task: {}", err);
@@ -128,6 +131,8 @@ impl Kernel {
       killed: false,
       attempts: 0,
       last_start: None,
+      wanted: false,
+      supported: false,
       kind: def.kind,
       ready: def.ready,
       restart: def.restart,
@@ -143,6 +148,7 @@ impl Kernel {
     if def.pinned {
       self.add_edge(INIT_TASK_ID, task_id);
     }
+    self.enqueue(task_id);
 
     self.notify_subscribers(
       task_id,
@@ -156,86 +162,30 @@ impl Kernel {
     );
   }
 
-  pub async fn run(mut self) {
-    loop {
-      let msg = if let Some(msg) = self.receiver.recv().await {
-        msg
-      } else {
-        log::debug!("Kernel receiver returned None.");
-        break;
-      };
-
-      if self.handle_message(msg) {
-        break;
-      }
-      self.reconcile();
-      if self.quitting && self.no_active_tasks() {
-        break;
-      }
+  /// Begin quitting. Returns true if a quit was already in progress (the
+  /// runtime should stop at once).
+  fn begin_quit(&mut self) -> bool {
+    if self.quitting {
+      return true;
     }
-    log::debug!("After kernel loop.");
-  }
-
-  /// Returns true when the kernel loop should exit immediately.
-  fn handle_message(&mut self, msg: KernelMessage) -> bool {
-    match msg.command {
-      KernelCommand::Quit => {
-        if self.quitting {
-          return true;
-        }
-        self.quitting = true;
-      }
-
-      KernelCommand::RegisterTask(task_id, def, factory) => {
-        self.register_task_with_id(task_id, def, factory);
-      }
-      KernelCommand::RemoveTask(task_id) => {
-        self.remove_task(task_id);
-      }
-
-      KernelCommand::Start(task_id) => self.cmd_start(task_id),
-      KernelCommand::Stop(task_id) => self.cmd_stop(task_id),
-      KernelCommand::Kill(task_id) => self.cmd_kill(task_id),
-      KernelCommand::KeepDown(task_id) => self.cmd_keep_down(task_id),
-      KernelCommand::Restart(task_id) => self.cmd_restart(task_id),
-      KernelCommand::Down(task_id) => {
-        self.remove_edge(INIT_TASK_ID, task_id);
-      }
-      KernelCommand::AddEdge { from, to } => self.add_edge(from, to),
-      KernelCommand::RemoveEdge { from, to } => self.remove_edge(from, to),
-
-      KernelCommand::TaskMsg(task_id, m) => {
-        self.send_cmd(task_id, TaskCmd::Msg(m));
-      }
-
-      KernelCommand::SetTaskPath(task_id, path) => {
-        self.set_task_path(task_id, path);
-      }
-
-      KernelCommand::SetTaskLabel(task_id, label) => {
-        self.set_task_label(task_id, label);
-      }
-
-      KernelCommand::Query(query, response_tx) => {
-        let _ = response_tx.send(self.handle_query(query));
-      }
-
-      KernelCommand::TaskStarted => self.on_task_started(msg.from),
-      KernelCommand::TaskReady => self.on_task_ready(msg.from),
-      KernelCommand::TaskStopped(info) => self.on_task_stopped(msg.from, info),
-
-      KernelCommand::StateTimeout(task_id, epoch) => {
-        self.on_state_timeout(task_id, epoch)
-      }
-
-      KernelCommand::SubscribePath(path, mode) => {
-        self.sub_trie.subscribe(msg.from, &path, mode);
-      }
-      KernelCommand::UnsubscribePath(path, mode) => {
-        self.sub_trie.unsubscribe(msg.from, &path, mode);
-      }
+    self.quitting = true;
+    let ids: Vec<TaskId> = self.tasks.keys().copied().collect();
+    for id in ids {
+      self.enqueue(id);
     }
     false
+  }
+
+  fn subscribe(&mut self, subscriber: TaskId, path: TaskPath, mode: SubMode) {
+    self.ns.subscribe(subscriber, &path, mode);
+  }
+
+  fn unsubscribe(&mut self, subscriber: TaskId, path: TaskPath, mode: SubMode) {
+    self.ns.unsubscribe(subscriber, &path, mode);
+  }
+
+  fn take_timers(&mut self) -> Vec<TimerRequest> {
+    std::mem::take(&mut self.pending_timers)
   }
 
   // ---- Intent ----
@@ -268,11 +218,9 @@ impl Kernel {
       i += 1;
     }
     for id in closure {
-      let Some(task) = self.tasks.get_mut(&id) else {
-        continue;
-      };
-      task.kept_down = false;
-      let revive = match task.state {
+      let state = self.tasks.get(&id).expect("closure id live").state;
+      self.set_kept_down(id, false);
+      let revive = match state {
         TaskState::Backoff | TaskState::Exited(_) => true,
         TaskState::Done(_) => id == task_id,
         TaskState::Idle
@@ -285,6 +233,17 @@ impl Kernel {
         self.set_state(id, TaskState::Idle);
       }
     }
+  }
+
+  fn set_kept_down(&mut self, task_id: TaskId, value: bool) {
+    let Some(task) = self.tasks.get_mut(&task_id) else {
+      return;
+    };
+    if task.kept_down == value {
+      return;
+    }
+    task.kept_down = value;
+    self.enqueue(task_id);
   }
 
   fn cmd_stop(&mut self, task_id: TaskId) {
@@ -315,9 +274,7 @@ impl Kernel {
 
   fn cmd_keep_down(&mut self, task_id: TaskId) {
     self.remove_edge(INIT_TASK_ID, task_id);
-    if let Some(task) = self.tasks.get_mut(&task_id) {
-      task.kept_down = true;
-    }
+    self.set_kept_down(task_id, true);
   }
 
   fn cmd_restart(&mut self, task_id: TaskId) {
@@ -360,6 +317,10 @@ impl Kernel {
     }
     self.edges.entry(from).or_default().insert(to);
     self.redges.entry(to).or_default().insert(from);
+    // `to`'s wanted may change (new parent);
+    self.enqueue(to);
+    // `from`'s supported may change (new dependency).
+    self.enqueue(from);
   }
 
   fn remove_edge(&mut self, from: TaskId, to: TaskId) {
@@ -375,6 +336,8 @@ impl Kernel {
         self.redges.remove(&to);
       }
     }
+    self.enqueue(to);
+    self.enqueue(from);
   }
 
   /// Whether `to` is reachable from `from` following edges.
@@ -396,8 +359,207 @@ impl Kernel {
     false
   }
 
-  /// Tasks that should be up: reachable from init.
-  fn wanted_set(&self) -> HashSet<TaskId> {
+  // ---- Reconciliation ----
+
+  fn enqueue(&mut self, id: TaskId) {
+    if id != INIT_TASK_ID && self.in_queue.insert(id) {
+      self.dirty.push_back(id);
+    }
+  }
+
+  fn pop_dirty(&mut self) -> Option<TaskId> {
+    let id = self.dirty.pop_front()?;
+    self.in_queue.remove(&id);
+    Some(id)
+  }
+
+  /// Re-evaluate every task that requires `id`: their `supported` reads
+  /// `id`'s `supported` and satisfied state.
+  fn enqueue_parents(&mut self, id: TaskId) {
+    if let Some(parents) = self.redges.get(&id) {
+      let parents: Vec<TaskId> = parents.iter().copied().collect();
+      for p in parents {
+        self.enqueue(p);
+      }
+    }
+  }
+
+  /// Re-evaluate every dependency of `id`: their `wanted` reads `id`'s
+  /// `wanted`, and the shutdown gate reads `id`'s active state.
+  fn enqueue_deps(&mut self, id: TaskId) {
+    if let Some(deps) = self.edges.get(&id) {
+      let deps: Vec<TaskId> = deps.iter().copied().collect();
+      for d in deps {
+        self.enqueue(d);
+      }
+    }
+  }
+
+  fn reconcile(&mut self) {
+    let limit = self.tasks.len() * 4 + 16;
+    let mut rounds = 0;
+    loop {
+      // Phase A: propagate caches to a fixed point; collect what to drive.
+      let mut to_drive: Vec<TaskId> = Vec::new();
+      let mut seen: HashSet<TaskId> = HashSet::new();
+      while let Some(id) = self.pop_dirty() {
+        if seen.insert(id) {
+          to_drive.push(id);
+        }
+        self.recompute_caches(id);
+      }
+      if to_drive.is_empty() {
+        break;
+      }
+      // Phase B: drive against the snapshot frozen in phase A.
+      for id in to_drive {
+        self.drive_task(id);
+      }
+      rounds += 1;
+      if rounds > limit {
+        log::warn!("Reconcile did not settle after {} rounds", rounds);
+        self.dirty.clear();
+        self.in_queue.clear();
+        break;
+      }
+    }
+    #[cfg(debug_assertions)]
+    self.debug_check_invariants();
+  }
+
+  /// Recompute one task's cached `wanted`/`supported` from its neighbors'
+  /// caches, propagating any change outward.
+  fn recompute_caches(&mut self, id: TaskId) {
+    if !self.tasks.contains_key(&id) {
+      return;
+    }
+
+    let new_wanted = self.compute_wanted(id);
+    if self.tasks[&id].wanted != new_wanted {
+      self.tasks.get_mut(&id).unwrap().wanted = new_wanted;
+      // Children's `wanted` is computed from this one.
+      self.enqueue_deps(id);
+    }
+
+    let new_supported = self.compute_supported(id);
+    if self.tasks[&id].supported != new_supported {
+      self.tasks.get_mut(&id).unwrap().supported = new_supported;
+      // Parents' `supported` is computed from this one.
+      self.enqueue_parents(id);
+    }
+  }
+
+  /// Move a single task toward its intent, given its cached `supported`.
+  fn drive_task(&mut self, id: TaskId) {
+    let task = self.tasks.get(&id).expect("queued id live");
+    let state = task.state;
+    if task.supported {
+      match state {
+        TaskState::Idle => self.start_task(id),
+        TaskState::Starting
+        | TaskState::Running
+        | TaskState::Ready
+        | TaskState::Stopping
+        | TaskState::Backoff
+        | TaskState::Done(_)
+        | TaskState::Exited(_) => (),
+      }
+    } else {
+      match state {
+        TaskState::Starting | TaskState::Running | TaskState::Ready => {
+          // Ordered shutdown: dependents go down first.
+          if !self.has_active_dependent(id) {
+            self.stop_task(id);
+          }
+        }
+        TaskState::Backoff => {
+          // Cancel a pending retry.
+          self.set_state(id, TaskState::Idle);
+        }
+        TaskState::Idle
+        | TaskState::Stopping
+        | TaskState::Done(_)
+        | TaskState::Exited(_) => (),
+      }
+    }
+  }
+
+  /// Whether `id` should be up: reachable from a pin through non-kept-down
+  /// nodes. Reads only the cached `wanted` of immediate parents.
+  fn compute_wanted(&self, id: TaskId) -> bool {
+    if self.quitting {
+      return false;
+    }
+    if self.tasks.get(&id).expect("queued id live").kept_down {
+      return false;
+    }
+    let Some(parents) = self.redges.get(&id) else {
+      return false;
+    };
+    parents.iter().any(|p| {
+      *p == INIT_TASK_ID || self.tasks.get(p).expect("parent live").wanted
+    })
+  }
+
+  /// Whether `id` may run right now: wanted, with every dependency supported
+  /// and currently satisfied. Reads only the cached `supported`/state of
+  /// immediate dependencies.
+  fn compute_supported(&self, id: TaskId) -> bool {
+    if !self.tasks.get(&id).expect("queued id live").wanted {
+      return false;
+    }
+    let Some(deps) = self.edges.get(&id) else {
+      return true;
+    };
+    deps.iter().all(|d| {
+      let t = self.tasks.get(d).expect("dep live");
+      t.supported && t.is_satisfied()
+    })
+  }
+
+  fn has_active_dependent(&self, task_id: TaskId) -> bool {
+    let Some(dependents) = self.redges.get(&task_id) else {
+      return false;
+    };
+    dependents.iter().any(|from| {
+      *from != INIT_TASK_ID
+        && self
+          .tasks
+          .get(from)
+          .expect("dependent live")
+          .state
+          .is_active()
+    })
+  }
+
+  fn no_active_tasks(&self) -> bool {
+    self.tasks.values().all(|task| !task.state.is_active())
+  }
+
+  /// Oracle: recompute `wanted`/`supported` from scratch and assert the
+  /// incrementally-maintained caches agree. Debug builds only.
+  #[cfg(debug_assertions)]
+  fn debug_check_invariants(&self) {
+    let wanted = self.oracle_wanted_set();
+    let supported = self.oracle_supported_set(&wanted);
+    for (id, task) in &self.tasks {
+      debug_assert_eq!(
+        task.wanted,
+        wanted.contains(id),
+        "cached wanted disagrees with oracle for {:?}",
+        id
+      );
+      debug_assert_eq!(
+        task.supported,
+        supported.contains(id),
+        "cached supported disagrees with oracle for {:?}",
+        id
+      );
+    }
+  }
+
+  #[cfg(debug_assertions)]
+  fn oracle_wanted_set(&self) -> HashSet<TaskId> {
     let mut wanted = HashSet::new();
     if self.quitting {
       return wanted;
@@ -425,73 +587,11 @@ impl Kernel {
     wanted
   }
 
-  // ---- Reconciliation ----
-
-  fn reconcile(&mut self) {
-    // Each pass can unlock more work (a task stopping synchronously lets
-    // its deps stop); repeat until a pass changes nothing.
-    let limit = self.tasks.len() * 2 + 8;
-    for _ in 0..limit {
-      if !self.reconcile_pass() {
-        return;
-      }
-    }
-    log::warn!("Reconcile did not settle after {} passes", limit);
-  }
-
-  fn reconcile_pass(&mut self) -> bool {
-    let wanted = self.wanted_set();
-    let supported = self.supported_set(&wanted);
-    let ids: Vec<TaskId> = self.tasks.keys().copied().collect();
-    let mut acted = false;
-    for id in ids {
-      let Some(task) = self.tasks.get(&id) else {
-        continue;
-      };
-      let state = task.state;
-      if supported.contains(&id) {
-        match state {
-          TaskState::Idle => {
-            self.start_task(id);
-            acted = true;
-          }
-          TaskState::Starting
-          | TaskState::Running
-          | TaskState::Ready
-          | TaskState::Stopping
-          | TaskState::Backoff
-          | TaskState::Done(_)
-          | TaskState::Exited(_) => (),
-        }
-      } else {
-        match state {
-          TaskState::Starting | TaskState::Running | TaskState::Ready => {
-            // Ordered shutdown: dependents go down first.
-            if !self.has_active_dependent(id) {
-              self.stop_task(id);
-              acted = true;
-            }
-          }
-          TaskState::Backoff => {
-            // Cancel a pending retry.
-            self.set_state(id, TaskState::Idle);
-          }
-          TaskState::Idle
-          | TaskState::Stopping
-          | TaskState::Done(_)
-          | TaskState::Exited(_) => (),
-        }
-      }
-    }
-    acted
-  }
-
-  /// Tasks that may run right now: wanted, with every dependency
-  /// transitively supported and currently satisfied.
-  fn supported_set(&self, wanted: &HashSet<TaskId>) -> HashSet<TaskId> {
+  #[cfg(debug_assertions)]
+  fn oracle_supported_set(&self, wanted: &HashSet<TaskId>) -> HashSet<TaskId> {
     let mut memo: HashMap<TaskId, bool> = HashMap::new();
     for id in self.tasks.keys() {
-      self.supported(*id, wanted, &mut memo);
+      self.oracle_supported(*id, wanted, &mut memo);
     }
     memo
       .into_iter()
@@ -499,7 +599,8 @@ impl Kernel {
       .collect()
   }
 
-  fn supported(
+  #[cfg(debug_assertions)]
+  fn oracle_supported(
     &self,
     id: TaskId,
     wanted: &HashSet<TaskId>,
@@ -511,7 +612,7 @@ impl Kernel {
     let mut ok = wanted.contains(&id);
     if ok && let Some(deps) = self.edges.get(&id) {
       for dep in deps {
-        if !self.supported(*dep, wanted, memo)
+        if !self.oracle_supported(*dep, wanted, memo)
           || !self.tasks.get(dep).is_some_and(|t| t.is_satisfied())
         {
           ok = false;
@@ -523,45 +624,29 @@ impl Kernel {
     ok
   }
 
-  fn has_active_dependent(&self, task_id: TaskId) -> bool {
-    let Some(dependents) = self.redges.get(&task_id) else {
-      return false;
-    };
-    dependents.iter().any(|from| {
-      *from != INIT_TASK_ID
-        && self.tasks.get(from).is_some_and(|t| t.state.is_active())
-    })
-  }
-
-  fn no_active_tasks(&self) -> bool {
-    self.tasks.values().all(|task| !task.state.is_active())
-  }
-
   // ---- Driving tasks ----
 
   fn start_task(&mut self, task_id: TaskId) {
-    if let Some(task) = self.tasks.get_mut(&task_id) {
-      task.last_start = Some(Instant::now());
-    }
+    let now = self.now;
+    self
+      .tasks
+      .get_mut(&task_id)
+      .expect("driven id live")
+      .last_start = Some(now);
     self.set_state(task_id, TaskState::Starting);
     self.send_cmd(task_id, TaskCmd::Start);
   }
 
   fn stop_task(&mut self, task_id: TaskId) {
     self.set_state(task_id, TaskState::Stopping);
-    let epoch = match self.tasks.get(&task_id) {
-      Some(task) => task.epoch,
-      None => return,
-    };
+    let epoch = self.tasks.get(&task_id).expect("driven id live").epoch;
     self.schedule_state_timeout(task_id, epoch, STOP_GRACE);
     self.send_cmd(task_id, TaskCmd::Stop);
   }
 
   fn hard_kill(&mut self, task_id: TaskId) {
     let epoch = {
-      let Some(task) = self.tasks.get_mut(&task_id) else {
-        return;
-      };
+      let task = self.tasks.get_mut(&task_id).expect("driven id live");
       task.killed = true;
       // Manual bump: invalidates the pending stop-grace timeout.
       task.epoch += 1;
@@ -580,18 +665,15 @@ impl Kernel {
   }
 
   fn schedule_state_timeout(
-    &self,
+    &mut self,
     task_id: TaskId,
     epoch: u64,
     delay: Duration,
   ) {
-    let sender = self.sender.clone();
-    tokio::spawn(async move {
-      tokio::time::sleep(delay).await;
-      let _ = sender.send(KernelMessage {
-        from: INIT_TASK_ID,
-        command: KernelCommand::StateTimeout(task_id, epoch),
-      });
+    self.pending_timers.push(TimerRequest {
+      task_id,
+      epoch,
+      delay,
     });
   }
 
@@ -672,6 +754,7 @@ impl Kernel {
   }
 
   fn on_task_stopped(&mut self, task_id: TaskId, info: ExitInfo) {
+    let now = self.now;
     let Some(task) = self.tasks.get_mut(&task_id) else {
       return;
     };
@@ -682,7 +765,7 @@ impl Kernel {
         self.set_state(task_id, TaskState::Idle);
       }
       TaskState::Starting | TaskState::Running | TaskState::Ready => {
-        let uptime = task.last_start.map(|t| t.elapsed());
+        let uptime = task.last_start.map(|t| now.duration_since(t));
         if uptime.is_some_and(|t| t > BACKOFF_RESET) {
           task.attempts = 0;
         }
@@ -699,9 +782,8 @@ impl Kernel {
           task.attempts += 1;
           let delay = backoff_delay(task.attempts);
           self.set_state(task_id, TaskState::Backoff);
-          if let Some(task) = self.tasks.get(&task_id) {
-            self.schedule_state_timeout(task_id, task.epoch, delay);
-          }
+          let epoch = self.tasks.get(&task_id).expect("set above").epoch;
+          self.schedule_state_timeout(task_id, epoch, delay);
         } else {
           self.set_state(task_id, TaskState::Exited(info));
         }
@@ -724,10 +806,24 @@ impl Kernel {
     if task.state == state {
       return;
     }
+    let was_satisfied = task.is_satisfied();
+    let was_active = task.state.is_active();
     task.state = state;
     task.epoch += 1;
     task.killed = false;
+    let now_satisfied = task.is_satisfied();
     let path = task.path.clone();
+
+    self.enqueue(task_id);
+    if was_satisfied != now_satisfied {
+      // Dependents' `supported` depends on whether this task is satisfied.
+      self.enqueue_parents(task_id);
+    }
+    if was_active != state.is_active() {
+      // The shutdown gate holds a dependency up while a dependent is active.
+      self.enqueue_deps(task_id);
+    }
+
     self.notify_subscribers(task_id, path, TaskNotify::StateChanged(state));
   }
 
@@ -740,7 +836,7 @@ impl Kernel {
       handle.task.handle_cmd(TaskCmd::Kill, &mut fx);
     }
     if let Some(path) = &handle.path {
-      self.path_trie.remove(path);
+      self.ns.remove(path);
     }
 
     if let Some(deps) = self.edges.remove(&task_id) {
@@ -748,6 +844,8 @@ impl Kernel {
         if let Some(set) = self.redges.get_mut(&dep) {
           set.remove(&task_id);
         }
+        // A lost parent may make the dependency no longer wanted.
+        self.enqueue(dep);
       }
     }
     if let Some(dependents) = self.redges.remove(&task_id) {
@@ -755,10 +853,12 @@ impl Kernel {
         if let Some(set) = self.edges.get_mut(&from) {
           set.remove(&task_id);
         }
+        // A lost dependency changes the dependent's `supported`.
+        self.enqueue(from);
       }
     }
 
-    self.sub_trie.remove_subscriber(task_id);
+    self.ns.remove_subscriber(task_id);
     self.notify_subscribers(task_id, handle.path, TaskNotify::Removed);
   }
 
@@ -785,22 +885,26 @@ impl Kernel {
     // Reject up front so the task never loses its current path: only free
     // the old one once the new one is known to be available.
     let taken_by_other = self
-      .path_trie
+      .ns
       .resolve(&path)
       .is_some_and(|holder| holder != task_id);
     if taken_by_other {
       log::warn!("Path conflict: {} is already taken", path);
       return;
     }
-    let old_path = self.tasks.get_mut(&task_id).and_then(|t| t.path.take());
+    let old_path = self
+      .tasks
+      .get_mut(&task_id)
+      .expect("checked above")
+      .path
+      .take();
     if let Some(old) = &old_path {
-      self.path_trie.remove(old);
+      self.ns.remove(old);
     }
-    match self.path_trie.insert(&path, task_id) {
+    match self.ns.insert(&path, task_id) {
       Ok(()) => {
-        if let Some(task) = self.tasks.get_mut(&task_id) {
-          task.path = Some(path.clone());
-        }
+        self.tasks.get_mut(&task_id).expect("checked above").path =
+          Some(path.clone());
         if old_path.as_ref() != Some(&path) {
           self.notify_path_changed(task_id, old_path, Some(path));
         }
@@ -811,54 +915,47 @@ impl Kernel {
     }
   }
 
-  fn handle_query(&self, query: KernelQuery) -> KernelQueryResponse {
-    match query {
-      KernelQuery::ListTasks(glob) => {
-        let entries = match &glob {
-          Some(pattern) => self.path_trie.glob(pattern),
-          None => self.path_trie.iter(),
-        };
-        let tasks: Vec<TaskInfo> = entries
-          .into_iter()
-          .filter_map(|(path, id)| {
-            self.tasks.get(&id).map(|handle| TaskInfo {
-              id,
-              path: Some(path),
-              label: handle.label.clone(),
-              state: handle.state,
-              vt: handle.vt.clone(),
-            })
-          })
-          .collect();
-        KernelQueryResponse::TaskList(tasks)
-      }
-      KernelQuery::ResolvePath(path) => {
-        KernelQueryResponse::ResolvedPath(self.path_trie.resolve(&path))
-      }
-      KernelQuery::GetScreen(path) => {
-        let screen_text = self
-          .path_trie
-          .resolve(&path)
-          .and_then(|task_id| self.tasks.get(&task_id))
-          .and_then(|handle| handle.vt.as_ref())
-          .and_then(|vt| vt.read().ok())
-          .map(|parser| crate::term::ansi::render_screen_ansi(parser.screen()));
-        KernelQueryResponse::Screen(screen_text)
-      }
-      KernelQuery::Explain(path) => {
-        let explain = self
-          .path_trie
-          .resolve(&path)
-          .and_then(|id| self.explain(id));
-        KernelQueryResponse::Explain(explain)
-      }
-    }
+  // ---- Reads ----
+
+  fn list_tasks(&self, glob: Option<String>) -> Vec<TaskInfo> {
+    let entries = match &glob {
+      Some(pattern) => self.ns.glob(pattern),
+      None => self.ns.iter(),
+    };
+    entries
+      .into_iter()
+      .filter_map(|(path, id)| {
+        self.tasks.get(&id).map(|handle| TaskInfo {
+          id,
+          path: Some(path),
+          label: handle.label.clone(),
+          state: handle.state,
+          vt: handle.vt.clone(),
+        })
+      })
+      .collect()
+  }
+
+  fn resolve(&self, path: &TaskPath) -> Option<TaskId> {
+    self.ns.resolve(path)
+  }
+
+  fn screen(&self, path: &TaskPath) -> Option<String> {
+    self
+      .ns
+      .resolve(path)
+      .and_then(|task_id| self.tasks.get(&task_id))
+      .and_then(|handle| handle.vt.as_ref())
+      .and_then(|vt| vt.read().ok())
+      .map(|parser| crate::term::ansi::render_screen_ansi(parser.screen()))
+  }
+
+  fn explain_at(&self, path: &TaskPath) -> Option<TaskExplain> {
+    self.ns.resolve(path).and_then(|id| self.explain(id))
   }
 
   fn explain(&self, task_id: TaskId) -> Option<TaskExplain> {
     let task = self.tasks.get(&task_id)?;
-    let wanted = self.wanted_set();
-    let supported = self.supported_set(&wanted);
     let name = |id: TaskId| {
       self
         .tasks
@@ -893,7 +990,7 @@ impl Kernel {
             DepExplain {
               name: name(*dep),
               state: task.map_or(TaskState::Idle, |t| t.state),
-              wanted: wanted.contains(dep),
+              wanted: task.is_some_and(|t| t.wanted),
               satisfied: task.is_some_and(|t| t.is_satisfied()),
             }
           })
@@ -902,8 +999,8 @@ impl Kernel {
       .unwrap_or_default();
     Some(TaskExplain {
       state: task.state,
-      wanted: wanted.contains(&task_id),
-      supported: supported.contains(&task_id),
+      wanted: task.wanted,
+      supported: task.supported,
       kept_down: task.kept_down,
       pinned,
       required_by,
@@ -930,7 +1027,7 @@ impl Kernel {
   ) {
     let mut targets = HashSet::new();
     if let Some(path) = &from_path {
-      self.sub_trie.collect(path, &mut targets);
+      self.ns.collect(path, &mut targets);
     }
     self.deliver(from, from_path, notify, targets);
   }
@@ -941,18 +1038,16 @@ impl Kernel {
     old: Option<TaskPath>,
     new: Option<TaskPath>,
   ) {
-    let (state, label, vt) = match self.tasks.get(&from) {
-      Some(t) => (t.state, t.label.clone(), t.vt.clone()),
-      None => return,
-    };
+    let t = self.tasks.get(&from).expect("path owner live");
+    let (state, label, vt) = (t.state, t.label.clone(), t.vt.clone());
 
     let mut old_targets = HashSet::new();
     if let Some(old) = &old {
-      self.sub_trie.collect(old, &mut old_targets);
+      self.ns.collect(old, &mut old_targets);
     }
     let mut new_targets = HashSet::new();
     if let Some(new) = &new {
-      self.sub_trie.collect(new, &mut new_targets);
+      self.ns.collect(new, &mut new_targets);
     }
 
     let entering: HashSet<TaskId> =
@@ -1008,6 +1103,148 @@ impl Kernel {
     }
     for (task_id, mut fx) in all_fx {
       self.apply_effects(task_id, &mut fx);
+    }
+  }
+}
+
+pub struct Kernel {
+  graph: Graph,
+  sender: UnboundedSender<KernelMessage>,
+  receiver: UnboundedReceiver<KernelMessage>,
+}
+
+impl Kernel {
+  pub fn new() -> Self {
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    let graph = Graph::new(sender.clone());
+    Self {
+      graph,
+      sender,
+      receiver,
+    }
+  }
+
+  pub fn context(&self) -> TaskContext {
+    self.graph.context()
+  }
+
+  pub fn register_task(
+    &mut self,
+    def: TaskDef,
+    factory: impl FnOnce(TaskContext) -> Box<dyn Task> + 'static,
+  ) -> TaskId {
+    let task_id = TaskId(
+      self
+        .graph
+        .next_task_id
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+    );
+    self
+      .graph
+      .register_task_with_id(task_id, def, Box::new(factory));
+    task_id
+  }
+
+  pub async fn run(mut self) {
+    loop {
+      let Some(msg) = self.receiver.recv().await else {
+        log::debug!("Kernel receiver returned None.");
+        break;
+      };
+      self.graph.now = Instant::now();
+      if self.dispatch(msg) {
+        break;
+      }
+      self.graph.reconcile();
+      for req in self.graph.take_timers() {
+        let sender = self.sender.clone();
+        tokio::spawn(async move {
+          tokio::time::sleep(req.delay).await;
+          let _ = sender.send(KernelMessage {
+            from: INIT_TASK_ID,
+            command: KernelCommand::StateTimeout(req.task_id, req.epoch),
+          });
+        });
+      }
+      if self.graph.quitting && self.graph.no_active_tasks() {
+        break;
+      }
+    }
+    log::debug!("After kernel loop.");
+  }
+
+  /// Returns true when the loop should exit at once (a second quit).
+  fn dispatch(&mut self, msg: KernelMessage) -> bool {
+    match msg.command {
+      KernelCommand::Quit => return self.graph.begin_quit(),
+
+      KernelCommand::RegisterTask(task_id, def, factory) => {
+        self.graph.register_task_with_id(task_id, def, factory);
+      }
+      KernelCommand::RemoveTask(task_id) => self.graph.remove_task(task_id),
+
+      KernelCommand::Start(task_id) => self.graph.cmd_start(task_id),
+      KernelCommand::Stop(task_id) => self.graph.cmd_stop(task_id),
+      KernelCommand::Kill(task_id) => self.graph.cmd_kill(task_id),
+      KernelCommand::KeepDown(task_id) => self.graph.cmd_keep_down(task_id),
+      KernelCommand::Restart(task_id) => self.graph.cmd_restart(task_id),
+      KernelCommand::Down(task_id) => {
+        self.graph.remove_edge(INIT_TASK_ID, task_id);
+      }
+      KernelCommand::AddEdge { from, to } => self.graph.add_edge(from, to),
+      KernelCommand::RemoveEdge { from, to } => {
+        self.graph.remove_edge(from, to)
+      }
+
+      KernelCommand::TaskMsg(task_id, m) => {
+        self.graph.send_cmd(task_id, TaskCmd::Msg(m));
+      }
+
+      KernelCommand::SetTaskPath(task_id, path) => {
+        self.graph.set_task_path(task_id, path);
+      }
+      KernelCommand::SetTaskLabel(task_id, label) => {
+        self.graph.set_task_label(task_id, label);
+      }
+
+      KernelCommand::Query(query, response_tx) => {
+        let _ = response_tx.send(self.handle_query(query));
+      }
+
+      KernelCommand::TaskStarted => self.graph.on_task_started(msg.from),
+      KernelCommand::TaskReady => self.graph.on_task_ready(msg.from),
+      KernelCommand::TaskStopped(info) => {
+        self.graph.on_task_stopped(msg.from, info)
+      }
+
+      KernelCommand::StateTimeout(task_id, epoch) => {
+        self.graph.on_state_timeout(task_id, epoch)
+      }
+
+      KernelCommand::SubscribePath(path, mode) => {
+        self.graph.subscribe(msg.from, path, mode);
+      }
+      KernelCommand::UnsubscribePath(path, mode) => {
+        self.graph.unsubscribe(msg.from, path, mode);
+      }
+    }
+    false
+  }
+
+  fn handle_query(&self, query: KernelQuery) -> KernelQueryResponse {
+    match query {
+      KernelQuery::ListTasks(glob) => {
+        KernelQueryResponse::TaskList(self.graph.list_tasks(glob))
+      }
+      KernelQuery::ResolvePath(path) => {
+        KernelQueryResponse::ResolvedPath(self.graph.resolve(&path))
+      }
+      KernelQuery::GetScreen(path) => {
+        KernelQueryResponse::Screen(self.graph.screen(&path))
+      }
+      KernelQuery::Explain(path) => {
+        KernelQueryResponse::Explain(self.graph.explain_at(&path))
+      }
     }
   }
 }

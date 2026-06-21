@@ -269,6 +269,13 @@ pub struct TaskHandle {
   pub attempts: u32,
   pub last_start: Option<Instant>,
 
+  /// Cached reconciler state, maintained incrementally.
+  /// `wanted`: reachable from a pin through non-kept-down nodes.
+  pub wanted: bool,
+  /// `supported`: wanted, and every dependency is itself supported and
+  /// currently satisfied.
+  pub supported: bool,
+
   pub kind: TaskKind,
   pub ready: ReadyMode,
   pub restart: RestartMode,
