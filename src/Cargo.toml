@@ -63,8 +63,16 @@ bytes = "1.5.0"
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 scopeguard = "1.2.0"
 itoa = "1"
-rquickjs = { version = "0.11", features = ["full-async"] }
+rquickjs = { version = "0.12", features = ["full-async"] }
 rustix = { version = "1", features = ["all-apis"] }
+
+# Keep pre-generated rquickjs bindings for:
+# - aarch64/x86_64 Linux
+# - macOS
+# - x86_64 Windows
+# Use bindgen everywhere else.
+[target.'cfg(not(any(all(target_os = "linux", any(target_arch = "aarch64", target_arch = "x86_64")), target_os = "macos", all(target_os = "windows", target_arch = "x86_64"))))'.dependencies]
+rquickjs = { version = "0.12", features = ["full-async", "bindgen"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

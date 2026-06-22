@@ -78,4 +78,3 @@ impl Namespace {
     self.subs.collect(path, out);
   }
 }
-
