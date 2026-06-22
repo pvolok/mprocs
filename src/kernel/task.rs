@@ -283,6 +283,7 @@ pub struct TaskHandle {
   pub path: Option<TaskPath>,
   pub label: Option<String>,
   pub vt: Option<SharedVt>,
+  pub tags: Vec<String>,
 }
 
 impl TaskHandle {
@@ -314,6 +315,7 @@ pub struct TaskDef {
   pub path: Option<TaskPath>,
   pub label: Option<String>,
   pub vt: Option<SharedVt>,
+  pub tags: Vec<String>,
 }
 
 impl Default for TaskDef {
@@ -327,6 +329,7 @@ impl Default for TaskDef {
       path: None,
       label: None,
       vt: None,
+      tags: Vec::new(),
     }
   }
 }

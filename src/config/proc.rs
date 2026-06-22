@@ -12,6 +12,11 @@ use crate::process::process_spec::ProcessSpec;
 const DEFAULT_SCROLLBACK_LEN: usize = 1000;
 const DEFAULT_MOUSE_SCROLL_SPEED: usize = 5;
 
+/// Tag for procs started on `dekit up` / at launch.
+pub const AUTOSTART_TAG: &str = "autostart";
+/// Tag for tasks spawned over RPC.
+pub const USER_TAG: &str = "user";
+
 #[derive(Clone, Default)]
 pub struct ProcConfig {
   pub path: String,

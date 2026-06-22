@@ -6,7 +6,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use crate::{
   config::{
     config::Config,
-    proc::{CmdConfig, ProcConfig},
+    proc::{AUTOSTART_TAG, CmdConfig, ProcConfig},
     proc_log::LogMode,
   },
   console::{
@@ -38,8 +38,7 @@ use crate::{
     },
     sub_trie::SubMode,
     task::{
-      RestartMode, TargetTask, TaskCmd, TaskDef, TaskId, TaskNotification,
-      TaskNotify,
+      RestartMode, TaskCmd, TaskDef, TaskId, TaskNotification, TaskNotify,
     },
     task_path::TaskPath,
     task_screen::{FramedScreenNotify, TaskScreenCmd},
@@ -295,23 +294,16 @@ impl App {
       self.spawn_proc(cfg, id, deps);
     }
 
-    let autostart_ids: Vec<TaskId> = self
+    let autostart_ids = self
       .config
       .procs
       .iter()
       .zip(&task_ids)
       .filter(|(cfg, _)| cfg.autostart())
-      .map(|(_, id)| *id)
-      .collect();
-    self.pc.register(
-      TaskDef {
-        deps: autostart_ids,
-        pinned: true,
-        path: TaskPath::new("/autostart").ok(),
-        ..Default::default()
-      },
-      Box::new(|_| Box::new(TargetTask)),
-    );
+      .map(|(_, id)| *id);
+    for id in autostart_ids {
+      self.pc.send(KernelCommand::Start(id));
+    }
 
     Ok(())
   }
@@ -963,6 +955,11 @@ fn proc_task_config(
     mouse_scroll_speed: cfg.mouse_scroll_speed(),
     deps,
     label: Some(cfg.path.clone()),
+    tags: if cfg.autostart() {
+      vec![AUTOSTART_TAG.to_string()]
+    } else {
+      Vec::new()
+    },
   }
 }
 

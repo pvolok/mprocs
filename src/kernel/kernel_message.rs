@@ -73,6 +73,8 @@ pub enum KernelQuery {
   ListTasks(Option<String>),
   /// Resolve a path to a TaskId.
   ResolvePath(TaskPath),
+  /// List the task ids carrying a tag.
+  TasksWithTag(String),
   /// Get the current screen content for a task (rendered as ANSI text).
   GetScreen(TaskPath),
   /// Explain why a task is (not) running.
@@ -82,6 +84,7 @@ pub enum KernelQuery {
 pub enum KernelQueryResponse {
   TaskList(Vec<TaskInfo>),
   ResolvedPath(Option<TaskId>),
+  TaggedTasks(Vec<TaskId>),
   /// ANSI-rendered screen content, or None if the task has no screen.
   Screen(Option<String>),
   Explain(Option<TaskExplain>),

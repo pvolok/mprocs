@@ -136,6 +136,7 @@ pub struct ProcTaskConfig {
   pub scrollback_len: usize,
   pub mouse_scroll_speed: usize,
   pub deps: Vec<TaskId>,
+  pub tags: Vec<String>,
 }
 
 impl ProcTaskConfig {
@@ -150,6 +151,7 @@ impl ProcTaskConfig {
       scrollback_len: 1000,
       mouse_scroll_speed: 5,
       deps: Vec::new(),
+      tags: Vec::new(),
     }
   }
 }
@@ -180,6 +182,7 @@ pub fn spawn_proc_task_with_id(
     mouse_scroll_speed,
     deps,
     label,
+    tags,
   } = config;
   let vt = SharedVt::new(Parser::new(24, 80, scrollback_len));
   let task_vt = vt.clone();
@@ -196,6 +199,7 @@ pub fn spawn_proc_task_with_id(
       path: task_path,
       label,
       vt: Some(vt),
+      tags,
       ..Default::default()
     },
     move |ctx, receiver| async move {
@@ -344,6 +348,7 @@ async fn proc_main(
                   mouse_scroll_speed,
                   deps: Vec::new(),
                   label: dup.0,
+                  tags: Vec::new(),
                 },
               );
               ctx.send(KernelCommand::Start(new_id));

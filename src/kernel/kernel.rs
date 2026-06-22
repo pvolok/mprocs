@@ -56,6 +56,7 @@ struct Graph {
   /// Reverse of `edges`: `redges[b]` contains `a` when `a` requires `b`.
   redges: HashMap<TaskId, HashSet<TaskId>>,
   ns: Namespace,
+  tags: HashMap<String, HashSet<TaskId>>,
 
   /// Tasks whose `wanted`/`supported`/drive decision may have changed and
   /// need re-evaluating. Drained by `reconcile`.
@@ -78,6 +79,7 @@ impl Graph {
       edges: HashMap::new(),
       redges: HashMap::new(),
       ns: Namespace::new(),
+      tags: HashMap::new(),
 
       dirty: VecDeque::new(),
       in_queue: HashSet::new(),
@@ -123,6 +125,7 @@ impl Graph {
     };
     let label = def.label.clone();
     let vt = def.vt.clone();
+    let tags = def.tags.clone();
     let handle = TaskHandle {
       task,
       state: TaskState::Idle,
@@ -139,8 +142,13 @@ impl Graph {
       path: path.clone(),
       label: def.label,
       vt: def.vt,
+      tags: def.tags,
     };
     self.tasks.insert(task_id, handle);
+
+    for tag in tags {
+      self.tags.entry(tag).or_default().insert(task_id);
+    }
 
     for dep_id in def.deps {
       self.add_edge(task_id, dep_id);
@@ -838,6 +846,14 @@ impl Graph {
     if let Some(path) = &handle.path {
       self.ns.remove(path);
     }
+    for tag in &handle.tags {
+      if let Some(set) = self.tags.get_mut(tag) {
+        set.remove(&task_id);
+        if set.is_empty() {
+          self.tags.remove(tag);
+        }
+      }
+    }
 
     if let Some(deps) = self.edges.remove(&task_id) {
       for dep in deps {
@@ -938,6 +954,13 @@ impl Graph {
 
   fn resolve(&self, path: &TaskPath) -> Option<TaskId> {
     self.ns.resolve(path)
+  }
+
+  fn tasks_with_tag(&self, tag: &str) -> Vec<TaskId> {
+    match self.tags.get(tag) {
+      Some(set) => set.iter().copied().collect(),
+      None => Vec::new(),
+    }
   }
 
   fn screen(&self, path: &TaskPath) -> Option<String> {
@@ -1238,6 +1261,9 @@ impl Kernel {
       }
       KernelQuery::ResolvePath(path) => {
         KernelQueryResponse::ResolvedPath(self.graph.resolve(&path))
+      }
+      KernelQuery::TasksWithTag(tag) => {
+        KernelQueryResponse::TaggedTasks(self.graph.tasks_with_tag(&tag))
       }
       KernelQuery::GetScreen(path) => {
         KernelQueryResponse::Screen(self.graph.screen(&path))

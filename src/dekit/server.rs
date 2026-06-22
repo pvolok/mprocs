@@ -12,7 +12,7 @@ use crate::{
     kernel_message::{
       KernelCommand, KernelQuery, KernelQueryResponse, TaskContext, TaskInfo,
     },
-    task::{TargetTask, TaskDef, TaskId, TaskState},
+    task::TaskState,
     task_path::TaskPath,
   },
   protocol::{
@@ -66,16 +66,6 @@ pub async fn run_server(
   let app_task_id = create_app_task(config, keymap, &pc);
   let app_sender = pc.get_task_sender(app_task_id);
 
-  // Umbrella target that wants every task spawned over RPC.
-  let user_target_id = pc.register(
-    TaskDef {
-      pinned: true,
-      path: TaskPath::new("/user").ok(),
-      ..Default::default()
-    },
-    Box::new(|_| Box::new(TargetTask)),
-  );
-
   tokio::spawn(async move {
     let mut last_client_id = 0;
 
@@ -99,15 +89,8 @@ pub async fn run_server(
           let app_sender = app_sender.clone();
           let pc = pc.clone();
           tokio::spawn(async move {
-            dispatch_connection(
-              client_id,
-              app_sender,
-              pc,
-              user_target_id,
-              sender,
-              receiver,
-            )
-            .await;
+            dispatch_connection(client_id, app_sender, pc, sender, receiver)
+              .await;
           });
         }
         Err(err) => {
@@ -135,7 +118,6 @@ async fn dispatch_connection(
   client_id: ClientId,
   app_sender: crate::kernel::kernel_message::TaskSender,
   pc: TaskContext,
-  user_target_id: TaskId,
   mut sender: ConnSender,
   mut receiver: ConnReceiver,
 ) {
@@ -169,7 +151,7 @@ async fn dispatch_connection(
       .await;
     }
     Ok(req) => {
-      let msg = match handle_rpc(&pc, user_target_id, req).await {
+      let msg = match handle_rpc(&pc, req).await {
         Ok(result) => CtlMsg::ok(request.id, result),
         Err(error) => CtlMsg::err(request.id, error),
       };
@@ -232,7 +214,6 @@ fn parse_path(path: &str) -> Result<TaskPath, RpcError> {
 
 async fn handle_rpc(
   pc: &TaskContext,
-  user_target_id: TaskId,
   req: RpcRequest,
 ) -> Result<Value, RpcError> {
   match req {
@@ -256,16 +237,14 @@ async fn handle_rpc(
     }
 
     RpcRequest::Up {} => {
-      let path = parse_path("/autostart")?;
-      match query(pc, KernelQuery::ResolvePath(path)).await? {
-        KernelQueryResponse::ResolvedPath(Some(id)) => {
-          pc.send(KernelCommand::Start(id));
+      let tag = crate::config::proc::AUTOSTART_TAG.to_string();
+      match query(pc, KernelQuery::TasksWithTag(tag)).await? {
+        KernelQueryResponse::TaggedTasks(ids) => {
+          for id in ids {
+            pc.send(KernelCommand::Start(id));
+          }
           Ok(ok_result())
         }
-        KernelQueryResponse::ResolvedPath(None) => Err(RpcError::new(
-          codes::NO_AUTOSTART_TARGET,
-          "no autostart target",
-        )),
         _ => Err(RpcError::internal("unexpected query response")),
       }
     }
@@ -382,15 +361,11 @@ async fn handle_rpc(
       } else if let Ok(cwd) = std::env::current_dir() {
         spec.cwd(cwd.to_string_lossy());
       }
-      let id = crate::task::proc_task::spawn_proc_task(
-        pc,
-        Some(task_path),
-        crate::task::proc_task::ProcTaskConfig::new(spec),
-      );
-      pc.send(KernelCommand::AddEdge {
-        from: user_target_id,
-        to: id,
-      });
+      let mut cfg = crate::task::proc_task::ProcTaskConfig::new(spec);
+      cfg.tags = vec![crate::config::proc::USER_TAG.to_string()];
+      let id =
+        crate::task::proc_task::spawn_proc_task(pc, Some(task_path), cfg);
+      pc.send(KernelCommand::Start(id));
       Ok(ok_result())
     }
   }
