@@ -62,6 +62,20 @@ impl TaskPath {
     Ok(TaskPath(s))
   }
 
+  /// "/a/b" -> "/a/b"
+  /// "a/b" -> "/procs/a/b"
+  pub fn normalize_user_spec(spec: &str) -> String {
+    if spec.starts_with('/') {
+      spec.to_string()
+    } else {
+      format!("/procs/{}", spec)
+    }
+  }
+
+  pub fn from_user_spec(spec: &str) -> Result<Self, TaskPathError> {
+    Self::new(Self::normalize_user_spec(spec))
+  }
+
   pub fn as_str(&self) -> &str {
     &self.0
   }
@@ -173,5 +187,19 @@ mod tests {
     assert_eq!(TaskPath::new("/").unwrap().depth(), 0);
     assert_eq!(TaskPath::new("/web").unwrap().depth(), 1);
     assert_eq!(TaskPath::new("/a/b/c").unwrap().depth(), 3);
+  }
+
+  #[test]
+  fn test_normalize_user_spec() {
+    assert_eq!(TaskPath::normalize_user_spec("web"), "/procs/web");
+    assert_eq!(
+      TaskPath::normalize_user_spec("services/web"),
+      "/procs/services/web"
+    );
+    assert_eq!(
+      TaskPath::normalize_user_spec("/services/web"),
+      "/services/web"
+    );
+    assert_eq!(TaskPath::normalize_user_spec("/web"), "/web");
   }
 }

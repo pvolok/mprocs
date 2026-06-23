@@ -310,8 +310,8 @@ impl App {
 
   fn spawn_proc(&self, cfg: ProcConfig, task_id: TaskId, deps: Vec<TaskId>) {
     let merged = self.config.proc_defaults.clone().overlay(cfg);
-    let path = TaskPath::new(format!("/{}", merged.path))
-      .or_else(|_| TaskPath::new(format!("/{}", task_id.0)))
+    let path = TaskPath::from_user_spec(&merged.path)
+      .or_else(|_| TaskPath::new(format!("/procs/{}", task_id.0)))
       .ok();
     spawn_proc_task_with_id(
       &self.pc,

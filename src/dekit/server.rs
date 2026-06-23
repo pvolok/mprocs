@@ -197,7 +197,8 @@ async fn match_tasks(
   pc: &TaskContext,
   pattern: &str,
 ) -> Result<Vec<TaskInfo>, RpcError> {
-  let tasks = list_tasks(pc, Some(pattern.to_string())).await?;
+  let pattern = TaskPath::normalize_user_spec(pattern);
+  let tasks = list_tasks(pc, Some(pattern.clone())).await?;
   if tasks.is_empty() {
     return Err(RpcError::new(
       codes::NO_MATCH,
@@ -208,7 +209,7 @@ async fn match_tasks(
 }
 
 fn parse_path(path: &str) -> Result<TaskPath, RpcError> {
-  TaskPath::new(path)
+  TaskPath::from_user_spec(path)
     .map_err(|err| RpcError::new(codes::BAD_PATH, err.to_string()))
 }
 
@@ -222,6 +223,7 @@ async fn handle_rpc(
     )),
 
     RpcRequest::Ls { glob } => {
+      let glob = glob.map(|g| TaskPath::normalize_user_spec(&g));
       let tasks = list_tasks(pc, glob)
         .await?
         .into_iter()
