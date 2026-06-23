@@ -64,6 +64,17 @@ impl ScreenDiffer {
           .cloned()
           .unwrap_or_default();
 
+        // Check if this cell is a continuation of a wide character.
+        // Skip output for it but keep the diff state in sync.
+        if x > 0
+          && view
+            .get_cell(Pos { col: x - 1, row: y })
+            .is_some_and(Cell::is_wide)
+        {
+          prev[offset] = cell;
+          continue;
+        }
+
         let mut sep = {
           let mut first = true;
           move |w: &mut W| {
@@ -255,5 +266,29 @@ mod tests {
     out.clear();
     differ.diff(&mut out, &screen).unwrap();
     assert_eq!("\x1b[1;2H_3", out);
+  }
+
+  #[test]
+  fn wide_char_continuation_not_overwritten() {
+    let mut differ = ScreenDiffer::new();
+    let mut out = String::new();
+
+    // "A测B": 测 is a wide character occupying two columns. The empty cell
+    // after it is the continuation (right half) and must not be drawn,
+    // otherwise the space would paint over the right half of the glyph.
+    let screen = vec![vec![
+      Cell::new("A"),
+      Cell::new("测"),
+      Cell::default(),
+      Cell::new("B"),
+    ]];
+    differ.diff(&mut out, &screen).unwrap();
+    assert_eq!("\x1b[1;1HA测B\x1b[?25l", out);
+
+    // A redraw of the identical screen must not emit anything (the diff
+    // state stays in sync even though the continuation cell was skipped).
+    out.clear();
+    differ.diff(&mut out, &screen).unwrap();
+    assert_eq!("", out);
   }
 }
